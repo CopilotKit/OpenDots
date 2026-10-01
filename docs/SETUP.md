@@ -54,7 +54,9 @@ Back up both storage layers: SQLite contains page content and thread bindings; t
 
 ## Browser tool
 
-The browser service reads a supplied public URL and returns page text and a capture. Configure `BROWSER_URL` and `BROWSER_SECRET`, then run:
+Parallel is selected by default (`WEB_SEARCH_PROVIDER=parallel`). Live research needs the model configuration, but no browser worker. An optional server-side `PARALLEL_API_KEY` enables authenticated usage and higher limits. The anonymous MCP endpoint is free for light use. Queries, selected URLs, research objectives and a stable session identifier go to Parallel. See [public-web research](../README.md#public-web-research) for data sharing, permissions and limitations.
+
+Set `WEB_SEARCH_PROVIDER=disabled` to turn off these research tools, or `WEB_SEARCH_PROVIDER=browser` for the existing URL-only reader. The browser service reads a supplied public URL and returns page text and a capture. Configure `BROWSER_URL` and `BROWSER_SECRET`, then run:
 
 ```sh
 npx playwright install chromium
@@ -65,7 +67,7 @@ Use the same secret on the app and browser processes. Browser navigation is read
 
 ## Persistent Dot computers
 
-For a separate browser, persistent files, and optional shell for each specialist, follow [Computer setup](COMPUTERS.md). This uses pinned OpenBot computer/supervisor services and per-Dot permissions. When computer services are configured, Dots use their computer tools in place of the read-only public-page tool; enable each Dot's required capabilities before use.
+For a separate browser, persistent files, and optional shell for each specialist, follow [Computer setup](COMPUTERS.md). This uses pinned OpenBot computer/supervisor services and per-Dot permissions. Parallel research tools remain available alongside configured computer tools. With the browser provider selected, Dots use their computer tools in place of the read-only public-page tool; enable each Dot's required capabilities before use.
 
 ## Slack
 
@@ -121,7 +123,7 @@ Set `OWNER_TOKEN` and `BROWSER_SECRET` to different random secrets of at least 2
 docker compose up --build -d
 ```
 
-Open http://localhost:4310. The app port binds to loopback; the browser service has no published port. Application metadata lives in the `opendots-data` volume.
+Open http://localhost:4310. The app port binds to loopback. The browser service is optional: set a 24+ character `BROWSER_SECRET` and run `docker compose --profile browser up --build` to enable it; it has no published port. Application metadata lives in the `opendots-data` volume.
 
 ```sh
 # Stop services while retaining saved data.

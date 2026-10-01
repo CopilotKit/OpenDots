@@ -22,8 +22,10 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
+      WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-parallel}
+      PARALLEL_API_KEY: ${PARALLEL_API_KEY:-}
       BROWSER_URL: http://browser:4311
-      BROWSER_SECRET: ${BROWSER_SECRET:?Set a 24+ character BROWSER_SECRET in .env}
+      BROWSER_SECRET: ${BROWSER_SECRET:-}
     volumes:
       - opendots-data:/data
     networks:
@@ -36,11 +38,12 @@ services:
     cap_drop:
       - ALL
   browser:
+    profiles: [browser]
     build:
       context: .
       target: browser
     environment:
-      BROWSER_SECRET: ${BROWSER_SECRET:?Set a 24+ character BROWSER_SECRET in .env}
+      BROWSER_SECRET: ${BROWSER_SECRET:-}
     networks:
       - browser-link
       - browser-egress

@@ -1,5 +1,6 @@
+import type { WebConfig } from './parallel.js';
 import type { SetupStatus } from '../shared/types.js';
-export interface PlatformConfig {
+export interface PlatformConfig extends WebConfig {
   intelligenceKey?: string;
   intelligenceApiUrl?: string;
   intelligenceWsUrl?: string;
