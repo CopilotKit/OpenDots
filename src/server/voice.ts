@@ -187,7 +187,13 @@ export class VoiceService {
       AbortSignal.any([job.controller.signal, AbortSignal.timeout(90_000)]),
     );
     job.calls.set(toolCallId, pending);
-    return pending;
+    try {
+      return await pending;
+    } catch (error) {
+      // Deduplicate in-flight and successful turns, but allow failed turns to retry.
+      job.calls.delete(toolCallId);
+      throw error;
+    }
   }
   async end(id: string, transcript: string) {
     const previous = this.platform.workspace.call(id);
