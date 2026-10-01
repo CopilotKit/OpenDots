@@ -201,7 +201,11 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
   });
   app.all('/copilotkit/*', (c) => platform.handle(c.req.raw));
   app.onError((error, c) => {
+    if (error instanceof SyntaxError)
+      return c.json({ error: 'Invalid JSON request.' }, 400);
     const text = error.message;
+    if (text.startsWith('Space access must include'))
+      return c.json({ error: text }, 400);
     const known =
       /^(Setup|Voice setup|Dot |Space |Specialist |Conversation |Call |This call|End the current|Voice provider|An audio|Intelligence could not)/.test(
         text,
