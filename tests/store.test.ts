@@ -73,6 +73,37 @@ describe('durable task lifecycle', () => {
     store.updateSettings({ paused: false });
     expect(store.claim(Date.now())?.id).toBe(task.id);
   });
+  it('persists inbox items and watcher state', () => {
+    const { store } = fixture();
+    const item = store.createInboxItem(
+      'task_failed',
+      'Needs attention',
+      'Something failed.',
+      'task-1',
+    );
+    expect(store.unreadInboxCount()).toBe(1);
+    expect(store.inboxAction(item.id, 'read')?.readAt).toBeTruthy();
+    expect(store.unreadInboxCount()).toBe(0);
+    const watcher = store.createWatcher(
+      'https://example.com',
+      'Investigate changes',
+      'thread-1',
+      300,
+    );
+    expect(store.watchers()[0]?.enabled).toBe(true);
+    expect(store.watcherAction(watcher.id, 'pause')?.enabled).toBe(false);
+    expect(store.watcherAction(watcher.id, 'resume')?.enabled).toBe(true);
+    store.updateWatcherCheck(watcher.id, {
+      lastCheckedAt: 1000,
+      lastHash: 'abc',
+      nextCheckAt: 2000,
+      error: null,
+    });
+    expect(store.watchers()[0]?.lastHash).toBe('abc');
+    expect(store.watcherAction(watcher.id, 'delete')).toBeUndefined();
+    expect(store.watchers()).toHaveLength(0);
+  });
+
   it('recovers expired work after restart without duplicate completion', () => {
     const { store } = fixture();
     store.createTask('Recover me');

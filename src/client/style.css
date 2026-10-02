@@ -3993,3 +3993,103 @@ h3 {
   font-size: 14px;
   color: #c9e8dd;
 }
+
+.inbox-list,
+.watcher-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.inbox-card,
+.watcher-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 17px;
+}
+.inbox-card.unread {
+  border-color: #cfd6ee;
+  box-shadow: 0 3px 14px #00000008;
+}
+.inbox-card-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #f1f2f7;
+  color: #7e8cb8;
+}
+.inbox-card-body,
+.watcher-card > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+.inbox-card-body strong,
+.watcher-card strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 550;
+}
+.inbox-card-body small,
+.watcher-card small {
+  display: block;
+  margin-top: 4px;
+  color: #a0a2aa;
+  font-size: 9px;
+}
+.inbox-card-body p,
+.watcher-card p {
+  margin: 10px 0 12px;
+  color: #737784;
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.inbox-card-actions,
+.watcher-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.inbox-card-actions button,
+.watcher-actions button,
+.watcher-form button {
+  font-size: 10px;
+  padding: 7px 9px;
+}
+.watcher-section {
+  margin-bottom: 35px;
+}
+.watcher-form {
+  display: grid;
+  gap: 9px;
+  margin-bottom: 16px;
+}
+.watcher-form textarea {
+  min-height: 70px;
+}
+.watcher-form-row {
+  display: flex;
+  gap: 9px;
+}
+.watcher-form-row input {
+  max-width: 170px;
+}
+@media (max-width: 700px) {
+  .inbox-card,
+  .watcher-card {
+    flex-direction: column;
+  }
+  .watcher-form-row {
+    flex-direction: column;
+  }
+  .watcher-form-row input {
+    max-width: none;
+  }
+}
