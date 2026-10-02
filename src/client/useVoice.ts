@@ -29,6 +29,7 @@ export function useVoice(
         channel: RTCDataChannel;
         transcript: string[];
         timer?: ReturnType<typeof setTimeout>;
+        disconnectTimer?: ReturnType<typeof setTimeout>;
         cancelled: boolean;
       }
     | undefined
@@ -45,6 +46,7 @@ export function useVoice(
     current.audio.pause();
     current.audio.srcObject = null;
     clearTimeout(current.timer);
+    clearTimeout(current.disconnectTimer);
   }, []);
   const end = useCallback(async () => {
     if (ending.current) return;
@@ -63,6 +65,7 @@ export function useVoice(
     });
     current.audio.pause();
     clearTimeout(current.timer);
+    clearTimeout(current.disconnectTimer);
     ending.current = true;
     setStatus('ending');
     try {
@@ -153,6 +156,7 @@ export function useVoice(
         cancelled: false,
         id: undefined as string | undefined,
         timer: undefined as ReturnType<typeof setTimeout> | undefined,
+        disconnectTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       };
       session.current = current;
       stream.getTracks().forEach((track) => pc.addTrack(track, stream!));
@@ -169,6 +173,8 @@ export function useVoice(
       pc.onconnectionstatechange = () => {
         if (current.cancelled) return;
         if (pc.connectionState === 'connected') {
+          clearTimeout(current.disconnectTimer);
+          current.disconnectTimer = undefined;
           setStatus('active');
           setStartedAt((value) => value ?? Date.now());
           if (current.id)
@@ -178,7 +184,16 @@ export function useVoice(
               },
             );
         }
-        if (['failed', 'disconnected'].includes(pc.connectionState)) {
+        if (pc.connectionState === 'disconnected' && !current.disconnectTimer) {
+          current.disconnectTimer = setTimeout(() => {
+            current.disconnectTimer = undefined;
+            if (current.cancelled || pc.connectionState !== 'disconnected')
+              return;
+            setError('The voice connection dropped.');
+            void end();
+          }, 5000);
+        }
+        if (pc.connectionState === 'failed') {
           setError('The voice connection dropped.');
           void end();
         }
