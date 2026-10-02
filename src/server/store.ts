@@ -287,6 +287,12 @@ export class Store {
         )
         .run(error, now, claim.id);
       this.event(claim.id, claim.lease, error);
+      this.createInboxItem(
+        'task_failed',
+        'A task needs attention',
+        claim.prompt + '\\n\\n' + error.slice(0, 800),
+        claim.id,
+      );
     });
   }
   inbox(limit = 100): InboxItem[] {
