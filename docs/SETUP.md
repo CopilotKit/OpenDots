@@ -238,3 +238,13 @@ npm run build
 ```
 
 Automated tests use service fixtures. Live model, Intelligence, Slack, and voice verification requires your own configured services.
+
+## Inbox and Watchers
+
+The Inbox collects completed and failed background-task outcomes, plus notifications when a Watcher detects a change.
+
+A Watcher monitors a public HTTP(S) URL at an interval from one minute to 24 hours. The first successful check establishes a baseline. Later content changes queue a normal OpenDots task in the selected conversation, so the existing Dot, tools, permissions, and task history handle the follow-up.
+
+Open **Scheduled & activity** to add a Watcher. Choose an existing conversation, enter the URL and investigation prompt, and choose the interval. Watchers can be paused, resumed, or deleted.
+
+Watcher requests reject local/private destinations, URL credentials, oversized responses, and excessive redirects. Keep remote OpenDots deployments protected with owner authentication and HTTPS.
