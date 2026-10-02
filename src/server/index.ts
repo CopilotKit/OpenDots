@@ -48,7 +48,9 @@ const config: PlatformConfig = {
     .filter(Boolean),
   slackDotId: process.env.SLACK_DOT_ID || undefined,
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || undefined,
-  telegramChannel: process.env.TELEGRAM_CHANNEL_NAME || 'opendots-telegram',
+  telegramChannel:
+    process.env.TELEGRAM_CHANNEL_NAME ||
+    (process.env.TELEGRAM_BOT_TOKEN ? 'opendots-telegram' : undefined),
   telegramUsers: (process.env.TELEGRAM_USER_IDS ?? '')
     .split(',')
     .map((value) => value.trim())
