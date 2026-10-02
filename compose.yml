@@ -5,6 +5,7 @@ services:
       target: app
     ports:
       - '127.0.0.1:4310:4310'
+      - '127.0.0.1:1455:1455'
     environment:
       OWNER_TOKEN: ${OWNER_TOKEN:?Set a 24+ character OWNER_TOKEN in .env}
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:4310}
@@ -22,6 +23,9 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
+      CHATGPT_AUTH_FILE: ${CHATGPT_AUTH_FILE:-/data/chatgpt-auth.json}
+      CHATGPT_CALLBACK_HOST: 0.0.0.0
+      CHATGPT_CALLBACK_PORT: 1455
       BROWSER_URL: http://browser:4311
       BROWSER_SECRET: ${BROWSER_SECRET:?Set a 24+ character BROWSER_SECRET in .env}
     volumes:

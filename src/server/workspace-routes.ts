@@ -31,6 +31,82 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
       calls: platform.workspace.calls(),
     }),
   );
+  app.post('/chatgpt/auth/start', async (c) => {
+    try {
+      return c.json({
+        authorizationUrl: await platform.config.chatgptAuth!.start({
+          reconsent: platform.config.chatgptAuth!.status().needsReconsent,
+        }),
+      });
+    } catch {
+      return c.json({ error: 'Could not start ChatGPT sign-in.' }, 503);
+    }
+  });
+  app.post('/chatgpt/auth/cancel', (c) => {
+    platform.config.chatgptAuth!.cancel();
+    return c.json({ ok: true });
+  });
+  app.get('/chatgpt/models', async (c) => {
+    try {
+      return c.json({ models: await platform.config.chatgptAuth!.models() });
+    } catch {
+      return c.json({ error: 'Could not load ChatGPT models.' }, 503);
+    }
+  });
+  app.put('/chatgpt/model', async (c) => {
+    const data = z
+      .object({ model: z.string().min(1).max(200) })
+      .strict()
+      .safeParse(await c.req.json().catch(() => null));
+    if (!data.success)
+      return c.json({ error: 'Select a listed ChatGPT model.' }, 400);
+    try {
+      const models = await platform.config.chatgptAuth!.models();
+      if (!models.some((model) => model.slug === data.data.model))
+        return c.json(
+          { error: 'That model is not available to this ChatGPT account.' },
+          400,
+        );
+      await platform.config.chatgptAuth!.selectModel(data.data.model);
+      platform.config.modelProvider = 'chatgpt-plan';
+      await platform.config.chatgptAuth!.setProvider('chatgpt-plan');
+      return c.json({ ok: true });
+    } catch {
+      return c.json({ error: 'Could not select the ChatGPT model.' }, 503);
+    }
+  });
+  app.delete('/chatgpt/auth', async (c) => {
+    const revoked = await platform.config.chatgptAuth!.disconnect();
+    platform.config.modelProvider = 'openai-compatible';
+    await platform.config.chatgptAuth!.setProvider('openai-compatible');
+    return c.json({ ok: true, revoked });
+  });
+  app.put('/model-provider', async (c) => {
+    const data = z
+      .object({ provider: z.enum(['chatgpt-plan', 'openai-compatible']) })
+      .strict()
+      .safeParse(await c.req.json().catch(() => null));
+    if (!data.success) return c.json({ error: 'Choose a text provider.' }, 400);
+    if (
+      data.data.provider === 'chatgpt-plan' &&
+      !platform.config.chatgptAuth?.status().usable
+    )
+      return c.json(
+        { error: 'Connect ChatGPT before selecting this provider.' },
+        400,
+      );
+    if (
+      data.data.provider === 'openai-compatible' &&
+      (!platform.config.apiKey || !platform.config.model)
+    )
+      return c.json(
+        { error: 'Configure OPENAI_API_KEY and OPENAI_MODEL first.' },
+        400,
+      );
+    platform.config.modelProvider = data.data.provider;
+    await platform.config.chatgptAuth!.setProvider(data.data.provider);
+    return c.json({ ok: true });
+  });
   app.post('/spaces', async (c) => {
     const data = z
       .object({

@@ -8,6 +8,19 @@ import { createApp } from './app.js';
 import { WorkspaceStore } from './workspace.js';
 import { Platform } from './platform.js';
 import type { PlatformConfig } from './platform-config.js';
+import { ChatGPTAuth } from './chatgpt-auth.js';
+import { dirname, resolve } from 'node:path';
+const chatgptAuth = await ChatGPTAuth.open(
+  process.env.CHATGPT_AUTH_FILE ??
+    resolve(
+      dirname(process.env.DATABASE_PATH ?? 'data/opendots.sqlite'),
+      'chatgpt-auth.json',
+    ),
+  {
+    callbackHost: process.env.CHATGPT_CALLBACK_HOST ?? '127.0.0.1',
+    callbackPort: Number(process.env.CHATGPT_CALLBACK_PORT ?? 0),
+  },
+);
 const host = process.env.HOST ?? '127.0.0.1';
 const port = Number(process.env.PORT ?? 4310);
 const ownerToken = process.env.OWNER_TOKEN;
@@ -49,6 +62,8 @@ const config: PlatformConfig = {
   slackDotId: process.env.SLACK_DOT_ID || undefined,
   runtimeUrl: `http://${host === '::1' ? '[::1]' : '127.0.0.1'}:${port}/api/copilotkit`,
   ownerToken,
+  chatgptAuth,
+  modelProvider: chatgptAuth.provider(),
 };
 const platform = new Platform(store, workspace, config);
 const researchConfig = {
@@ -56,6 +71,8 @@ const researchConfig = {
   apiKey: config.apiKey,
   model: config.model,
   baseUrl: config.baseUrl,
+  chatgptAuth,
+  modelProvider: () => config.modelProvider,
   browserUrl: config.browserUrl,
   browserSecret: config.browserSecret,
 };

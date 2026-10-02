@@ -108,6 +108,17 @@ export interface SetupStatus {
   voice: boolean;
   slack: string;
   missing: string[];
+  modelProvider?: 'openai-compatible' | 'chatgpt-plan';
+  chatgpt?: {
+    connected: boolean;
+    sharing?: boolean;
+    usable?: boolean;
+    needsReconsent?: boolean;
+    email?: string;
+    model?: string;
+    name?: string;
+  };
+  apiProviderAvailable?: boolean;
 }
 export interface WorkspaceState {
   spaces: Space[];

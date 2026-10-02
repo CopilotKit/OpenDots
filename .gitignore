@@ -12,6 +12,9 @@ RESEARCH.md
 .DS_Store
 
 data/
+chatgpt-auth.json
+chatgpt-auth.json.*.tmp
+chatgpt-auth.json.corrupt-*
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

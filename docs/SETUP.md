@@ -27,18 +27,35 @@ Open http://127.0.0.1:4310. Keep the server running for background work.
 
 Edit `.env` on the server and restart after changes:
 
-| Variable                                      | Purpose                                                   |
-| --------------------------------------------- | --------------------------------------------------------- |
-| `INTELLIGENCE_API_KEY`                        | Project credential for conversation persistence           |
-| `INTELLIGENCE_API_URL`, `INTELLIGENCE_WS_URL` | Endpoint overrides for your Intelligence deployment       |
-| `OPENAI_API_KEY`, `OPENAI_MODEL`              | Model credential and model identifier                     |
-| `OPENAI_BASE_URL`                             | Compatible model API endpoint                             |
-| `OWNER_ID`                                    | Stable identity used for this deployment's conversations  |
-| `DATABASE_PATH`                               | SQLite file containing pages, workspace and work metadata |
-| `OWNER_TOKEN`                                 | Application access token; required for external bindings  |
-| `APP_ORIGIN`                                  | Exact browser origin when using a proxy or custom domain  |
+| Variable                                      | Purpose                                                    |
+| --------------------------------------------- | ---------------------------------------------------------- |
+| `INTELLIGENCE_API_KEY`                        | Project credential for conversation persistence            |
+| `INTELLIGENCE_API_URL`, `INTELLIGENCE_WS_URL` | Endpoint overrides for your Intelligence deployment        |
+| `OPENAI_API_KEY`, `OPENAI_MODEL`              | Optional OpenAI-compatible model credential and identifier |
+| `OPENAI_BASE_URL`                             | Compatible model API endpoint                              |
+| `CHATGPT_AUTH_FILE`                           | Optional protected ChatGPT credential file override        |
+| `OWNER_ID`                                    | Stable identity used for this deployment's conversations   |
+| `DATABASE_PATH`                               | SQLite file containing pages, workspace and work metadata  |
+| `OWNER_TOKEN`                                 | Application access token; required for external bindings   |
+| `APP_ORIGIN`                                  | Exact browser origin when using a proxy or custom domain   |
 
 The model environment variable names follow the configured provider adapter. Provider credentials belong in `.env`, not client-side variables or source code. Conversation history lives in the configured Intelligence project; copying the SQLite file alone does not back up that history.
+
+## Text models and ChatGPT plans
+
+OpenDots supports two explicitly selected text providers. Configure `INTELLIGENCE_API_KEY` for conversation persistence in either case.
+
+**ChatGPT plan:** Open **Settings & setup → Continue with ChatGPT**. Sign in to an eligible ChatGPT Plus or Pro account, approve plan usage, then choose one of the models listed for that account. The OAuth flow requests only identity and plan-inference permissions. Eligible model requests use the user's applicable ChatGPT plan limits and credits; Plus usage limits can be shared with other apps, and this is not unlimited usage. Use **Manage usage** in Settings to review or change access.
+
+Tokens stay on the server in `CHATGPT_AUTH_FILE`, which defaults to `chatgpt-auth.json` beside `DATABASE_PATH` (`/data/chatgpt-auth.json` in Compose). The file is written atomically with owner-only file permissions, limited to 1 MB, and rejected when the credential path or its directory is a symbolic link. It is ignored by Git. Never commit or copy it into an image. Compose preserves it in the existing `opendots-data` volume. Refresh tokens rotate and are refreshed server-side for page chat, scheduled turns, Slack, and delegated text compute.
+
+The credential file is **not encrypted at rest** and this implementation does not yet coordinate multiple OpenDots processes through an interprocess lock. Anyone who can read the server account's files can read these tokens. Use OS full-disk encryption, keep the credential directory private, and run only one OpenDots server process against a given credential file. OpenDots has not integrated OpenAI's DevKit because its repository uses a noncommercial license incompatible with this project's MIT license.
+
+When ChatGPT plan is selected, failed, expired, revoked, or rate-limited plan requests do not fall back to an API key. Reconnect ChatGPT or explicitly switch to the configured OpenAI-compatible provider in Settings. The alternative remains `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_BASE_URL`; custom compatible providers keep their existing Chat Completions behavior. Signing into ChatGPT selects it as the text provider. Disconnect attempts OpenAI session revocation and removes local tokens; if the server cannot confirm revocation, disconnect OpenDots separately from ChatGPT Settings.
+
+The loopback sign-in callback uses `http://127.0.0.1:<port>/auth/callback`, and validates the callback Host against that URI. Compose binds inside the container for host forwarding but publishes port 1455 only on host loopback (`127.0.0.1:1455`); LAN clients cannot reach the published listener. A remote VM cannot receive a callback to the browser computer's `127.0.0.1`. OpenAI documents a protected credential transfer workflow for VMs, but OpenDots does not yet provide VM credential import or destination host-ID management; remote VM ChatGPT sign-in is not supported by this UI. Do not copy the local auth file to a VM without a deliberate secure transfer and host-ID plan. Do not send it through a browser or commit it. Use the API-key provider for remote deployments until that workflow is implemented.
+
+Realtime voice remains separate and still requires `VOICE_API_KEY` and `VOICE_MODEL`. ChatGPT-plan access applies to text inference, not the audio transport.
 
 ## Pages and page conversations
 

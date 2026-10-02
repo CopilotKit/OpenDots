@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
+import { api } from './api';
 import type { Dot, Memory, State, WorkspaceState } from '../shared/types';
 export type Dialog =
   | { type: 'space' }
@@ -55,7 +56,43 @@ export function WorkspaceDialog({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [provider, setProvider] = useState(
+    workspace.setup.modelProvider ?? 'openai-compatible',
+  );
+  const [chatgptModels, setChatgptModels] = useState<
+    { slug: string; displayName: string }[]
+  >([]);
+  const [modelBusy, setModelBusy] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
   const container = useRef<HTMLElement>(null);
+  useEffect(() => {
+    setProvider(workspace.setup.modelProvider ?? 'openai-compatible');
+    if (workspace.setup.chatgpt?.connected) setSigningIn(false);
+    if (
+      dialog.type !== 'settings' ||
+      !workspace.setup.chatgpt?.connected ||
+      !workspace.setup.chatgpt?.sharing
+    )
+      return;
+    let active = true;
+    void api<{ models: { slug: string; displayName: string }[] }>(
+      '/chatgpt/models',
+    )
+      .then((result) => {
+        if (active) setChatgptModels(result.models);
+      })
+      .catch(() => {
+        if (active) setChatgptModels([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    dialog.type,
+    workspace.setup.modelProvider,
+    workspace.setup.chatgpt?.connected,
+    workspace.setup.chatgpt?.sharing,
+  ]);
   useEffect(() => {
     const previous =
       document.activeElement instanceof HTMLElement
@@ -360,10 +397,209 @@ export function WorkspaceDialog({
           )}
           {dialog.type === 'settings' && (
             <div className="config-note">
+              <strong>Text model</strong>
+              {workspace.setup.chatgpt?.connected ? (
+                <>
+                  <p>
+                    ChatGPT account · Connected ✓
+                    {workspace.setup.chatgpt?.sharing
+                      ? ' · Plan usage enabled'
+                      : ' · Plan usage needs permission'}
+                    {provider === 'chatgpt-plan'
+                      ? ' · Selected'
+                      : ' · Not selected'}
+                  </p>
+                  <p>{workspace.setup.chatgpt.email ?? 'ChatGPT account'}</p>
+                  {workspace.setup.chatgpt?.sharing && (
+                    <>
+                      <label className="field-label" htmlFor="chatgpt-model">
+                        Model
+                      </label>
+                      <select
+                        id="chatgpt-model"
+                        value={workspace.setup.chatgpt.model ?? ''}
+                        disabled={modelBusy || !chatgptModels.length}
+                        onChange={async (event) => {
+                          setModelBusy(true);
+                          const ok = await mutate('/chatgpt/model', 'PUT', {
+                            model: event.target.value,
+                          });
+                          setModelBusy(false);
+                          if (!ok)
+                            setError('Could not select that ChatGPT model.');
+                        }}
+                      >
+                        {!chatgptModels.length && (
+                          <option value="">Loading available models…</option>
+                        )}
+                        {chatgptModels.map((model) => (
+                          <option key={model.slug} value={model.slug}>
+                            {model.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )}
+                  <div className="button-row">
+                    <a
+                      href="https://chatgpt.com/settings/usage"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Manage usage ↗
+                    </a>
+                    <button
+                      type="button"
+                      disabled={modelBusy}
+                      onClick={async () => {
+                        setModelBusy(true);
+                        const result = await api<{ revoked: boolean }>(
+                          '/chatgpt/auth',
+                          'DELETE',
+                        );
+                        setProvider('openai-compatible');
+                        setModelBusy(false);
+                        if (!result.revoked)
+                          setError(
+                            'Disconnected locally. OpenAI could not confirm remote revocation; you can disconnect OpenDots from ChatGPT Settings.',
+                          );
+                        else setError('ChatGPT disconnected.');
+                      }}
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                  <p className="muted">
+                    Eligible requests use your ChatGPT plan limits. There is no
+                    automatic API-key fallback.
+                  </p>
+                  {workspace.setup.chatgpt?.needsReconsent && !signingIn && (
+                    <button
+                      type="button"
+                      disabled={modelBusy}
+                      onClick={async () => {
+                        setSigningIn(true);
+                        const popup = window.open('about:blank', '_blank');
+                        try {
+                          const result = await api<{
+                            authorizationUrl: string;
+                          }>('/chatgpt/auth/start', 'POST', {});
+                          if (popup)
+                            popup.location.href = result.authorizationUrl;
+                          else window.location.href = result.authorizationUrl;
+                        } catch {
+                          popup?.close();
+                          setSigningIn(false);
+                          setError(
+                            'Could not request ChatGPT plan permission.',
+                          );
+                        }
+                      }}
+                    >
+                      Enable ChatGPT plan usage
+                    </button>
+                  )}
+                  {workspace.setup.chatgpt?.usable &&
+                    workspace.setup.modelProvider !== 'chatgpt-plan' && (
+                      <button
+                        type="button"
+                        disabled={modelBusy}
+                        onClick={async () => {
+                          setModelBusy(true);
+                          const ok = await mutate('/model-provider', 'PUT', {
+                            provider: 'chatgpt-plan',
+                          });
+                          setModelBusy(false);
+                          if (ok) setProvider('chatgpt-plan');
+                        }}
+                      >
+                        Use ChatGPT plan
+                      </button>
+                    )}
+                </>
+              ) : (
+                <>
+                  <p>Use your ChatGPT plan</p>
+                  {signingIn ? (
+                    <>
+                      <p>
+                        Opening ChatGPT sign-in… Complete authorization in your
+                        browser.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void api('/chatgpt/auth/cancel', 'POST', {});
+                          setSigningIn(false);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={modelBusy}
+                      onClick={async () => {
+                        setSigningIn(true);
+                        const popup = window.open('about:blank', '_blank');
+                        try {
+                          const result = await api<{
+                            authorizationUrl: string;
+                          }>('/chatgpt/auth/start', 'POST', {});
+                          if (popup)
+                            popup.location.href = result.authorizationUrl;
+                          else window.location.href = result.authorizationUrl;
+                        } catch {
+                          popup?.close();
+                          setSigningIn(false);
+                          setError('Could not start ChatGPT sign-in.');
+                        }
+                      }}
+                    >
+                      {workspace.setup.chatgpt?.needsReconsent
+                        ? 'Enable ChatGPT plan usage'
+                        : 'Continue with ChatGPT'}
+                    </button>
+                  )}
+                  <p className="muted">
+                    Use your eligible Plus / Pro allowance. No OpenAI API key
+                    required.
+                  </p>
+                </>
+              )}
+              <hr />
+              <strong>
+                OpenAI-compatible API
+                {provider === 'openai-compatible' ? ' · Selected' : ''}
+              </strong>
+              <p>
+                {workspace.setup.apiProviderAvailable
+                  ? 'Configured from the server environment.'
+                  : 'Configure OPENAI_API_KEY and OPENAI_MODEL in the server environment.'}
+              </p>
+              {workspace.setup.chatgpt?.connected &&
+                workspace.setup.modelProvider !== 'openai-compatible' &&
+                workspace.setup.apiProviderAvailable && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const ok = await mutate('/model-provider', 'PUT', {
+                        provider: 'openai-compatible',
+                      });
+                      if (ok) setProvider('openai-compatible');
+                    }}
+                  >
+                    Switch to API-key provider
+                  </button>
+                )}
+              <p className="muted">
+                Realtime voice still requires its separate VOICE_API_KEY.
+              </p>
               <strong>Service setup</strong>
               <p>
                 {workspace.setup.missing.length
-                  ? `Add ${workspace.setup.missing.join(', ')} to the server environment, then restart.`
+                  ? `Still needed: ${workspace.setup.missing.map((item) => (item === 'ChatGPT plan connection/model' ? 'ChatGPT plan connection (use Continue with ChatGPT above)' : `${item} in the server environment`)).join(', ')}. Restart after changing environment settings.`
                   : 'Text configuration is present. A successful conversation confirms connectivity.'}
               </p>
               <p>
