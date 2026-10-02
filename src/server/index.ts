@@ -47,6 +47,21 @@ const config: PlatformConfig = {
     .map((value) => value.trim())
     .filter(Boolean),
   slackDotId: process.env.SLACK_DOT_ID || undefined,
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || undefined,
+  telegramChannel: process.env.TELEGRAM_CHANNEL_NAME || 'opendots-telegram',
+  telegramUsers: (process.env.TELEGRAM_USER_IDS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+  telegramDotId: process.env.TELEGRAM_DOT_ID || undefined,
+  telegramMode:
+    (process.env.TELEGRAM_MODE as PlatformConfig['telegramMode']) || 'polling',
+  telegramWebhookDomain: process.env.TELEGRAM_WEBHOOK_DOMAIN || undefined,
+  telegramWebhookPath: process.env.TELEGRAM_WEBHOOK_PATH || undefined,
+  telegramWebhookPort: process.env.TELEGRAM_WEBHOOK_PORT
+    ? Number(process.env.TELEGRAM_WEBHOOK_PORT)
+    : undefined,
+  telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || undefined,
   runtimeUrl: `http://${host === '::1' ? '[::1]' : '127.0.0.1'}:${port}/api/copilotkit`,
   ownerToken,
 };
@@ -107,7 +122,7 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, (info) => {
     .start()
     .catch((error) =>
       reportChannelFailure(
-        'Slack Channels activation failed; check setup status',
+        'Channels activation failed; check setup status',
         [safeFailure(error)],
       ),
     );
