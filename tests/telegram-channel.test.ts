@@ -4,6 +4,7 @@ import type {
   IncomingMessage,
   Thread,
 } from '@copilotkit/channels';
+import { HttpAgent } from '@ag-ui/client';
 import { createTelegramChannel, telegramHandlers, telegramIdentity } from '../src/server/telegram-channel.js';
 
 const config = { telegramUsers: ['12345'] };
@@ -116,7 +117,7 @@ it('does not leak provider errors into Telegram replies or reports', async () =>
 it('registers a direct Telegram adapter without starting network I/O', () => {
   const channel = createTelegramChannel({
     name: 'test-telegram',
-    agent: () => ({}) as never,
+    agent: () => new HttpAgent({ url: 'http://unused.invalid' }),
     config,
     ownerId: 'owner',
     paused: () => false,
