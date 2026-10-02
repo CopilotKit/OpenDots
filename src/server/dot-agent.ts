@@ -18,6 +18,7 @@ import { Store } from './store.js';
 import { WorkspaceStore } from './workspace.js';
 import type { PlatformConfig } from './platform-config.js';
 import { browserResponse } from './research.js';
+import { createChatgptPlanFetch } from './chatgpt-plan-request.js';
 const channelError = () => ({
   type: EventType.RUN_ERROR,
   message:
@@ -75,8 +76,11 @@ export class DotAgent extends AbstractAgent {
         );
         if (
           !this.config.intelligenceKey ||
-          !this.config.apiKey ||
-          !this.config.model
+          ((this.config.chatgptAuth?.provider() ??
+            this.config.modelProvider) === 'chatgpt-plan'
+            ? !this.config.chatgptAuth?.status().connected ||
+              !this.config.chatgptAuth.status().model
+            : !this.config.apiKey || !this.config.model)
         )
           throw new Error('Intelligence and model configuration are required.');
         const initialSettings = this.store.settings();
@@ -179,11 +183,26 @@ export class DotAgent extends AbstractAgent {
           initialSettings.memoryAllowed && dot.memoryAllowed
             ? this.store.memories().map((memory) => memory.text)
             : [];
-        const adapter = openaiCompatibleText(this.config.model, {
-          apiKey: this.config.apiKey,
-          baseURL: this.config.baseUrl ?? 'https://api.openai.com/v1',
-          api: 'chat-completions',
-          maxRetries: 1,
+        const planProvider =
+          (this.config.chatgptAuth?.provider() ?? this.config.modelProvider) ===
+          'chatgpt-plan';
+        const selectedModel = planProvider
+          ? this.config.chatgptAuth!.status().model!
+          : this.config.model!;
+        const adapter = openaiCompatibleText(selectedModel, {
+          apiKey: planProvider ? 'chatgpt-plan' : this.config.apiKey!,
+          baseURL: planProvider
+            ? 'https://api.openai.com/v1'
+            : (this.config.baseUrl ?? 'https://api.openai.com/v1'),
+          api: planProvider ? 'responses' : 'chat-completions',
+          maxRetries: planProvider ? 0 : 1,
+          ...(planProvider
+            ? {
+                fetch: createChatgptPlanFetch(() =>
+                  this.config.chatgptAuth!.getValidAccessToken(),
+                ),
+              }
+            : {}),
         });
         const serverTools = [
           ...tools,
@@ -226,7 +245,9 @@ export class DotAgent extends AbstractAgent {
               abortController: ctx.abortController,
               threadId: ctx.input.threadId,
               runId: ctx.input.runId,
-              modelOptions: { max_completion_tokens: 2200 },
+              modelOptions: planProvider
+                ? { store: false }
+                : { max_completion_tokens: 2200 },
               agentLoopStrategy: maxIterations(
                 dot.skillDeliveryEnabled && conversation.learningContainerId
                   ? 10
@@ -251,12 +272,22 @@ export class DotAgent extends AbstractAgent {
             forwardedProps: {},
           })
           .subscribe({
-            next: (event) =>
-              subscriber.next(
-                this.channel && event.type === EventType.RUN_ERROR
-                  ? channelError()
-                  : event,
-              ),
+            next: (event) => {
+              if (this.channel && event.type === EventType.RUN_ERROR)
+                subscriber.next(channelError());
+              else if (planProvider && event.type === EventType.RUN_ERROR) {
+                const code =
+                  'code' in event && typeof event.code === 'string'
+                    ? event.code
+                    : '';
+                subscriber.next({
+                  ...event,
+                  message: code.startsWith('subscription_sharing_usage_')
+                    ? 'Your ChatGPT plan usage limit was reached. Reconnect later or explicitly switch providers in Settings.'
+                    : 'ChatGPT could not complete this request. Reconnect ChatGPT or explicitly switch providers in Settings.',
+                });
+              } else subscriber.next(event);
+            },
             error: (error: unknown) => {
               if (this.channel) {
                 subscriber.next(channelError());
