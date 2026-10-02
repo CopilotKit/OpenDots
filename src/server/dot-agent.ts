@@ -19,6 +19,7 @@ import { WorkspaceStore } from './workspace.js';
 import type { PlatformConfig } from './platform-config.js';
 import { browserResponse } from './research.js';
 import { createChatgptPlanFetch } from './chatgpt-plan-request.js';
+import { chatgptPlanErrorMessage } from './chatgpt-plan-request.js';
 const channelError = () => ({
   type: EventType.RUN_ERROR,
   message:
@@ -280,18 +281,44 @@ export class DotAgent extends AbstractAgent {
                   'code' in event && typeof event.code === 'string'
                     ? event.code
                     : '';
-                subscriber.next({
-                  ...event,
-                  message: code.startsWith('subscription_sharing_usage_')
-                    ? 'Your ChatGPT plan usage limit was reached. Reconnect later or explicitly switch providers in Settings.'
-                    : 'ChatGPT could not complete this request. Reconnect ChatGPT or explicitly switch providers in Settings.',
-                });
+                const message =
+                  code === 'subscription_sharing_usage_limit_exceeded'
+                    ? 'Your ChatGPT plan usage limit was reached. Try again later or explicitly switch providers in Settings.'
+                    : code === 'subscription_sharing_usage_unavailable'
+                      ? 'ChatGPT plan usage is temporarily unavailable. Try again later or explicitly switch providers in Settings.'
+                      : code === 'subscription_sharing_user_not_eligible'
+                        ? 'This ChatGPT account or workspace is not eligible for plan usage. Explicitly switch providers in Settings if you want to use API billing.'
+                        : 'ChatGPT could not complete this request. Reconnect ChatGPT or explicitly switch providers in Settings.';
+                const safeError = { ...event, message } as typeof event & {
+                  error?: { message?: string; code?: string };
+                };
+                if (safeError.error)
+                  safeError.error = { ...safeError.error, message };
+                subscriber.next(safeError);
               } else subscriber.next(event);
             },
             error: (error: unknown) => {
               if (this.channel) {
                 subscriber.next(channelError());
                 subscriber.complete();
+              } else if (planProvider) {
+                const safeMessages = [
+                  chatgptPlanErrorMessage(
+                    'subscription_sharing_usage_limit_exceeded',
+                  ),
+                  chatgptPlanErrorMessage(
+                    'subscription_sharing_usage_unavailable',
+                  ),
+                  chatgptPlanErrorMessage(
+                    'subscription_sharing_user_not_eligible',
+                  ),
+                  chatgptPlanErrorMessage(),
+                ];
+                const message =
+                  error instanceof Error && safeMessages.includes(error.message)
+                    ? error.message
+                    : chatgptPlanErrorMessage();
+                subscriber.error(new Error(message));
               } else subscriber.error(error);
             },
             complete: () => subscriber.complete(),

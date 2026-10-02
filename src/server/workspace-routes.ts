@@ -34,7 +34,9 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
   app.post('/chatgpt/auth/start', async (c) => {
     try {
       return c.json({
-        authorizationUrl: await platform.config.chatgptAuth!.start(),
+        authorizationUrl: await platform.config.chatgptAuth!.start({
+          reconsent: platform.config.chatgptAuth!.status().needsReconsent,
+        }),
       });
     } catch {
       return c.json({ error: 'Could not start ChatGPT sign-in.' }, 503);
@@ -87,7 +89,7 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
     if (!data.success) return c.json({ error: 'Choose a text provider.' }, 400);
     if (
       data.data.provider === 'chatgpt-plan' &&
-      !platform.config.chatgptAuth?.status().connected
+      !platform.config.chatgptAuth?.status().usable
     )
       return c.json(
         { error: 'Connect ChatGPT before selecting this provider.' },

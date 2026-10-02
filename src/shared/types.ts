@@ -111,6 +111,9 @@ export interface SetupStatus {
   modelProvider?: 'openai-compatible' | 'chatgpt-plan';
   chatgpt?: {
     connected: boolean;
+    sharing?: boolean;
+    usable?: boolean;
+    needsReconsent?: boolean;
     email?: string;
     model?: string;
     name?: string;

@@ -26,7 +26,7 @@ export function configured(config: Config): boolean {
     config.mode === 'sample' ||
     Boolean(
       ((config.modelProvider?.() === 'chatgpt-plan' &&
-        config.chatgptAuth?.status().connected) ||
+        config.chatgptAuth?.status().usable) ||
         (config.modelProvider?.() !== 'chatgpt-plan' &&
           config.apiKey &&
           config.model)) &&
@@ -169,12 +169,22 @@ export async function research(
       ),
     },
   );
-  if (!completion.ok && planProvider)
+  if (!completion.ok && planProvider) {
+    const errorBody: unknown = await completion.json().catch(() => null);
+    const code = z
+      .object({ error: z.object({ code: z.string().optional() }).optional() })
+      .safeParse(errorBody).data?.error?.code;
     throw new Error(
-      completion.status === 429
-        ? 'Your ChatGPT plan usage limit was reached. Reconnect later or explicitly switch providers in Settings.'
-        : 'ChatGPT could not complete this request. Reconnect ChatGPT or explicitly switch providers in Settings.',
+      code === 'subscription_sharing_usage_limit_exceeded' ||
+        completion.status === 429
+        ? 'Your ChatGPT plan usage limit was reached. Try again later or explicitly switch providers in Settings.'
+        : code === 'subscription_sharing_usage_unavailable'
+          ? 'ChatGPT plan usage is temporarily unavailable. Try again later or explicitly switch providers in Settings.'
+          : code === 'subscription_sharing_user_not_eligible'
+            ? 'This ChatGPT account or workspace is not eligible for plan usage. Explicitly switch providers in Settings if you want to use API billing.'
+            : 'ChatGPT could not complete this request. Reconnect ChatGPT or explicitly switch providers in Settings.',
     );
+  }
   if (!completion.ok)
     throw new Error(
       `Model provider returned HTTP ${completion.status}. Check the server's model configuration and quota.`,
@@ -212,11 +222,13 @@ export async function research(
             output += event.delta ?? '';
           if (event.type === 'response.failed')
             throw new Error(
-              event.response?.error?.code?.startsWith(
-                'subscription_sharing_usage_',
-              )
-                ? 'Your ChatGPT plan usage limit was reached. Reconnect later or explicitly switch providers in Settings.'
-                : 'ChatGPT could not complete this request. Check your connection or switch providers in Settings.',
+              event.response?.error?.code ===
+                'subscription_sharing_usage_limit_exceeded'
+                ? 'Your ChatGPT plan usage limit was reached. Try again later or explicitly switch providers in Settings.'
+                : event.response?.error?.code ===
+                    'subscription_sharing_usage_unavailable'
+                  ? 'ChatGPT plan usage is temporarily unavailable. Try again later or explicitly switch providers in Settings.'
+                  : 'ChatGPT could not complete this request. Check your connection or switch providers in Settings.',
             );
           if (event.type === 'response.incomplete')
             throw new Error('ChatGPT returned an incomplete response.');
@@ -228,12 +240,21 @@ export async function research(
         const last = JSON.parse(buffer.slice(6)) as {
           type?: string;
           delta?: string;
+          response?: { error?: { code?: string } };
         };
         if (last.type === 'response.output_text.delta')
           output += last.delta ?? '';
         if (last.type === 'response.completed') done = true;
-        if (last.type === 'response.failed')
-          throw new Error('ChatGPT could not complete this request.');
+        if (last.type === 'response.failed') {
+          const code = last.response?.error?.code;
+          throw new Error(
+            code === 'subscription_sharing_usage_limit_exceeded'
+              ? 'Your ChatGPT plan usage limit was reached. Try again later or explicitly switch providers in Settings.'
+              : code === 'subscription_sharing_usage_unavailable'
+                ? 'ChatGPT plan usage is temporarily unavailable. Try again later or explicitly switch providers in Settings.'
+                : 'ChatGPT could not complete this request. Check your connection or switch providers in Settings.',
+          );
+        }
         if (last.type === 'response.incomplete')
           throw new Error('ChatGPT returned an incomplete response.');
       } catch (error) {

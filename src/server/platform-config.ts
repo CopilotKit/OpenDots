@@ -38,7 +38,7 @@ export function setupStatus(
   const missing = [
     !config.intelligenceKey && 'INTELLIGENCE_API_KEY',
     modelProvider === 'chatgpt-plan'
-      ? (!config.chatgptAuth?.status().connected ||
+      ? (!config.chatgptAuth?.status().usable ||
           !config.chatgptAuth?.status().model) &&
         'ChatGPT plan connection/model'
       : (!config.apiKey && 'OPENAI_API_KEY') ||
@@ -60,7 +60,7 @@ export function setupStatus(
     intelligence: !!config.intelligenceKey,
     model:
       modelProvider === 'chatgpt-plan'
-        ? !!config.chatgptAuth?.status().connected
+        ? !!config.chatgptAuth?.status().usable
         : !!(config.apiKey && config.model),
     modelProvider,
     chatgpt: config.chatgptAuth?.status() ?? { connected: false },

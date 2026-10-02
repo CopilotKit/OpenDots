@@ -68,7 +68,11 @@ export function WorkspaceDialog({
   useEffect(() => {
     setProvider(workspace.setup.modelProvider ?? 'openai-compatible');
     if (workspace.setup.chatgpt?.connected) setSigningIn(false);
-    if (dialog.type !== 'settings' || !workspace.setup.chatgpt?.connected)
+    if (
+      dialog.type !== 'settings' ||
+      !workspace.setup.chatgpt?.connected ||
+      !workspace.setup.chatgpt?.sharing
+    )
       return;
     let active = true;
     void api<{ models: { slug: string; displayName: string }[] }>(
@@ -87,6 +91,7 @@ export function WorkspaceDialog({
     dialog.type,
     workspace.setup.modelProvider,
     workspace.setup.chatgpt?.connected,
+    workspace.setup.chatgpt?.sharing,
   ]);
   useEffect(() => {
     const previous =
@@ -396,40 +401,48 @@ export function WorkspaceDialog({
               {workspace.setup.chatgpt?.connected ? (
                 <>
                   <p>
-                    ChatGPT plan · Connected ✓
+                    ChatGPT account · Connected ✓
+                    {workspace.setup.chatgpt?.sharing
+                      ? ' · Plan usage enabled'
+                      : ' · Plan usage needs permission'}
                     {provider === 'chatgpt-plan'
                       ? ' · Selected'
                       : ' · Not selected'}
                   </p>
                   <p>{workspace.setup.chatgpt.email ?? 'ChatGPT account'}</p>
-                  <label className="field-label" htmlFor="chatgpt-model">
-                    Model
-                  </label>
-                  <select
-                    id="chatgpt-model"
-                    value={workspace.setup.chatgpt.model ?? ''}
-                    disabled={modelBusy || !chatgptModels.length}
-                    onChange={async (event) => {
-                      setModelBusy(true);
-                      const ok = await mutate('/chatgpt/model', 'PUT', {
-                        model: event.target.value,
-                      });
-                      setModelBusy(false);
-                      if (!ok) setError('Could not select that ChatGPT model.');
-                    }}
-                  >
-                    {!chatgptModels.length && (
-                      <option value="">Loading available models…</option>
-                    )}
-                    {chatgptModels.map((model) => (
-                      <option key={model.slug} value={model.slug}>
-                        {model.displayName}
-                      </option>
-                    ))}
-                  </select>
+                  {workspace.setup.chatgpt?.sharing && (
+                    <>
+                      <label className="field-label" htmlFor="chatgpt-model">
+                        Model
+                      </label>
+                      <select
+                        id="chatgpt-model"
+                        value={workspace.setup.chatgpt.model ?? ''}
+                        disabled={modelBusy || !chatgptModels.length}
+                        onChange={async (event) => {
+                          setModelBusy(true);
+                          const ok = await mutate('/chatgpt/model', 'PUT', {
+                            model: event.target.value,
+                          });
+                          setModelBusy(false);
+                          if (!ok)
+                            setError('Could not select that ChatGPT model.');
+                        }}
+                      >
+                        {!chatgptModels.length && (
+                          <option value="">Loading available models…</option>
+                        )}
+                        {chatgptModels.map((model) => (
+                          <option key={model.slug} value={model.slug}>
+                            {model.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )}
                   <div className="button-row">
                     <a
-                      href="https://chatgpt.com/#settings/Usage"
+                      href="https://chatgpt.com/settings/usage"
                       target="_blank"
                       rel="noreferrer"
                     >
@@ -460,22 +473,49 @@ export function WorkspaceDialog({
                     Eligible requests use your ChatGPT plan limits. There is no
                     automatic API-key fallback.
                   </p>
-                  {workspace.setup.modelProvider !== 'chatgpt-plan' && (
+                  {workspace.setup.chatgpt?.needsReconsent && !signingIn && (
                     <button
                       type="button"
                       disabled={modelBusy}
                       onClick={async () => {
-                        setModelBusy(true);
-                        const ok = await mutate('/model-provider', 'PUT', {
-                          provider: 'chatgpt-plan',
-                        });
-                        setModelBusy(false);
-                        if (ok) setProvider('chatgpt-plan');
+                        setSigningIn(true);
+                        const popup = window.open('about:blank', '_blank');
+                        try {
+                          const result = await api<{
+                            authorizationUrl: string;
+                          }>('/chatgpt/auth/start', 'POST', {});
+                          if (popup)
+                            popup.location.href = result.authorizationUrl;
+                          else window.location.href = result.authorizationUrl;
+                        } catch {
+                          popup?.close();
+                          setSigningIn(false);
+                          setError(
+                            'Could not request ChatGPT plan permission.',
+                          );
+                        }
                       }}
                     >
-                      Use ChatGPT plan
+                      Enable ChatGPT plan usage
                     </button>
                   )}
+                  {workspace.setup.chatgpt?.usable &&
+                    workspace.setup.modelProvider !== 'chatgpt-plan' && (
+                      <button
+                        type="button"
+                        disabled={modelBusy}
+                        onClick={async () => {
+                          setModelBusy(true);
+                          const ok = await mutate('/model-provider', 'PUT', {
+                            provider: 'chatgpt-plan',
+                          });
+                          setModelBusy(false);
+                          if (ok) setProvider('chatgpt-plan');
+                        }}
+                      >
+                        Use ChatGPT plan
+                      </button>
+                    )}
                 </>
               ) : (
                 <>
@@ -517,7 +557,9 @@ export function WorkspaceDialog({
                         }
                       }}
                     >
-                      Continue with ChatGPT
+                      {workspace.setup.chatgpt?.needsReconsent
+                        ? 'Enable ChatGPT plan usage'
+                        : 'Continue with ChatGPT'}
                     </button>
                   )}
                   <p className="muted">

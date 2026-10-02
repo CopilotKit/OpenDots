@@ -5,33 +5,71 @@ import {
   randomUUID,
   timingSafeEqual,
 } from 'node:crypto';
-import { mkdir, readFile, rename, chmod, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { mkdir, rename, open, lstat, realpath } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import {
+  createRemoteJWKSet,
+  customFetch,
+  jwtVerify,
+  type JWTPayload,
+} from 'jose';
 import { z } from 'zod';
 
 const issuer = 'https://auth.openai.com';
 const resource = 'https://api.openai.com/v1';
-const tokenEndpoint = `${issuer}/api/accounts/oauth/token`;
 const scopes =
   'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
+const MAX_CREDENTIAL_FILE_BYTES = 1_000_000;
+async function assertSafeCredentialDirectory(path: string) {
+  const directory = resolve(dirname(path));
+  const metadata = await lstat(directory);
+  if (!metadata.isDirectory() || metadata.isSymbolicLink())
+    throw new Error(
+      'The ChatGPT credential directory must be a real directory.',
+    );
+  const actual = resolve(await realpath(directory));
+  const same =
+    process.platform === 'win32'
+      ? actual.toLowerCase() === directory.toLowerCase()
+      : actual === directory;
+  if (!same)
+    throw new Error(
+      'The ChatGPT credential directory cannot resolve through a symbolic link.',
+    );
+}
 const profileSchema = z.object({
   clientId: z.string().min(1),
   subject: z.string().min(1),
   email: z.string().email().optional(),
   name: z.string().optional(),
-  idToken: z.string().min(1),
-  accessToken: z.string().min(1),
-  refreshToken: z.string().min(1),
+  idToken: z.string().min(1).optional(),
+  accessToken: z.string().min(1).optional(),
+  refreshToken: z.string().min(1).optional(),
   scopes: z.array(z.string()),
   expiresAt: z.number(),
-  earliestRefreshAt: z.number().optional(),
+  earliestRefreshAt: z.union([z.number(), z.string()]).optional(),
   model: z.string().optional(),
+  pendingRefresh: z
+    .object({
+      accessToken: z.string(),
+      refreshToken: z.string(),
+      idToken: z.string(),
+      scopes: z.array(z.string()),
+      expiresAt: z.number(),
+      earliestRefreshAt: z.union([z.number(), z.string()]).optional(),
+      receivedAt: z.number(),
+    })
+    .optional(),
 });
 const fileSchema = z
   .object({
     version: z.literal(1),
-    extAgentHostId: z.string().uuid(),
+    extAgentHostId: z
+      .string()
+      .regex(
+        /^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      ),
     activeClientId: z.string().optional(),
     issuedClientId: z.string().optional(),
     modelProvider: z.enum(['openai-compatible', 'chatgpt-plan']).optional(),
@@ -52,7 +90,115 @@ const fileSchema = z
   });
 type Profile = z.infer<typeof profileSchema>;
 type AuthFile = z.infer<typeof fileSchema>;
-const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
+let discoveryCache:
+  | Promise<{
+      issuer: string;
+      authorization_endpoint: string;
+      token_endpoint: string;
+      jwks_uri: string;
+      revocation_endpoint?: string;
+    }>
+  | undefined;
+async function discovery() {
+  discoveryCache ??= fetch(`${issuer}/.well-known/openid-configuration`)
+    .then(async (response) => {
+      const raw: unknown = await response.json();
+      const parsed = z
+        .object({
+          issuer: z.literal(issuer),
+          authorization_endpoint: z.string().url(),
+          token_endpoint: z.string().url(),
+          jwks_uri: z.string().url(),
+          revocation_endpoint: z.string().url().optional(),
+        })
+        .parse(raw);
+      for (const endpoint of [
+        parsed.authorization_endpoint,
+        parsed.token_endpoint,
+        parsed.jwks_uri,
+        parsed.revocation_endpoint,
+      ].filter(Boolean))
+        if (new URL(endpoint!).origin !== issuer)
+          throw new Error('Invalid OpenID discovery endpoint.');
+      if (!response.ok) throw new Error('OpenID discovery unavailable.');
+      return parsed;
+    })
+    .catch((error) => {
+      discoveryCache = undefined;
+      throw error;
+    });
+  return discoveryCache;
+}
+async function verifyIdentityToken(
+  token: string,
+  clientId: string,
+  nonce?: string,
+  receivedAt?: number,
+): Promise<JWTPayload> {
+  let config: Awaited<ReturnType<typeof discovery>>;
+  try {
+    config = await discovery();
+  } catch {
+    throw new Error(
+      'ChatGPT identity verification is temporarily unavailable. Your connection has been preserved. Try again shortly.',
+    );
+  }
+  let unavailable = false;
+  try {
+    const jwks = createRemoteJWKSet(new URL(config.jwks_uri), {
+      timeoutDuration: 15_000,
+      [customFetch]: async (url, options) => {
+        try {
+          const response = await fetch(url, options);
+          const value: unknown = await response.clone().json();
+          if (
+            !response.ok ||
+            !value ||
+            typeof value !== 'object' ||
+            !Array.isArray((value as { keys?: unknown }).keys)
+          )
+            throw new Error('JWKS unavailable');
+          return response;
+        } catch {
+          unavailable = true;
+          throw new Error('JWKS unavailable');
+        }
+      },
+    });
+    const { payload } = await jwtVerify(token, jwks, {
+      issuer: config.issuer,
+      audience: clientId,
+      algorithms: ['RS256'],
+      requiredClaims: ['sub', 'exp', 'iat'],
+      clockTolerance: 5,
+      ...(receivedAt === undefined
+        ? {}
+        : { currentDate: new Date(receivedAt) }),
+    });
+    if (
+      typeof payload.sub !== 'string' ||
+      !payload.sub ||
+      typeof payload.iat !== 'number' ||
+      payload.iat > Date.now() / 1000 + 5 ||
+      (nonce !== undefined && payload.nonce !== nonce) ||
+      (payload.azp !== undefined && payload.azp !== clientId) ||
+      (Array.isArray(payload.aud) &&
+        payload.aud.length > 1 &&
+        payload.azp !== clientId)
+    )
+      throw new Error('Invalid identity claims.');
+    return payload;
+  } catch {
+    if (unavailable) {
+      throw new Error(
+        'ChatGPT identity verification is temporarily unavailable. Your connection has been preserved. Try again shortly.',
+      );
+    }
+    throw new Error(
+      'The ChatGPT identity could not be verified. Please sign in again.',
+    );
+  }
+}
 
 interface Attempt {
   state: string;
@@ -63,6 +209,7 @@ interface Attempt {
   previousSubject?: string;
   server: Server;
   consumed: boolean;
+  expiresAt: number;
 }
 
 export class ChatGPTAuth {
@@ -84,12 +231,38 @@ export class ChatGPTAuth {
   ): Promise<ChatGPTAuth> {
     let data: AuthFile = {
       version: 1,
-      extAgentHostId: randomUUID(),
+      extAgentHostId: `urn:uuid:${randomUUID()}`,
       profiles: {},
     };
     let contents: string | undefined;
     try {
-      contents = await readFile(path, 'utf8');
+      await assertSafeCredentialDirectory(path);
+      const metadata = await lstat(path);
+      if (
+        metadata.isSymbolicLink() ||
+        !metadata.isFile() ||
+        metadata.size > MAX_CREDENTIAL_FILE_BYTES
+      )
+        throw new Error(
+          'The ChatGPT credential file must be a regular file smaller than 1 MB.',
+        );
+      if (
+        process.platform !== 'win32' &&
+        ((metadata.mode & 0o077) !== 0 ||
+          (process.getuid && metadata.uid !== process.getuid()))
+      )
+        throw new Error(
+          'The ChatGPT credential file must be owned by this user and readable only by its owner.',
+        );
+      const file = await open(
+        path,
+        fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0),
+      );
+      try {
+        contents = await file.readFile('utf8');
+      } finally {
+        await file.close();
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
         throw new Error(
@@ -98,13 +271,36 @@ export class ChatGPTAuth {
         );
     }
     let invalid = false;
+    let migrationBlocked = false;
     if (contents !== undefined) {
       try {
-        data = fileSchema.parse(JSON.parse(contents));
+        const parsed = JSON.parse(contents) as Record<string, unknown>;
+        if (
+          typeof parsed.extAgentHostId === 'string' &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            parsed.extAgentHostId,
+          )
+        ) {
+          if (
+            Object.keys((parsed.profiles as object) ?? {}).length ||
+            parsed.issuedClientId
+          ) {
+            migrationBlocked = true;
+            throw new Error(
+              'A registered ChatGPT connection cannot change its host ID. Re-register the ChatGPT connection.',
+            );
+          }
+          parsed.extAgentHostId = `urn:uuid:${parsed.extAgentHostId}`;
+        }
+        data = fileSchema.parse(parsed);
       } catch {
         invalid = true;
       }
     }
+    if (migrationBlocked)
+      throw new Error(
+        'A registered ChatGPT connection cannot change its host ID. Re-register the ChatGPT connection.',
+      );
     if (contents !== undefined && invalid) {
       try {
         await rename(path, `${path}.corrupt-${Date.now()}`);
@@ -126,17 +322,21 @@ export class ChatGPTAuth {
   }
 
   private async save() {
-    await mkdir(dirname(this.path), { recursive: true });
+    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+    await assertSafeCredentialDirectory(this.path);
     const temp = `${this.path}.${randomUUID()}.tmp`;
-    await writeFile(temp, JSON.stringify(this.data), {
-      mode: 0o600,
-      flag: 'wx',
-    });
+    const file = await open(temp, 'wx', 0o600);
     try {
-      await chmod(temp, 0o600);
+      await file.writeFile(JSON.stringify(this.data));
+      await file.chmod(0o600);
+      await file.sync();
+      await file.close();
       await rename(temp, this.path);
-      await chmod(this.path, 0o600);
     } catch (error) {
+      await file.close().catch(() => undefined);
+      await import('node:fs/promises').then(({ unlink }) =>
+        unlink(temp).catch(() => undefined),
+      );
       throw new Error('Could not safely save ChatGPT credentials.', {
         cause: error,
       });
@@ -149,8 +349,17 @@ export class ChatGPTAuth {
       : undefined;
     return {
       connected: !!p,
+      sharing: !!p?.scopes.includes('chatgpt.tokens.use.direct'),
+      usable:
+        !!p?.scopes.includes('chatgpt.tokens.use.direct') &&
+        !!p?.refreshToken &&
+        !!p?.model,
       email: p?.email,
-      model: p?.model,
+      model:
+        p?.scopes.includes('chatgpt.tokens.use.direct') && p?.refreshToken
+          ? p.model
+          : undefined,
+      needsReconsent: !!p && !p.scopes.includes('chatgpt.tokens.use.direct'),
       name: p?.name,
       provider: 'chatgpt-plan' as const,
     };
@@ -158,7 +367,7 @@ export class ChatGPTAuth {
   provider() {
     return (
       this.data.modelProvider ??
-      (this.active() ? 'chatgpt-plan' : 'openai-compatible')
+      (this.status().usable ? 'chatgpt-plan' : 'openai-compatible')
     );
   }
   async setProvider(provider: 'openai-compatible' | 'chatgpt-plan') {
@@ -177,7 +386,7 @@ export class ChatGPTAuth {
       : undefined;
   }
 
-  async start(): Promise<string> {
+  async start(options: { reconsent?: boolean } = {}): Promise<string> {
     if (this.attempt) {
       this.attempt.server.close();
       this.attempt = undefined;
@@ -192,10 +401,56 @@ export class ChatGPTAuth {
         return;
       }
       const pending = this.attempt;
-      if (!pending || pending.server !== server || pending.consumed) {
+      if (
+        !pending ||
+        pending.server !== server ||
+        pending.consumed ||
+        Date.now() > pending.expiresAt
+      ) {
         res
           .writeHead(410)
           .end('Sign-in expired. Return to OpenDots and try again.');
+        return;
+      }
+      const expectedHost = new URL(pending.redirectUri).host;
+      const states = url.searchParams.getAll('state');
+      const left = Buffer.from(states[0] ?? '');
+      const right = Buffer.from(pending.state);
+      const stateMatches =
+        left.length === right.length && timingSafeEqual(left, right);
+      const codes = url.searchParams.getAll('code');
+      const issuedIds = url.searchParams.getAll('client_id');
+      const errors = url.searchParams.getAll('error');
+      const dynamicClient = pending.clientId === 'dynamic_agent_client';
+      const returnedClientValid = dynamicClient
+        ? issuedIds.length === 1 &&
+          /^[a-zA-Z0-9_-]{1,200}$/.test(issuedIds[0]) &&
+          issuedIds[0] !== 'dynamic_agent_client'
+        : issuedIds.length === 0 ||
+          (issuedIds.length === 1 && issuedIds[0] === pending.clientId);
+      if (
+        req.headers.host !== expectedHost ||
+        (req.headers.origin && req.headers.origin !== `http://${expectedHost}`)
+      ) {
+        res
+          .writeHead(400)
+          .end('Invalid callback host. Return to OpenDots and try again.');
+        return;
+      }
+      if (
+        states.length !== 1 ||
+        !stateMatches ||
+        codes.length > 1 ||
+        issuedIds.length > 1 ||
+        errors.length > 1 ||
+        !returnedClientValid ||
+        (errors.length ? codes.length !== 0 : codes.length !== 1)
+      ) {
+        res
+          .writeHead(400)
+          .end(
+            'Invalid sign-in callback. Return to the browser tab that started sign-in.',
+          );
         return;
       }
       pending.consumed = true;
@@ -233,7 +488,11 @@ export class ChatGPTAuth {
     if (!address || typeof address === 'string')
       throw new Error('Could not start the local ChatGPT callback.');
     const redirectUri = `http://127.0.0.1:${address.port}/auth/callback`;
-    const current = this.active();
+    const current =
+      this.active() ??
+      (this.data.issuedClientId
+        ? this.data.profiles[this.data.issuedClientId]
+        : undefined);
     const clientId =
       current?.clientId ?? this.data.issuedClientId ?? 'dynamic_agent_client';
     const attempt: Attempt = {
@@ -245,6 +504,7 @@ export class ChatGPTAuth {
       previousSubject: current?.subject,
       server,
       consumed: false,
+      expiresAt: Date.now() + 10 * 60_000,
     };
     this.attempt = attempt;
     const expiry = setTimeout(() => {
@@ -252,7 +512,7 @@ export class ChatGPTAuth {
     }, 10 * 60_000);
     expiry.unref();
     const challenge = createHash('sha256').update(verifier).digest('base64url');
-    const auth = new URL(`${issuer}/api/accounts/authorize`);
+    const auth = new URL((await discovery()).authorization_endpoint);
     const params: Record<string, string> = {
       client_id: clientId,
       response_type: 'code',
@@ -267,8 +527,9 @@ export class ChatGPTAuth {
     };
     if (clientId === 'dynamic_agent_client')
       params.agent_name_hint = 'OpenDots';
-    if (current?.idToken) params.id_token_hint = current.idToken;
+    // Keep persisted tokens out of browser URLs and opener process arguments.
     if (current?.email) params.login_hint = current.email;
+    if (options.reconsent) params.prompt = 'consent';
     for (const [k, v] of Object.entries(params)) auth.searchParams.set(k, v);
     return auth.toString();
   }
@@ -300,7 +561,7 @@ export class ChatGPTAuth {
       this.data.issuedClientId = clientId;
       await this.save();
     }
-    const response = await fetch(tokenEndpoint, {
+    const response = await fetch((await discovery()).token_endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -320,18 +581,17 @@ export class ChatGPTAuth {
         id_token: z.string().min(1),
         expires_in: z.number().positive(),
         scope: z.string(),
-        earliest_refresh_at: z.number().optional(),
+        earliest_refresh_at: z.union([z.number(), z.string()]).optional(),
       })
       .safeParse(raw);
     if (!response.ok || !token.success)
       throw new Error('ChatGPT token exchange failed.');
     if (this.attempt !== a) throw new Error('ChatGPT sign-in was cancelled.');
-    const { payload } = await jwtVerify(token.data.id_token, jwks, {
-      issuer,
-      audience: clientId,
-      requiredClaims: ['sub', 'exp', 'iat'],
-      clockTolerance: 5,
-    });
+    const payload = await verifyIdentityToken(
+      token.data.id_token,
+      clientId,
+      a.nonce,
+    );
     if (
       payload.nonce !== a.nonce ||
       typeof payload.sub !== 'string' ||
@@ -343,8 +603,6 @@ export class ChatGPTAuth {
         'The signed-in ChatGPT account did not match the selected account.',
       );
     const granted = token.data.scope.split(/\s+/).filter(Boolean);
-    if (!granted.includes('chatgpt.tokens.use.direct'))
-      throw new Error('ChatGPT plan usage permission was not granted.');
     if (this.attempt !== a) throw new Error('ChatGPT sign-in was cancelled.');
     const email =
       typeof payload.email === 'string' &&
@@ -361,10 +619,16 @@ export class ChatGPTAuth {
       refreshToken: token.data.refresh_token,
       scopes: granted,
       expiresAt: Date.now() + token.data.expires_in * 1000,
-      earliestRefreshAt: token.data.earliest_refresh_at
-        ? token.data.earliest_refresh_at * 1000
-        : undefined,
+      earliestRefreshAt: token.data.earliest_refresh_at,
     };
+    if (!granted.includes('chatgpt.tokens.use.direct')) {
+      // Keep the verified account connected; plan inference remains disabled until explicit re-consent.
+      this.data.profiles[clientId] = p;
+      this.data.activeClientId = clientId;
+      this.data.issuedClientId = undefined;
+      await this.save();
+      return;
+    }
     const previousProfile = this.data.profiles[clientId];
     const previousActive = this.data.activeClientId;
     const previousProvider = this.data.modelProvider;
@@ -409,7 +673,8 @@ export class ChatGPTAuth {
       throw new Error(
         'ChatGPT connection needs attention. Reconnect ChatGPT or switch providers in Settings.',
       );
-    if (p.expiresAt > Date.now() + 120_000) return p.accessToken;
+    if (p.accessToken && p.expiresAt > Date.now() + 120_000)
+      return p.accessToken;
     const existing = this.refreshes.get(p.clientId);
     if (existing) return existing;
     const task = this.refresh(p);
@@ -421,11 +686,37 @@ export class ChatGPTAuth {
     }
   }
   private async refresh(p: Profile): Promise<string> {
-    if (p.earliestRefreshAt && Date.now() < p.earliestRefreshAt)
-      await new Promise((r) =>
-        setTimeout(r, p.earliestRefreshAt! - Date.now()),
+    if (p.pendingRefresh) {
+      const verified = await verifyIdentityToken(
+        p.pendingRefresh.idToken,
+        p.clientId,
+        undefined,
+        p.pendingRefresh.receivedAt,
       );
-    const response = await fetch(tokenEndpoint, {
+      if (verified.sub !== p.subject)
+        throw new Error(
+          'ChatGPT identity verification needs attention. Sign in again.',
+        );
+      Object.assign(p, p.pendingRefresh);
+      delete p.pendingRefresh;
+      await this.save();
+      if (p.accessToken && p.expiresAt > Date.now()) return p.accessToken;
+    }
+    const earliest =
+      typeof p.earliestRefreshAt === 'number'
+        ? p.earliestRefreshAt * 1000
+        : typeof p.earliestRefreshAt === 'string'
+          ? Date.parse(p.earliestRefreshAt)
+          : 0;
+    if (earliest > Date.now()) {
+      if (p.accessToken && p.expiresAt > Date.now()) return p.accessToken;
+      throw new Error('ChatGPT token refresh is not ready yet. Retry shortly.');
+    }
+    if (!p.refreshToken)
+      throw new Error(
+        'ChatGPT connection needs attention. Reconnect ChatGPT or switch providers in Settings.',
+      );
+    const response = await fetch((await discovery()).token_endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -439,26 +730,55 @@ export class ChatGPTAuth {
     const result = z
       .object({
         access_token: z.string().min(1),
-        refresh_token: z.string().min(1),
+        refresh_token: z.string().min(1).optional(),
+        id_token: z.string().min(1).optional(),
         expires_in: z.number().positive(),
         scope: z.string().optional(),
-        earliest_refresh_at: z.number().optional(),
+        earliest_refresh_at: z.union([z.number(), z.string()]).optional(),
       })
       .safeParse(raw);
     if (!response.ok || !result.success)
       throw new Error(
         'ChatGPT connection needs attention. Reconnect ChatGPT or switch providers in Settings.',
       );
-    p.accessToken = result.data.access_token;
-    p.refreshToken = result.data.refresh_token;
-    p.expiresAt = Date.now() + result.data.expires_in * 1000;
-    p.earliestRefreshAt = result.data.earliest_refresh_at
-      ? result.data.earliest_refresh_at * 1000
-      : undefined;
-    if (result.data.scope)
-      p.scopes = result.data.scope.split(/\s+/).filter(Boolean);
+    const scopesNext = result.data.scope
+      ? result.data.scope.split(/\s+/).filter(Boolean)
+      : p.scopes;
+    const next = {
+      accessToken: result.data.access_token,
+      refreshToken: result.data.refresh_token ?? p.refreshToken ?? '',
+      expiresAt: Date.now() + result.data.expires_in * 1000,
+      earliestRefreshAt: result.data.earliest_refresh_at,
+      scopes: scopesNext,
+    };
+    if (result.data.id_token) {
+      const checkpoint = {
+        ...next,
+        idToken: result.data.id_token,
+        receivedAt: Date.now(),
+      };
+      p.pendingRefresh = checkpoint;
+      await this.save();
+      const verified = await verifyIdentityToken(
+        checkpoint.idToken,
+        p.clientId,
+        undefined,
+        checkpoint.receivedAt,
+      );
+      if (verified.sub !== p.subject)
+        throw new Error(
+          'ChatGPT identity verification needs attention. Sign in again.',
+        );
+      p.idToken = checkpoint.idToken;
+      delete p.pendingRefresh;
+    }
+    Object.assign(p, next);
     await this.save();
     if (!p.scopes.includes('chatgpt.tokens.use.direct'))
+      throw new Error(
+        'ChatGPT connection needs attention. Reconnect ChatGPT or switch providers in Settings.',
+      );
+    if (!p.accessToken)
       throw new Error(
         'ChatGPT connection needs attention. Reconnect ChatGPT or switch providers in Settings.',
       );
@@ -505,18 +825,14 @@ export class ChatGPTAuth {
     if (!id || !p) return true;
     let revoked = false;
     try {
-      const discovery = z
-        .object({ revocation_endpoint: z.string().url() })
-        .parse(
-          await (
-            await fetch(`${issuer}/.well-known/openid-configuration`)
-          ).json(),
-        );
-      const response = await fetch(discovery.revocation_endpoint, {
+      const provider = await discovery();
+      if (!provider.revocation_endpoint)
+        throw new Error('No revocation endpoint.');
+      const response = await fetch(provider.revocation_endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          token: p.refreshToken,
+          token: p.refreshToken ?? '',
           token_type_hint: 'refresh_token',
           client_id: p.clientId,
         }),
@@ -525,8 +841,13 @@ export class ChatGPTAuth {
     } catch {
       /* Local removal still proceeds; status reports revocation uncertainty. */
     }
-    delete this.data.profiles[id];
+    p.accessToken = undefined;
+    p.refreshToken = undefined;
+    p.idToken = undefined;
+    p.scopes = [];
+    p.model = undefined;
     this.data.activeClientId = undefined;
+    this.data.issuedClientId = id;
     this.data.modelProvider = 'openai-compatible';
     await this.save();
     return revoked;

@@ -41,9 +41,43 @@ describe('ChatGPT plan Responses request contract', () => {
     });
     expect(result).not.toHaveProperty('tools');
     expect(result.input).toEqual([
-      { role: 'user', content: 'save this' },
       { type: 'additional_tools', role: 'developer', tools },
+      { role: 'user', content: 'save this' },
     ]);
+  });
+
+  it('keeps tools available before replayed tool history on continuation turns', () => {
+    const result = chatgptPlanBody({
+      input: [
+        {
+          type: 'function_call',
+          call_id: 'call-1',
+          name: 'read_space_page',
+          arguments: '{}',
+        },
+        {
+          type: 'function_call_output',
+          call_id: 'call-1',
+          output: 'page contents',
+        },
+        { role: 'user', content: 'continue' },
+      ],
+      tools: [{ type: 'function', name: 'read_space_page' }],
+    });
+    const input = result.input as Array<Record<string, unknown>>;
+    expect(input[0]).toMatchObject({
+      type: 'additional_tools',
+      role: 'developer',
+    });
+    expect(input.slice(1)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'function_call', call_id: 'call-1' }),
+        expect.objectContaining({
+          type: 'function_call_output',
+          call_id: 'call-1',
+        }),
+      ]),
+    );
   });
 
   it('rewrites the actual fetch Request without exposing its bearer credential in the body', async () => {
@@ -80,7 +114,7 @@ describe('ChatGPT plan Responses request contract', () => {
       expect(JSON.stringify(payload.body)).not.toContain('fixture-oauth-token');
       expect(payload.body.store).toBe(false);
       expect(payload.body.stream).toBe(true);
-      expect(payload.body.input.at(-1).type).toBe('additional_tools');
+      expect(payload.body.input[0].type).toBe('additional_tools');
       expect(payload.body).not.toHaveProperty('temperature');
     } finally {
       vi.unstubAllGlobals();
