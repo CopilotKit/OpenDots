@@ -108,6 +108,10 @@ In a private chat, every message is eligible. In groups, the bot responds when i
 
 See [Telegram setup](docs/SETUP.md#telegram) to configure the bot token, allowlist, selected Dot, and optional webhook mode.
 
+### Inbox and Watchers
+
+OpenDots includes a small proactive layer on top of scheduled work. The Inbox collects completed and failed task outcomes and watcher triggers in one place. Watchers monitor public HTTP(S) URLs and queue a normal task in an existing conversation when content changes.
+
 ### Slack
 
 Mention a Dot through a managed Slack connection using Channels SDK, then continue in its thread. The integration follows [OpenTag](https://github.com/CopilotKit/OpenTag), with an explicit workspace/user allowlist and a selected specialist. See [Slack setup](docs/SETUP.md#slack) to connect your deployment.
