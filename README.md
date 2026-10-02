@@ -2,7 +2,7 @@
 
 # OpenDots
 
-### Always-on AI coworkers that move between text, calls, and Slack.
+### Always-on AI coworkers that move between text, calls, Slack, and Telegram.
 
 **An open-source template for persistent AI agents, each with its own computer. Available on Web and Mobile.**
 
@@ -136,7 +136,8 @@ The template uses TanStack AI for model streaming and server-tool execution, Cop
 flowchart TB
   Web["Web app: pages, Spaces, Dots, chat"] -->|AG-UI| Runtime[CopilotKit runtime]
   Slack[Slack] <--> Managed[Managed channel connection]
-  Managed <--> Channels[Channels SDK]
+  Telegram[Telegram] --> Channels[Channels SDK]
+  Managed <--> Channels
   Channels --> Agents[Specialist compute agents]
   Runtime --> Agents
   Agents --> AI[TanStack AI]
