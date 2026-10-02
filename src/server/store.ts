@@ -11,6 +11,8 @@ import type {
   Settings,
   Task,
   TaskEvent,
+  InboxItem,
+  Watcher,
 } from '../shared/types.js';
 
 export type Claim = Task & { lease: string };
@@ -33,6 +35,10 @@ export class Store {
       CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, text TEXT NOT NULL, createdAt INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS tasks_due ON tasks(status, nextRunAt);
       CREATE INDEX IF NOT EXISTS runs_task ON runs(taskId, startedAt);
+      CREATE TABLE IF NOT EXISTS inbox (id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, taskId TEXT, createdAt INTEGER NOT NULL, readAt INTEGER, dismissedAt INTEGER);
+      CREATE INDEX IF NOT EXISTS inbox_created ON inbox(createdAt DESC);
+      CREATE TABLE IF NOT EXISTS watchers (id TEXT PRIMARY KEY, url TEXT NOT NULL, prompt TEXT NOT NULL, threadId TEXT NOT NULL, intervalSeconds INTEGER NOT NULL, lastCheckedAt INTEGER, lastHash TEXT, nextCheckAt INTEGER NOT NULL, enabled INTEGER NOT NULL, error TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS watchers_due ON watchers(enabled, nextCheckAt);
       CREATE INDEX IF NOT EXISTS events_task ON events(taskId, id);`);
     this.db
       .prepare('INSERT OR IGNORE INTO settings VALUES (1, ?)')
@@ -252,6 +258,12 @@ export class Store {
           ? 'Fictional sample brief ready.'
           : 'Research brief ready.',
       );
+      this.createInboxItem(
+        'task_completed',
+        'Research is ready',
+        task.prompt + '\\n\\n' + result.text.slice(0, 800),
+        claim.id,
+      );
       return true;
     });
   }
@@ -276,6 +288,171 @@ export class Store {
         .run(error, now, claim.id);
       this.event(claim.id, claim.lease, error);
     });
+  }
+  inbox(limit = 100): InboxItem[] {
+    return this.db
+      .prepare(
+        'SELECT * FROM inbox WHERE dismissedAt IS NULL ORDER BY createdAt DESC LIMIT ?',
+      )
+      .all(limit) as unknown as InboxItem[];
+  }
+  unreadInboxCount(): number {
+    const row = this.db
+      .prepare(
+        'SELECT COUNT(*) AS count FROM inbox WHERE dismissedAt IS NULL AND readAt IS NULL',
+      )
+      .get() as { count: number };
+    return Number(row.count);
+  }
+  createInboxItem(
+    kind: InboxItem['kind'],
+    title: string,
+    body: string,
+    taskId: string | null = null,
+  ): InboxItem {
+    const item: InboxItem = {
+      id: randomUUID(),
+      kind,
+      title,
+      body,
+      taskId,
+      createdAt: Date.now(),
+      readAt: null,
+      dismissedAt: null,
+    };
+    this.db
+      .prepare('INSERT INTO inbox VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)')
+      .run(
+        item.id,
+        item.kind,
+        item.title,
+        item.body,
+        item.taskId,
+        item.createdAt,
+      );
+    return item;
+  }
+  inboxAction(
+    id: string,
+    action: 'read' | 'unread' | 'dismiss',
+  ): InboxItem | undefined {
+    const existing = this.db
+      .prepare('SELECT * FROM inbox WHERE id=?')
+      .get(id) as unknown as InboxItem | undefined;
+    if (!existing) return undefined;
+    const readAt =
+      action === 'read'
+        ? Date.now()
+        : action === 'unread'
+          ? null
+          : existing.readAt;
+    const dismissedAt =
+      action === 'dismiss' ? Date.now() : existing.dismissedAt;
+    this.db
+      .prepare('UPDATE inbox SET readAt=?, dismissedAt=? WHERE id=?')
+      .run(readAt, dismissedAt, id);
+    return this.db
+      .prepare('SELECT * FROM inbox WHERE id=?')
+      .get(id) as unknown as InboxItem;
+  }
+  watchers(): Watcher[] {
+    return this.db
+      .prepare('SELECT * FROM watchers ORDER BY createdAt DESC')
+      .all()
+      .map((row) => ({
+        ...row,
+        intervalSeconds: Number(row.intervalSeconds),
+        enabled: !!row.enabled,
+      })) as unknown as Watcher[];
+  }
+  dueWatchers(now = Date.now()): Watcher[] {
+    return this.db
+      .prepare(
+        'SELECT * FROM watchers WHERE enabled=1 AND nextCheckAt<=? ORDER BY nextCheckAt LIMIT 20',
+      )
+      .all(now)
+      .map((row) => ({
+        ...row,
+        intervalSeconds: Number(row.intervalSeconds),
+        enabled: !!row.enabled,
+      })) as unknown as Watcher[];
+  }
+  createWatcher(
+    url: string,
+    prompt: string,
+    threadId: string,
+    intervalSeconds: number,
+  ): Watcher {
+    const now = Date.now();
+    const watcher: Watcher = {
+      id: randomUUID(),
+      url,
+      prompt,
+      threadId,
+      intervalSeconds,
+      lastCheckedAt: null,
+      lastHash: null,
+      nextCheckAt: now,
+      enabled: true,
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.db
+      .prepare(
+        'INSERT INTO watchers VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, 1, NULL, ?, ?)',
+      )
+      .run(
+        watcher.id,
+        watcher.url,
+        watcher.prompt,
+        watcher.threadId,
+        watcher.intervalSeconds,
+        watcher.nextCheckAt,
+        watcher.createdAt,
+        watcher.updatedAt,
+      );
+    return watcher;
+  }
+  updateWatcherCheck(
+    id: string,
+    patch: {
+      lastCheckedAt: number;
+      lastHash?: string | null;
+      nextCheckAt: number;
+      error?: string | null;
+    },
+  ): Watcher | undefined {
+    this.db
+      .prepare(
+        'UPDATE watchers SET lastCheckedAt=?, lastHash=COALESCE(?, lastHash), nextCheckAt=?, error=?, updatedAt=? WHERE id=?',
+      )
+      .run(
+        patch.lastCheckedAt,
+        patch.lastHash ?? null,
+        patch.nextCheckAt,
+        patch.error ?? null,
+        Date.now(),
+        id,
+      );
+    return this.watchers().find((watcher) => watcher.id === id);
+  }
+  watcherAction(
+    id: string,
+    action: 'pause' | 'resume' | 'delete',
+  ): Watcher | undefined {
+    const existing = this.watchers().find((watcher) => watcher.id === id);
+    if (!existing) return undefined;
+    if (action === 'delete') {
+      this.db.prepare('DELETE FROM watchers WHERE id=?').run(id);
+      return undefined;
+    }
+    this.db
+      .prepare(
+        'UPDATE watchers SET enabled=?, error=NULL, updatedAt=? WHERE id=?',
+      )
+      .run(action === 'resume' ? 1 : 0, Date.now(), id);
+    return this.watchers().find((watcher) => watcher.id === id);
   }
   memories(): Memory[] {
     return this.db
