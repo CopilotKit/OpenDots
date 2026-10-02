@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -88,4 +88,81 @@ describe('durable task lifecycle', () => {
       store.finish(recovered, { text: 'New', sources: [], sample: true }),
     ).toBe(true);
   });
+});
+
+describe('failed recurring tasks', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it('retains failure history and retries only when the interval is due', () => {
+    const { store, path } = fixture();
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const task = store.createTask('Recurring', 60);
+    store.fail(store.claim(now)!, 'Provider unavailable');
+    expect(store.task(task.id)).toMatchObject({
+      status: 'failed',
+      error: 'Provider unavailable',
+      nextRunAt: now + 60000,
+    });
+    expect(store.claim(now + 59999)).toBeNull();
+    const second = new Store(path);
+    try {
+      const retry = second.claim(now + 60000)!;
+      expect(retry.id).toBe(task.id);
+      expect(store.claim(now + 60000)).toBeNull();
+      expect(store.task(task.id)).toMatchObject({
+        status: 'running',
+        error: null,
+        nextRunAt: null,
+      });
+      expect(store.detail(task.id)?.runs).toHaveLength(2);
+      expect(
+        store.detail(task.id)?.runs.some((run) => run.status === 'failed'),
+      ).toBe(true);
+    } finally {
+      second.close();
+    }
+  });
+  it('leaves failed one-shot tasks unscheduled', () => {
+    const { store } = fixture();
+    const task = store.createTask('Once');
+    store.fail(store.claim()!, 'Failure');
+    expect(store.task(task.id)?.nextRunAt).toBeNull();
+    expect(store.claim(Date.now() + 600000)).toBeNull();
+  });
+  it.each(['pause', 'cancel'] as const)(
+    'does not restart after %s or late failure',
+    (action) => {
+      const { store } = fixture();
+      const task = store.createTask('Recurring', 60);
+      const old = store.claim()!;
+      store.fail(old, 'Failure');
+      store.action(task.id, action);
+      store.fail(old, 'Late failure');
+      expect(store.claim(Date.now() + 600000)).toBeNull();
+      expect(store.task(task.id)?.nextRunAt).toBeNull();
+    },
+  );
+  it('removing a failed task schedule prevents a retry', () => {
+    const { store } = fixture();
+    const task = store.createTask('Recurring', 60);
+    store.fail(store.claim()!, 'Failure');
+    store.schedule(task.id, null);
+    expect(store.claim(Date.now() + 600000)).toBeNull();
+  });
+});
+
+it('reschedules a failed recurring task when its interval is edited', () => {
+  const { store } = fixture();
+  const now = Date.now();
+  vi.spyOn(Date, 'now').mockReturnValue(now);
+  try {
+    const task = store.createTask('Recurring', 60);
+    store.fail(store.claim(now)!, 'Failure');
+    store.schedule(task.id, 120);
+    expect(store.task(task.id)?.nextRunAt).toBe(now + 120000);
+    expect(store.claim(now + 60000)).toBeNull();
+    expect(store.claim(now + 120000)?.id).toBe(task.id);
+  } finally {
+    vi.restoreAllMocks();
+  }
 });
