@@ -367,7 +367,8 @@ export function WorkspaceDialog({
                   : 'Text configuration is present. A successful conversation confirms connectivity.'}
               </p>
               <p>
-                Slack: {workspace.setup.slack.replaceAll('_', ' ')}. Voice:{' '}
+                Slack: {workspace.setup.slack.replaceAll('_', ' ')}. Telegram:{' '}
+                {workspace.setup.telegram.replaceAll('_', ' ')}. Voice:{' '}
                 {workspace.setup.voice
                   ? 'configuration present'
                   : 'needs VOICE_API_KEY and VOICE_MODEL'}

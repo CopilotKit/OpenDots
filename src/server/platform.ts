@@ -8,7 +8,9 @@ import {
   type CopilotHonoApp,
 } from '@copilotkit/runtime/v2';
 import { createSlackChannel } from './slack-channel.js';
+import { createTelegramChannel } from './telegram-channel.js';
 export { slackIdentity } from './slack-channel.js';
+export { telegramIdentity } from './telegram-channel.js';
 import { Store } from './store.js';
 import { WorkspaceStore } from './workspace.js';
 import { DotAgent } from './dot-agent.js';
@@ -60,6 +62,41 @@ export class Platform {
       });
       channels.push(slack);
     }
+    if (
+      config.telegramBotToken &&
+      config.telegramChannel &&
+      config.telegramUsers.length
+    ) {
+      const dotId = config.telegramDotId ?? workspace.dots()[0].id;
+      if (!workspace.dot(dotId))
+        throw new Error('TELEGRAM_DOT_ID does not identify an existing Dot.');
+      const channel = createTelegramChannel({
+        name: config.telegramChannel,
+        config,
+        ownerId: workspace.ownerId,
+        paused: () => store.settings().paused,
+        agent: () => new DotAgent(store, workspace, config, dotId, true),
+        token: config.telegramBotToken,
+        ...(config.telegramMode ? { mode: config.telegramMode } : {}),
+        ...(config.telegramWebhookDomain
+          ? {
+              webhook: {
+                domain: config.telegramWebhookDomain,
+                ...(config.telegramWebhookPath
+                  ? { path: config.telegramWebhookPath }
+                  : {}),
+                ...(config.telegramWebhookPort
+                  ? { port: config.telegramWebhookPort }
+                  : {}),
+                ...(config.telegramWebhookSecret
+                  ? { secretToken: config.telegramWebhookSecret }
+                  : {}),
+              },
+            }
+          : {}),
+      });
+      channels.push(channel);
+    }
     const runtime = new CopilotRuntime({
       intelligence: this.intelligence,
       identifyUser: async () => ({
@@ -85,11 +122,20 @@ export class Platform {
     });
   }
   setup() {
+    const status = this.handler?.channels?.status();
+    const slackStatus = this.config.slackChannel
+      ? status?.channels[this.config.slackChannel] ??
+        (this.channelStartupFailed ? 'activation_failed' : 'setup_required')
+      : 'not_configured';
+    const telegramStatus = this.config.telegramChannel
+      ? status?.channels[this.config.telegramChannel] ??
+        (this.channelStartupFailed ? 'activation_failed' : 'setup_required')
+      : 'not_configured';
     return setupStatus(
       this.config,
-      this.handler?.channels?.status().overall ??
-        (this.config.slackChannel ? 'setup_required' : 'not_configured'),
+      slackStatus,
       this.channelStartupFailed,
+      telegramStatus,
     );
   }
   requireReady() {

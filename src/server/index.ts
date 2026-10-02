@@ -8,6 +8,7 @@ import { createApp } from './app.js';
 import { WorkspaceStore } from './workspace.js';
 import { Platform } from './platform.js';
 import type { PlatformConfig } from './platform-config.js';
+import { WatcherRunner } from './watcher-runner.js';
 const host = process.env.HOST ?? '127.0.0.1';
 const port = Number(process.env.PORT ?? 4310);
 const ownerToken = process.env.OWNER_TOKEN;
@@ -47,6 +48,23 @@ const config: PlatformConfig = {
     .map((value) => value.trim())
     .filter(Boolean),
   slackDotId: process.env.SLACK_DOT_ID || undefined,
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || undefined,
+  telegramChannel:
+    process.env.TELEGRAM_CHANNEL_NAME ||
+    (process.env.TELEGRAM_BOT_TOKEN ? 'opendots-telegram' : undefined),
+  telegramUsers: (process.env.TELEGRAM_USER_IDS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+  telegramDotId: process.env.TELEGRAM_DOT_ID || undefined,
+  telegramMode:
+    (process.env.TELEGRAM_MODE as PlatformConfig['telegramMode']) || 'polling',
+  telegramWebhookDomain: process.env.TELEGRAM_WEBHOOK_DOMAIN || undefined,
+  telegramWebhookPath: process.env.TELEGRAM_WEBHOOK_PATH || undefined,
+  telegramWebhookPort: process.env.TELEGRAM_WEBHOOK_PORT
+    ? Number(process.env.TELEGRAM_WEBHOOK_PORT)
+    : undefined,
+  telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || undefined,
   runtimeUrl: `http://${host === '::1' ? '[::1]' : '127.0.0.1'}:${port}/api/copilotkit`,
   ownerToken,
 };
@@ -76,6 +94,7 @@ const runner = new Runner(
 const wsOrigin = new URL(
   config.intelligenceWsUrl ?? 'wss://realtime.intelligence.copilotkit.ai',
 ).origin;
+const watcherRunner = new WatcherRunner(store, workspace);
 const app = createApp({
   store,
   runner,
@@ -103,17 +122,21 @@ app.get('*', serveStatic({ path: './dist/client/index.html' }));
 const server = serve({ fetch: app.fetch, hostname: host, port }, (info) => {
   console.log(`OpenDots template listening on http://${host}:${info.port}`);
   runner.start();
+  watcherRunner.start();
   void platform
     .start()
     .catch((error) =>
       reportChannelFailure(
-        'Slack Channels activation failed; check setup status',
+        'Channels activation failed; check setup status',
         [safeFailure(error)],
       ),
     );
 });
 const shutdown = createShutdown({
-  stopRunner: () => runner.stop(),
+  stopRunner: () => {
+    runner.stop();
+    watcherRunner.stop();
+  },
   stopPlatform: () => platform.stop(),
   closeServer: () =>
     new Promise<void>((resolve, reject) =>

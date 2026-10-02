@@ -19,6 +19,15 @@ export interface PlatformConfig {
   slackTeam?: string;
   slackUsers: string[];
   slackDotId?: string;
+  telegramBotToken?: string;
+  telegramChannel?: string;
+  telegramUsers: string[];
+  telegramDotId?: string;
+  telegramMode?: 'polling' | 'webhook' | 'auto';
+  telegramWebhookDomain?: string;
+  telegramWebhookPath?: string;
+  telegramWebhookPort?: number;
+  telegramWebhookSecret?: string;
   runtimeUrl: string;
   ownerToken?: string;
 }
@@ -26,6 +35,7 @@ export function setupStatus(
   config: PlatformConfig,
   slack = 'not_configured',
   activationFailed = false,
+  telegram = 'not_configured',
 ): SetupStatus {
   const missing = [
     !config.intelligenceKey && 'INTELLIGENCE_API_KEY',
@@ -37,11 +47,25 @@ export function setupStatus(
     config.slackTeam &&
     config.slackUsers.length
   );
+  const declaredTelegram = !!(
+    config.telegramBotToken &&
+    config.telegramChannel &&
+    config.telegramUsers.length
+  );
   slack = declaredSlack
     ? activationFailed && slack !== 'online'
       ? 'activation_failed'
       : slack
     : config.slackChannel || config.slackTeam || config.slackUsers.length
+      ? 'setup_required'
+      : 'not_configured';
+  telegram = declaredTelegram
+    ? activationFailed && telegram !== 'online'
+      ? 'activation_failed'
+      : telegram
+    : config.telegramBotToken ||
+        config.telegramChannel ||
+        config.telegramUsers.length
       ? 'setup_required'
       : 'not_configured';
   return {
@@ -50,6 +74,7 @@ export function setupStatus(
     browser: !!(config.browserUrl && config.browserSecret),
     voice: !!(config.voiceKey && config.voiceModel && !missing.length),
     slack,
+    telegram,
     missing,
   };
 }

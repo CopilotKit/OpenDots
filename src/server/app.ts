@@ -81,6 +81,8 @@ export function createApp({
       settings: store.settings(),
       tasks: store.tasks(),
       memories: store.memories(),
+      inbox: store.inbox(),
+      watchers: store.watchers(),
       mode: config.mode,
       configured: configured(config),
     }),
@@ -131,6 +133,76 @@ export function createApp({
     if (platform && parsed.data.threadId)
       platform.workspace.bindTask(task.id, parsed.data.threadId);
     return c.json(task, 201);
+  });
+  app.get('/api/inbox', (c) =>
+    c.json({ items: store.inbox(), unread: store.unreadInboxCount() }),
+  );
+  app.post('/api/inbox/:id/actions', async (c) => {
+    const parsed = z
+      .object({ action: z.enum(['read', 'unread', 'dismiss']) })
+      .strict()
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Unknown inbox action.' }, 400);
+    const item = store.inboxAction(c.req.param('id'), parsed.data.action);
+    return item
+      ? c.json(item)
+      : c.json({ error: 'Inbox item not found.' }, 404);
+  });
+  app.get('/api/watchers', (c) => c.json(store.watchers()));
+  app.post('/api/watchers', async (c) => {
+    const parsed = z
+      .object({
+        url: z.string().trim().url().max(2048),
+        prompt: z.string().trim().min(3).max(4000),
+        threadId: z.string().min(1),
+        intervalSeconds: z.number().int().min(60).max(86400),
+      })
+      .strict()
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success)
+      return c.json(
+        { error: 'Enter a public URL, prompt, conversation, and an interval from 60 seconds to 24 hours.' },
+        400,
+      );
+    if (!store.settings().researchAllowed)
+      return c.json({ error: 'Research is disabled in Settings.' }, 403);
+    if (platform) {
+      if (platform.setup().missing.length)
+        return c.json(
+          { error: `Setup required: ${platform.setup().missing.join(', ')}.` },
+          503,
+        );
+      try {
+        platform.workspace.requireThread(parsed.data.threadId);
+      } catch {
+        return c.json(
+          { error: 'Conversation is not owned by this workspace.' },
+          403,
+        );
+      }
+    }
+    return c.json(
+      store.createWatcher(
+        parsed.data.url,
+        parsed.data.prompt,
+        parsed.data.threadId,
+        parsed.data.intervalSeconds,
+      ),
+      201,
+    );
+  });
+  app.post('/api/watchers/:id/actions', async (c) => {
+    const parsed = z
+      .object({ action: z.enum(['pause', 'resume', 'delete']) })
+      .strict()
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Unknown watcher action.' }, 400);
+    const watcher = store.watcherAction(c.req.param('id'), parsed.data.action);
+    return parsed.data.action === 'delete'
+      ? c.json({ ok: true })
+      : watcher
+        ? c.json(watcher)
+        : c.json({ error: 'Watcher not found.' }, 404);
   });
   app.get('/api/tasks/:id', (c) => {
     const detail = store.detail(c.req.param('id'));

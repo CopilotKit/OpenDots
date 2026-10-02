@@ -50,6 +50,7 @@ function fixture() {
         model: true,
         browser: false,
         slack: 'not_configured',
+        telegram: 'not_configured',
         missing: [],
       }),
     },
