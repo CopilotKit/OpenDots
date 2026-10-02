@@ -5,14 +5,14 @@ import { Runner } from '../src/server/runner.js';
 import type { Config } from '../src/server/research.js';
 const stores: Store[] = [];
 const config: Config = { mode: 'sample', baseUrl: 'https://api.openai.com/v1' };
-function fixture(token?: string) {
+function fixture(token?: string, origin?: string | string[]) {
   const store = new Store(':memory:');
   stores.push(store);
   const runner = new Runner(store, config);
   return {
     store,
     runner,
-    app: createApp({ store, runner, config, ownerToken: token }),
+    app: createApp({ store, runner, config, ownerToken: token, origin }),
   };
 }
 const json = (body: unknown) => ({
@@ -54,6 +54,41 @@ describe('API boundaries', () => {
         })
       ).status,
     ).toBe(415);
+  });
+  it('allows configured multiple origins while blocking unauthorized cross-origin requests', async () => {
+    const { app } = fixture(undefined, [
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+    ]);
+    // localhost:5173 should be allowed
+    const resLocalhost = await app.request('/api/tasks', {
+      ...json({ prompt: 'test' }),
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'http://localhost:5173',
+      },
+    });
+    expect(resLocalhost.status).toBe(201);
+
+    // 127.0.0.1:5173 should be allowed
+    const res127 = await app.request('/api/tasks', {
+      ...json({ prompt: 'test' }),
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'http://127.0.0.1:5173',
+      },
+    });
+    expect(res127.status).toBe(201);
+
+    // Unauthorized origin should be blocked with 403
+    const resEvil = await app.request('/api/tasks', {
+      ...json({ prompt: 'test' }),
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://evil.example',
+      },
+    });
+    expect(resEvil.status).toBe(403);
   });
   it('validates inputs and enforces research permissions on the server', async () => {
     const { app, store } = fixture();

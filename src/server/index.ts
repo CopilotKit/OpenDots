@@ -76,16 +76,16 @@ const runner = new Runner(
 const wsOrigin = new URL(
   config.intelligenceWsUrl ?? 'wss://realtime.intelligence.copilotkit.ai',
 ).origin;
+const defaultDevOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+const appOrigin = process.env.APP_ORIGIN
+  ? process.env.APP_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
+  : (process.env.NODE_ENV === 'development' ? defaultDevOrigins : undefined);
 const app = createApp({
   store,
   runner,
   config: researchConfig,
   ownerToken,
-  origin:
-    process.env.APP_ORIGIN ??
-    (process.env.NODE_ENV === 'development'
-      ? 'http://127.0.0.1:5173'
-      : undefined),
+  origin: appOrigin,
   platform,
 });
 app.use('*', async (c, next) => {
