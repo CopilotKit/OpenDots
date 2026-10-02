@@ -14,6 +14,7 @@ const config: PlatformConfig = {
 };
 it('never claims Slack online without a complete managed channel declaration', () => {
   expect(setupStatus(config, 'online').slack).toBe('not_configured');
+  expect(setupStatus(config, 'online').telegram).toBe('not_configured');
   expect(
     setupStatus({ ...config, slackChannel: 'support' }, 'online').slack,
   ).toBe('setup_required');
@@ -50,4 +51,5 @@ it('reports activation failure until the SDK recovers online', () => {
     'activation_failed',
   );
   expect(setupStatus(declared, 'online', true).slack).toBe('online');
+  expect(setupStatus({ ...config, telegramBotToken: 'token', telegramChannel: 'bot', telegramUsers: ['12345'] }, 'online', false, 'online').telegram).toBe('online');
 });
