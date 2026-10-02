@@ -107,6 +107,58 @@ From an allowed user, mention the bot and verify a response in the same Slack th
 
 Local tests exercise channel behavior with fixtures. A live Slack mention/reply remains unverified until you provision the managed connection and model credentials. [Channels SDK documentation](https://github.com/CopilotKit/channels-sdk) describes extending the adapter and channel behavior.
 
+## Telegram
+
+OpenDots can run a direct Telegram bot through the CopilotKit Channels Telegram adapter. This does not require creating a managed Intelligence Channel; the adapter is attached to the same runtime as the application's other conversations.
+
+### Configure the bot
+
+Create a bot with Telegram's `@BotFather`, then set these server-side variables:
+
+```dotenv
+TELEGRAM_BOT_TOKEN=123456:replace-me
+TELEGRAM_CHANNEL_NAME=opendots-telegram
+TELEGRAM_USER_IDS=123456789
+TELEGRAM_DOT_ID=
+TELEGRAM_MODE=polling
+```
+
+Use a comma-separated list for more than one permitted Telegram user. OpenDots requires an explicit allowlist because the template has a single-owner identity model. The Telegram bot token and IDs stay on the server.
+
+`TELEGRAM_DOT_ID` selects the Dot used for Telegram turns; when omitted, the first Dot is used. `TELEGRAM_CHANNEL_NAME` names the runtime Channel and defaults to `opendots-telegram` when a bot token is configured.
+
+### Polling
+
+Long-polling is the default:
+
+```dotenv
+TELEGRAM_MODE=polling
+```
+
+No public URL is required. Start OpenDots normally and verify Telegram status under Settings & setup.
+
+In private chats, every user message is addressed to the bot. In groups and supergroups, the adapter only emits turns when the bot is mentioned or the user replies to one of the bot's messages. Forum topics keep their own Telegram conversation context.
+
+### Webhook
+
+For deployments where long-polling is not suitable, use webhook mode:
+
+```dotenv
+TELEGRAM_MODE=webhook
+TELEGRAM_WEBHOOK_DOMAIN=https://bot.example.com
+TELEGRAM_WEBHOOK_PATH=/telegram
+TELEGRAM_WEBHOOK_PORT=8443
+TELEGRAM_WEBHOOK_SECRET=replace-with-a-random-secret
+```
+
+The domain must be publicly reachable over HTTPS and point to the OpenDots process. Telegram's supported webhook ports include 443, 80, 88, and 8443; the adapter defaults to 8443. Put the webhook endpoint behind your reverse proxy when that is how the application is exposed.
+
+### Verify
+
+Send `/start` to the bot, then send a normal message and verify the selected Dot answers. In a group, mention the bot and then reply to the bot's response to verify conversation continuity. Test an unlisted Telegram user and confirm no agent run is started. Pause the assistant in OpenDots and verify that an allowed request receives the paused notice.
+
+The adapter supports Telegram inline interactions and streamed replies through the Channels SDK. OpenDots uses the same runtime, agent permissions, and Intelligence conversation machinery as its other channels.
+
 ## Calls
 
 The included speech adapter uses the Realtime API at `api.openai.com`. Set `VOICE_API_KEY` to a key with access to that API and `VOICE_MODEL` to a supported Realtime model (the local UI test used `gpt-realtime-2.1`); `VOICE_NAME` selects the voice. `OPENAI_BASE_URL` changes the compute model endpoint only, not speech. Calls use browser microphone access and WebRTC. Hosted deployments need HTTPS. The server mediates provider setup and delegates compute to the selected Dot's conversation.
