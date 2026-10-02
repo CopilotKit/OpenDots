@@ -55,10 +55,36 @@ export interface Detail {
   runs: Run[];
   events: TaskEvent[];
 }
+export interface InboxItem {
+  id: string;
+  kind: 'task_completed' | 'task_failed' | 'watch_triggered';
+  title: string;
+  body: string;
+  taskId: string | null;
+  createdAt: number;
+  readAt: number | null;
+  dismissedAt: number | null;
+}
+export interface Watcher {
+  id: string;
+  url: string;
+  prompt: string;
+  threadId: string;
+  intervalSeconds: number;
+  lastCheckedAt: number | null;
+  lastHash: string | null;
+  nextCheckAt: number;
+  enabled: boolean;
+  error: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
 export interface State {
   settings: Settings;
   tasks: Task[];
   memories: Memory[];
+  inbox: InboxItem[];
+  watchers: Watcher[];
   mode: 'sample' | 'live';
   configured: boolean;
 }

@@ -100,6 +100,10 @@ https://github.com/user-attachments/assets/3c06cf71-39ed-4e2b-b846-5463b2722389
 
 _Connect, talk, mute, minimize, and return to chat. This is a silent screen capture of a real call, with waiting time trimmed and playback accelerated._
 
+### Inbox and Watchers
+
+OpenDots includes a small proactive layer on top of scheduled work. The Inbox collects completed and failed task outcomes and watcher triggers in one place. Watchers monitor public HTTP(S) URLs and queue a normal task in an existing conversation when content changes.
+
 ### Slack
 
 Mention a Dot through a managed Slack connection using Channels SDK, then continue in its thread. The integration follows [OpenTag](https://github.com/CopilotKit/OpenTag), with an explicit workspace/user allowlist and a selected specialist. See [Slack setup](docs/SETUP.md#slack) to connect your deployment.

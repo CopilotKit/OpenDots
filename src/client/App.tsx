@@ -6,6 +6,7 @@ import { CopilotKitProvider } from '@copilotkit/react-core/v2';
 import {
   ArrowUp,
   ArrowUpRight,
+  Bell,
   BookOpen,
   Clock3,
   Code2,
@@ -45,9 +46,9 @@ export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceState>();
   const [selectedDot, setSelectedDot] = useState('');
   const [selectedThread, setSelectedThread] = useState<string>();
-  const [view, rawSetView] = useState<'chat' | 'tasks' | 'memories' | 'space'>(
-    'chat',
-  );
+  const [view, rawSetView] = useState<
+    'chat' | 'tasks' | 'memories' | 'space' | 'inbox'
+  >('chat');
   const dirtyPage = useRef(false);
   const [spaceId, setSpaceId] = useState('');
   const [pageId, setPageId] = useState<string>();
@@ -289,8 +290,8 @@ export function App() {
         >
           <Folder size={18} />
         </button>
-        <button aria-label="Open activity" onClick={() => setView('tasks')}>
-          <Clock3 size={18} />
+        <button aria-label="Open inbox" onClick={() => setView('inbox')}>
+          <Bell size={18} />
         </button>
         <button
           className="rail-settings"
@@ -425,6 +426,19 @@ export function App() {
         )}
         <div className="sidebar-bottom">
           <button
+            className={`nav-item ${view === 'inbox' ? 'active' : ''}`}
+            onClick={() => {
+              setView('inbox');
+              setMobile(false);
+            }}
+          >
+            <Bell size={17} />
+            <span>Inbox</span>
+            {!!state.inbox?.filter((item) => !item.readAt).length && (
+              <small>{state.inbox?.filter((item) => !item.readAt).length}</small>
+            )}
+          </button>
+          <button
             className={`nav-item ${view === 'tasks' ? 'active' : ''}`}
             onClick={() => {
               setView('tasks');
@@ -489,9 +503,11 @@ export function App() {
                 ? dot.name
                 : view === 'tasks'
                   ? 'Activity'
-                  : view === 'space'
-                    ? 'Pages'
-                    : 'Memories'}
+                  : view === 'inbox'
+                    ? 'Inbox'
+                    : view === 'space'
+                      ? 'Pages'
+                      : 'Memories'}
             </strong>
           </div>
           <div className="top-actions">
@@ -709,12 +725,16 @@ export function App() {
                 <h1>
                   {view === 'memories'
                     ? 'Memories'
-                    : 'A little follow-through.'}
+                    : view === 'inbox'
+                      ? 'Inbox'
+                      : 'A little follow-through.'}
                 </h1>
                 <p>
                   {view === 'memories'
                     ? 'Preferences you choose to share with your Dots.'
-                    : 'Scheduled turns run on the server in their original conversation.'}
+                    : view === 'inbox'
+                      ? 'Results and alerts that need your attention.'
+                      : 'Scheduled turns run on the server in their original conversation.'}
                 </p>
               </div>
               {view === 'memories' && (
@@ -727,7 +747,73 @@ export function App() {
                 </button>
               )}
             </div>
-            {view === 'memories' ? (
+            {view === 'inbox' ? (
+              <>
+                <section className="inbox-list">
+                  {(state.inbox ?? []).map((item) => (
+                    <article
+                      className={`inbox-card ${item.readAt ? '' : 'unread'}`}
+                      key={item.id}
+                    >
+                      <div className="inbox-card-icon">
+                        <Bell size={17} />
+                      </div>
+                      <div className="inbox-card-body">
+                        <strong>{item.title}</strong>
+                        <small>{new Date(item.createdAt).toLocaleString()}</small>
+                        <p>{item.body}</p>
+                        <div className="inbox-card-actions">
+                          {item.taskId && (
+                            <button
+                              onClick={() =>
+                                void api<Detail>(`/tasks/${item.taskId}`)
+                                  .then((detail) => {
+                                    setTaskDetail(detail);
+                                    setView('tasks');
+                                  })
+                                  .catch((e) => setError(e.message))
+                              }
+                            >
+                              Open task
+                            </button>
+                          )}
+                          <button
+                            onClick={() =>
+                              void mutate(
+                                `/inbox/${item.id}/actions`,
+                                'POST',
+                                { action: item.readAt ? 'unread' : 'read' },
+                              )
+                            }
+                          >
+                            {item.readAt ? 'Mark unread' : 'Mark read'}
+                          </button>
+                          <button
+                            className="quiet-button"
+                            onClick={() =>
+                              void mutate(
+                                `/inbox/${item.id}/actions`,
+                                'POST',
+                                { action: 'dismiss' },
+                              )
+                            }
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </section>
+                {!(state.inbox ?? []).length && (
+                  <div className="large-empty">
+                    <Bell size={32} />
+                    <h2>Nothing waiting for you.</h2>
+                    <p>Completed work, failures, and watcher triggers appear here.</p>
+                  </div>
+                )}
+              </>
+            ) : view === 'memories' ? (
               <>
                 <div className="memory-grid">
                   {state.memories.map((memory) => (
@@ -773,6 +859,130 @@ export function App() {
               </>
             ) : (
               <>
+                <section className="watcher-section">
+                  <div className="section-heading">
+                    <h2>Watchers</h2>
+                    <span>Queue a task when a public page changes.</span>
+                  </div>
+                  {workspace.conversations.length ? (
+                    <form
+                      className="watcher-form"
+                      onSubmit={async (event) => {
+                        event.preventDefault();
+                        const form = event.currentTarget;
+                        const data = new FormData(form);
+                        const minutes = Number(data.get('minutes') ?? 15);
+                        const url = String(data.get('url') ?? '').trim();
+                        const prompt = String(data.get('prompt') ?? '').trim();
+                        const threadId = String(data.get('threadId') ?? '');
+                        if (
+                          !url ||
+                          !prompt ||
+                          !threadId ||
+                          !Number.isFinite(minutes) ||
+                          minutes < 1 ||
+                          minutes > 1440
+                        ) {
+                          setError('Complete the watcher fields with a 1–1440 minute interval.');
+                          return;
+                        }
+                        const ok = await mutate('/watchers', 'POST', {
+                          url,
+                          prompt,
+                          threadId,
+                          intervalSeconds: Math.round(minutes * 60),
+                        });
+                        if (ok) form.reset();
+                      }}
+                    >
+                      <input
+                        name="url"
+                        type="url"
+                        placeholder="https://example.com/status"
+                        required
+                      />
+                      <textarea
+                        name="prompt"
+                        rows={2}
+                        placeholder="What should the Dot investigate when this changes?"
+                        required
+                      />
+                      <select
+                        name="threadId"
+                        defaultValue={workspace.conversations[0]?.id ?? ''}
+                        required
+                      >
+                        <option value="" disabled>
+                          Select a conversation
+                        </option>
+                        {workspace.conversations.map((conversation) => (
+                          <option value={conversation.id} key={conversation.id}>
+                            {conversation.title}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="watcher-form-row">
+                        <input
+                          name="minutes"
+                          type="number"
+                          min={1}
+                          max={1440}
+                          defaultValue={15}
+                        />
+                        <button className="primary" type="submit">
+                          <Bell size={15} />
+                          Add watcher
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <p className="muted">Create a conversation before adding a watcher.</p>
+                  )}
+                  <div className="watcher-list">
+                    {(state.watchers ?? []).map((watcher) => (
+                      <article className="watcher-card" key={watcher.id}>
+                        <div>
+                          <strong>{watcher.url}</strong>
+                          <p>{watcher.prompt}</p>
+                          <small>
+                            {watcher.enabled ? 'Watching' : 'Paused'} · every{' '}
+                            {watcher.intervalSeconds < 3600
+                              ? watcher.intervalSeconds / 60 + ' min'
+                              : watcher.intervalSeconds / 3600 + ' hr'}
+                            {watcher.error ? ` · Error: ${watcher.error}` : ''}
+                          </small>
+                        </div>
+                        <div className="watcher-actions">
+                          <button
+                            onClick={() =>
+                              void mutate(
+                                `/watchers/${watcher.id}/actions`,
+                                'POST',
+                                {
+                                  action: watcher.enabled ? 'pause' : 'resume',
+                                },
+                              )
+                            }
+                          >
+                            {watcher.enabled ? 'Pause' : 'Resume'}
+                          </button>
+                          <button
+                            className="quiet-button"
+                            onClick={() =>
+                              void mutate(
+                                `/watchers/${watcher.id}/actions`,
+                                'POST',
+                                { action: 'delete' },
+                              )
+                            }
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
                 <label className="search-box">
                   <Search size={16} />
                   <input
