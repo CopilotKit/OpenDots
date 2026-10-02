@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { Store } from '../src/server/store.js';
 import { WorkspaceStore } from '../src/server/workspace.js';
 import { Platform } from '../src/server/platform.js';
@@ -22,6 +22,7 @@ function fixture(ownerToken?: string) {
   });
   return {
     ws,
+    platform,
     app: createApp({
       store,
       runner: new Runner(store, config),
@@ -220,4 +221,49 @@ it('restores review receipts through the owner API with current thread and Space
   const other = ws.createSpace('Other', '');
   ws.updateDot(dot.id, { ...dot, spaceId: other.id, spaceIds: [other.id] });
   expect((await app.request(`${base}/call`, { headers })).status).toBe(403);
+});
+it.each([
+  ['GET', '/reviewed-page/tool'],
+  ['POST', '/reviewed-page'],
+  ['GET', '/page-context'],
+  ['POST', '/page'],
+])(
+  'returns 404 for an unknown conversation on %s %s',
+  async (method, suffix) => {
+    const { ws, app } = fixture();
+    const body =
+      suffix === '/reviewed-page'
+        ? {
+            title: 'Draft',
+            content: 'Text',
+            spaceId: ws.spaces()[0].id,
+            toolCallId: 'tool',
+          }
+        : { title: 'Draft' };
+    const response = await app.request(
+      `/api/conversations/missing${suffix}`,
+      method === 'GET' ? undefined : request(body),
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: 'Conversation does not belong to this Dot and owner.',
+    });
+  },
+);
+
+it('keeps real Intelligence failures as 503 without exposing details', async () => {
+  const { ws, app, platform } = fixture();
+  ws.bindThread('valid-thread', ws.dots()[0].id, 'Conversation');
+  vi.spyOn(platform.pages, 'saveConversation').mockRejectedValueOnce(
+    new Error('Provider secret'),
+  );
+  const response = await app.request(
+    '/api/conversations/valid-thread/page',
+    request({ title: 'Draft' }),
+  );
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual({
+    error:
+      'Page operation could not complete. Check Intelligence setup or retry; your draft has not been discarded.',
+  });
 });
