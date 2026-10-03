@@ -52,7 +52,7 @@ it('rejects cross-space parents, cycles and stale writes without losing content'
   store.close();
 });
 
-it('deletes a page, cleans up threads and reviews, and reparents descendants safely', () => {
+it('deletes a page and reparents descendants safely', () => {
   const store = new WorkspaceStore(':memory:', 'owner');
   const space = store.spaces()[0].id;
   const root = store.pages.create(space, { title: 'Root' });
@@ -81,5 +81,38 @@ it('deletes a page, cleans up threads and reviews, and reparents descendants saf
   expect(() => store.pages.delete('non-existent-space', grandChild.id)).toThrow(
     /Space not found/,
   );
+  store.close();
+});
+
+it('drops page thread bindings on delete and never recreates a page from a retried review', () => {
+  const store = new WorkspaceStore(':memory:', 'owner');
+  const space = store.spaces()[0].id;
+  const page = store.pages.create(space, { title: 'Draft' });
+  store.pages.reserveThread(page.id, 'dot', 'thread-1');
+  store.pages.finishThread(page.id, 'dot');
+  expect(store.pages.thread(page.id, 'dot')).toBeDefined();
+  expect(store.pages.delete(space, page.id)).toBe(true);
+  expect(store.pages.thread(page.id, 'dot')).toBeUndefined();
+
+  const reviewed = store.pages.createReviewed(
+    space,
+    { title: 'Reviewed' },
+    'review-thread',
+    'call-1',
+  );
+  expect(store.pages.delete(space, reviewed.id)).toBe(true);
+  expect(store.pages.reviewReceipt('review-thread', 'call-1')).toEqual({
+    pageId: reviewed.id,
+    spaceId: space,
+  });
+  expect(() =>
+    store.pages.createReviewed(
+      space,
+      { title: 'Reviewed' },
+      'review-thread',
+      'call-1',
+    ),
+  ).toThrow(/Page not found/);
+  expect(store.pages.list(space)).toHaveLength(0);
   store.close();
 });

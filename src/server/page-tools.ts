@@ -41,8 +41,6 @@ export function pageAccess(
       linked(workspace.pages.create(resolve(requested), input)),
     edit: (id: string, input: z.input<typeof pagePatch>, requested?: string) =>
       linked(workspace.pages.update(resolve(requested), id, input)),
-    delete: (id: string, requested?: string) =>
-      workspace.pages.delete(resolve(requested), id),
   };
 }
 

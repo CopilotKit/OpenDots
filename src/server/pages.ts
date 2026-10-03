@@ -261,7 +261,7 @@ export class Pages {
           'UPDATE pages SET parentId=?, updatedAt=? WHERE spaceId=? AND parentId=?',
         )
         .run(page.parentId, now, spaceId, id);
-      this.db.prepare('DELETE FROM page_reviews WHERE pageId=?').run(id);
+      // page_reviews rows stay: a retried approval must not recreate this page.
       this.db.prepare('DELETE FROM page_threads WHERE pageId=?').run(id);
       this.db
         .prepare('DELETE FROM pages WHERE id=? AND spaceId=?')
