@@ -96,3 +96,69 @@ it('requeues active work on graceful shutdown instead of losing it', async () =>
   expect(store.claim()).toBeTruthy();
   store.close();
 });
+it('survives a claim failure and runs work on the next tick', async () => {
+  const store = new Store(':memory:');
+  const runner = new Runner(store, { mode: 'sample', baseUrl: '' });
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const claim = vi.spyOn(store, 'claim').mockImplementationOnce(() => {
+    throw new Error('SQLITE_BUSY');
+  });
+  const task = store.createTask('Read this sample');
+  try {
+    await expect(runner.tick()).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledOnce();
+    await runner.tick();
+    expect(claim).toHaveBeenCalledTimes(2);
+    expect(store.detail(task.id)?.runs[0].result).toBeTruthy();
+  } finally {
+    log.mockRestore();
+    store.close();
+  }
+});
+it('survives failure persistence errors and clears active work', async () => {
+  const store = new Store(':memory:');
+  const execute = vi
+    .fn()
+    .mockRejectedValueOnce(new Error('Provider failure'))
+    .mockResolvedValueOnce({ text: 'Recovered', sources: [], memories: [] });
+  const runner = new Runner(store, config, execute);
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const fail = vi.spyOn(store, 'fail').mockImplementationOnce(() => {
+    throw new Error('SQLITE_BUSY');
+  });
+  store.createTask('First');
+  try {
+    await expect(runner.tick()).resolves.toBeUndefined();
+    expect(fail).toHaveBeenCalledOnce();
+    store.createTask('Second');
+    await runner.tick();
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(log).toHaveBeenCalledOnce();
+  } finally {
+    log.mockRestore();
+    store.close();
+  }
+});
+it('aborts work instead of throwing from an ownership timer', async () => {
+  const store = new Store(':memory:');
+  store.createTask('First');
+  const runner = new Runner(
+    store,
+    config,
+    (_claim, _memories, signal) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), {
+          once: true,
+        });
+      }),
+  );
+  vi.spyOn(store, 'owns').mockImplementationOnce(() => {
+    throw new Error('Database unavailable');
+  });
+  try {
+    await expect(runner.tick()).resolves.toBeUndefined();
+    expect(store.tasks()[0].status).toBe('failed');
+  } finally {
+    store.close();
+  }
+});
