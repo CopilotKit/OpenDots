@@ -371,6 +371,13 @@ export function WorkspaceDialog({
                 {workspace.setup.voice
                   ? 'configuration present'
                   : 'needs VOICE_API_KEY and VOICE_MODEL'}
+                . iMessage:{' '}
+                {workspace.setup.imessage === 'no_access'
+                  ? 'needs Full Disk Access'
+                  : (workspace.setup.imessage ?? 'not_configured').replaceAll(
+                      '_',
+                      ' ',
+                    )}
                 .
               </p>
               <a
