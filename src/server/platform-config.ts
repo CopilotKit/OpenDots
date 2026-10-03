@@ -1,5 +1,7 @@
+import type { ServerEnv } from '../config/env.js';
 import type { WebConfig } from './parallel.js';
 import type { SetupStatus } from '../shared/types.js';
+
 export interface PlatformConfig extends WebConfig {
   intelligenceKey?: string;
   intelligenceApiUrl?: string;
@@ -23,9 +25,45 @@ export interface PlatformConfig extends WebConfig {
   runtimeUrl: string;
   ownerToken?: string;
 }
+
+/**
+ * Project the parsed server env (uppercase keys) onto the runtime
+ * {@link PlatformConfig} shape consumed by the rest of the server.
+ */
+export function platformConfigFromEnv(
+  env: ServerEnv,
+  overrides: { runtimeUrl: string; ownerToken?: string },
+): PlatformConfig {
+  return {
+    webSearchProvider: env.WEB_SEARCH_PROVIDER,
+    parallelApiKey: env.PARALLEL_API_KEY,
+    intelligenceKey: env.INTELLIGENCE_API_KEY,
+    intelligenceApiUrl: env.INTELLIGENCE_API_URL,
+    intelligenceWsUrl: env.INTELLIGENCE_WS_URL,
+    apiKey: env.OPENAI_API_KEY,
+    model: env.OPENAI_MODEL,
+    baseUrl: env.OPENAI_BASE_URL,
+    computerSupervisorUrl: env.COMPUTER_SUPERVISOR_URL,
+    computerSupervisorToken: env.COMPUTER_SUPERVISOR_TOKEN,
+    computerToken: env.COMPUTER_TOKEN,
+    computerNamespace: env.COMPUTER_NAMESPACE,
+    browserUrl: env.BROWSER_URL,
+    browserSecret: env.BROWSER_SECRET,
+    voiceKey: env.VOICE_API_KEY,
+    voiceModel: env.VOICE_MODEL,
+    voiceName: env.VOICE_NAME,
+    slackChannel: env.SLACK_CHANNEL_NAME,
+    slackTeam: env.SLACK_TEAM_ID,
+    slackUsers: env.SLACK_USER_IDS,
+    slackDotId: env.SLACK_DOT_ID,
+    runtimeUrl: overrides.runtimeUrl,
+    ownerToken: overrides.ownerToken,
+  };
+}
+
 export function setupStatus(
   config: PlatformConfig,
-  slack = 'not_configured',
+  slack: string = 'not_configured',
   activationFailed = false,
 ): SetupStatus {
   const missing = [
