@@ -2974,6 +2974,13 @@ h3 {
   align-items: center;
   gap: 8px;
 }
+
+.computer-permissions input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  padding: 0;
+}
 .computer-error {
   color: #a32b32;
   background: #fff0f0;
