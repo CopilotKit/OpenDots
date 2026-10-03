@@ -26,9 +26,9 @@ export class Runner {
     this.timer = undefined;
     for (const task of this.store.tasks()) {
       if (this.active.has(task.id) && task.lease)
-        this.store.release(
+        this.store.interrupt(
           { ...task, lease: task.lease },
-          'Server stopping; queued for restart.',
+          'Server stopped during this run. Review completed effects before retrying.',
         );
     }
     this.abortAll();
