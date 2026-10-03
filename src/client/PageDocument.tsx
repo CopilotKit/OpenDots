@@ -32,6 +32,7 @@ export function PageDocument({
   onDirty,
   onSaved,
   onRefresh,
+  onDeleted,
   onSchedule,
   onThread,
   onSettings,
@@ -47,6 +48,7 @@ export function PageDocument({
   onDirty: (value: boolean) => void;
   onSaved: (page: Page) => void;
   onRefresh: () => void;
+  onDeleted: (id: string) => void;
   onSchedule: (id: string) => void;
   onThread: (id: string) => void;
   onSettings: () => void;
@@ -200,6 +202,36 @@ export function PageDocument({
                     },
                   ]
                 : []),
+              {
+                label: 'Delete page',
+                action: async () => {
+                  if (
+                    !window.confirm(
+                      `Delete "${draft.title || 'Untitled'}"? Any subpages will move to this page's parent.`,
+                    )
+                  )
+                    return;
+                  try {
+                    await api(
+                      `/spaces/${page.spaceId}/pages/${page.id}`,
+                      'DELETE',
+                    );
+                    // Drop pending autosave so navigation is not blocked by the
+                    // unsaved-draft prompt for a page that no longer exists.
+                    controller.dispose();
+                    onDirty(false);
+                    onDeleted(page.id);
+                    onRefresh();
+                    onHome();
+                  } catch (error) {
+                    setNotice(
+                      error instanceof Error
+                        ? error.message
+                        : 'Could not delete page.',
+                    );
+                  }
+                },
+              },
             ]}
           />
         </header>

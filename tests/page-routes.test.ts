@@ -221,3 +221,61 @@ it('restores review receipts through the owner API with current thread and Space
   ws.updateDot(dot.id, { ...dot, spaceId: other.id, spaceIds: [other.id] });
   expect((await app.request(`${base}/call`, { headers })).status).toBe(403);
 });
+
+it('deletes pages through the API and returns 404 for missing pages or spaces', async () => {
+  const { ws, app } = fixture();
+  const space = ws.spaces()[0].id;
+  const page = ws.pages.create(space, { title: 'To Delete' });
+  const path = `/api/spaces/${space}/pages/${page.id}`;
+
+  const res = await app.request(path, request(undefined, 'DELETE'));
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ ok: true });
+  expect(ws.pages.list(space)).toHaveLength(0);
+
+  const missing = await app.request(path, request(undefined, 'DELETE'));
+  expect(missing.status).toBe(404);
+  expect(await missing.json()).toEqual({
+    error: 'Page not found in this Space.',
+  });
+
+  const missingSpace = await app.request(
+    `/api/spaces/missing-space/pages/${page.id}`,
+    request(undefined, 'DELETE'),
+  );
+  expect(missingSpace.status).toBe(404);
+  expect(await missingSpace.json()).toEqual({ error: 'Space not found.' });
+});
+
+it('reports a deleted reviewed page instead of failing or recreating it', async () => {
+  const { ws, app } = fixture();
+  const dot = ws.dots()[0];
+  ws.bindThread('review-deleted', dot.id, 'Review');
+  const base = '/api/conversations/review-deleted/reviewed-page';
+  const saved = ws.pages.createReviewed(
+    dot.spaceId,
+    { title: 'Saved', content: 'Evidence' },
+    'review-deleted',
+    'call',
+  );
+  expect(ws.pages.delete(dot.spaceId, saved.id)).toBe(true);
+  expect(await (await app.request(`${base}/call`)).json()).toEqual({
+    deleted: true,
+    pageId: saved.id,
+    spaceId: dot.spaceId,
+  });
+  const retry = await app.request(
+    base,
+    request(
+      {
+        title: 'Saved',
+        content: 'Evidence',
+        spaceId: dot.spaceId,
+        toolCallId: 'call',
+      },
+      'POST',
+    ),
+  );
+  expect(retry.status).toBe(404);
+  expect(ws.pages.list(dot.spaceId)).toHaveLength(0);
+});

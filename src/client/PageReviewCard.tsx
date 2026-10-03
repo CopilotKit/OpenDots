@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, FileText, ArrowUpRight } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { pageReviewSchema } from '../shared/page-review';
-import { decidePageReview, restorePageReview } from './page-review-decision';
+import {
+  decidePageReview,
+  isDeletedReview,
+  restorePageReview,
+  type DeletedReview,
+} from './page-review-decision';
 import { computerToolResult } from './ComputerToolCard';
 import { openPageLink } from './page-navigation';
 import type { Page } from '../server/pages';
@@ -26,6 +31,7 @@ export function PageReviewCard({
   const draft = pageReviewSchema.safeParse(args);
   const outcome = computerToolResult(result);
   const [savedPage, setSavedPage] = useState<Page>();
+  const [deletedReview, setDeletedReview] = useState<DeletedReview>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [receiptReady, setReceiptReady] = useState(false);
@@ -33,7 +39,7 @@ export function PageReviewCard({
   const pending = useRef(false);
   const finished = status === 'complete';
   const recordedApproval = outcome.approved === true;
-  const saved = !!savedPage || recordedApproval;
+  const saved = !!savedPage || recordedApproval || !!deletedReview;
   const pageId =
     savedPage?.id ?? (typeof outcome.pageId === 'string' ? outcome.pageId : '');
   const spaceId =
@@ -47,7 +53,8 @@ export function PageReviewCard({
     void restorePageReview(threadId, toolCallId)
       .then((page) => {
         if (!active) return;
-        setSavedPage(page ?? undefined);
+        if (isDeletedReview(page)) setDeletedReview(page);
+        else setSavedPage(page ?? undefined);
         setReceiptReady(true);
       })
       .catch((cause) => {
@@ -76,6 +83,18 @@ export function PageReviewCard({
         });
         return;
       }
+      if (isDeletedReview(page)) {
+        setDeletedReview(page);
+        await respond({
+          approved: true,
+          pageId: page.pageId,
+          spaceId: page.spaceId,
+          deleted: true,
+          message:
+            'The draft was saved, then the owner deleted the page. Do not link it.',
+        });
+        return;
+      }
       setSavedPage(page);
       onSaved();
       await respond({
@@ -101,13 +120,15 @@ export function PageReviewCard({
       <header>
         <FileText size={17} />
         <strong>
-          {saved
-            ? 'Saved to your Space'
-            : !receiptReady
-              ? 'Checking saved review…'
-              : finished
-                ? 'Review ended'
-                : 'Ready for your review'}
+          {deletedReview
+            ? 'Saved, then deleted'
+            : saved
+              ? 'Saved to your Space'
+              : !receiptReady
+                ? 'Checking saved review…'
+                : finished
+                  ? 'Review ended'
+                  : 'Ready for your review'}
         </strong>
         <span>
           {saved
@@ -146,7 +167,7 @@ export function PageReviewCard({
         </button>
       )}
       <footer>
-        {saved && pageId && spaceId && (
+        {saved && !deletedReview && pageId && spaceId && (
           <button
             type="button"
             className="review-primary"
