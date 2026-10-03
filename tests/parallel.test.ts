@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   parallelSources,
   sourcesFromResult,
-  webSearchProvider,
 } from '../src/server/parallel.js';
 import { research } from '../src/server/research.js';
+import { parallelEnvSchema } from '../src/config/env/parallel.js';
 const mcp = vi.hoisted(() => ({
   connect: vi.fn(),
   callTool: vi.fn(),
@@ -35,10 +35,18 @@ afterEach(() => vi.unstubAllGlobals());
 const signal = new AbortController().signal;
 describe('Parallel research', () => {
   it('defaults to Parallel and rejects invalid configuration', () => {
-    expect(webSearchProvider()).toBe('parallel');
-    expect(webSearchProvider('browser')).toBe('browser');
-    expect(webSearchProvider('disabled')).toBe('disabled');
-    expect(() => webSearchProvider('other')).toThrow('WEB_SEARCH_PROVIDER');
+    expect(parallelEnvSchema.parse({}).WEB_SEARCH_PROVIDER).toBe('parallel');
+    expect(
+      parallelEnvSchema.parse({ WEB_SEARCH_PROVIDER: 'browser' })
+        .WEB_SEARCH_PROVIDER,
+    ).toBe('browser');
+    expect(
+      parallelEnvSchema.parse({ WEB_SEARCH_PROVIDER: 'disabled' })
+        .WEB_SEARCH_PROVIDER,
+    ).toBe('disabled');
+    expect(() =>
+      parallelEnvSchema.parse({ WEB_SEARCH_PROVIDER: 'other' }),
+    ).toThrow();
   });
   it('searches, extracts and grounds a topic-only brief without a browser', async () => {
     mcp.callTool

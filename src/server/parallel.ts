@@ -3,18 +3,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { z } from 'zod';
 
-export type WebSearchProvider = 'parallel' | 'browser' | 'disabled';
+import type { WebSearchProvider } from '../config/env/parallel.js';
+export type { WebSearchProvider };
 export interface WebConfig {
   webSearchProvider?: WebSearchProvider;
   parallelApiKey?: string;
-}
-export function webSearchProvider(value?: string): WebSearchProvider {
-  if (!value) return 'parallel';
-  if (value === 'parallel' || value === 'browser' || value === 'disabled')
-    return value;
-  throw new Error(
-    'WEB_SEARCH_PROVIDER must be parallel, browser, or disabled.',
-  );
 }
 const source = z.object({
   url: z
