@@ -92,6 +92,15 @@ export function pageRoutes(platform: Platform) {
       ),
     );
   });
+  app.delete('/spaces/:spaceId/pages/:id', (c) => {
+    const deleted = platform.workspace.pages.delete(
+      c.req.param('spaceId'),
+      c.req.param('id'),
+    );
+    if (!deleted)
+      return c.json({ error: 'Page not found in this Space.' }, 404);
+    return c.json({ ok: true });
+  });
   app.post('/spaces/:spaceId/pages/:id/conversation', async (c) => {
     const data = z
       .object({ dotId: z.string().min(1) })

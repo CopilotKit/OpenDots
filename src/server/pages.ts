@@ -244,4 +244,33 @@ export class Pages {
       ? this.get(spaceId ?? String(row.spaceId), String(row.pageId))
       : undefined;
   }
+  delete(spaceId: string, id: string): boolean {
+    this.requireSpace(spaceId);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const page = this.db
+        .prepare('SELECT parentId FROM pages WHERE id=? AND spaceId=?')
+        .get(id, spaceId) as { parentId: string | null } | undefined;
+      if (!page) {
+        this.db.exec('COMMIT');
+        return false;
+      }
+      const now = Date.now();
+      this.db
+        .prepare(
+          'UPDATE pages SET parentId=?, updatedAt=? WHERE spaceId=? AND parentId=?',
+        )
+        .run(page.parentId, now, spaceId, id);
+      this.db.prepare('DELETE FROM page_reviews WHERE pageId=?').run(id);
+      this.db.prepare('DELETE FROM page_threads WHERE pageId=?').run(id);
+      this.db
+        .prepare('DELETE FROM pages WHERE id=? AND spaceId=?')
+        .run(id, spaceId);
+      this.db.exec('COMMIT');
+      return true;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
 }

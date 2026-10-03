@@ -51,3 +51,35 @@ it('rejects cross-space parents, cycles and stale writes without losing content'
   expect(() => store.pages.get(b, root.id)).toThrow();
   store.close();
 });
+
+it('deletes a page, cleans up threads and reviews, and reparents descendants safely', () => {
+  const store = new WorkspaceStore(':memory:', 'owner');
+  const space = store.spaces()[0].id;
+  const root = store.pages.create(space, { title: 'Root' });
+  const child = store.pages.create(space, {
+    title: 'Child',
+    parentId: root.id,
+  });
+  const grandChild = store.pages.create(space, {
+    title: 'Grandchild',
+    parentId: child.id,
+  });
+
+  // Verify deletion of child: grandChild should be reparented to root
+  expect(store.pages.delete(space, child.id)).toBe(true);
+  expect(store.pages.delete(space, child.id)).toBe(false);
+  expect(() => store.pages.get(space, child.id)).toThrow();
+  expect(store.pages.get(space, grandChild.id).parentId).toBe(root.id);
+
+  // Verify deletion of root: grandChild should be reparented to null (root level)
+  expect(store.pages.delete(space, root.id)).toBe(true);
+  expect(store.pages.get(space, grandChild.id).parentId).toBeNull();
+  expect(store.pages.list(space)).toHaveLength(1);
+  expect(store.pages.list(space)[0].id).toBe(grandChild.id);
+
+  // Missing space throws
+  expect(() => store.pages.delete('non-existent-space', grandChild.id)).toThrow(
+    /Space not found/,
+  );
+  store.close();
+});

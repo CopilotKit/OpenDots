@@ -200,6 +200,31 @@ export function PageDocument({
                     },
                   ]
                 : []),
+              {
+                label: 'Delete page',
+                action: async () => {
+                  if (
+                    !window.confirm(
+                      `Delete "${draft.title || 'Untitled'}"? Any subpages will move to this page's parent.`,
+                    )
+                  )
+                    return;
+                  try {
+                    await api(
+                      `/spaces/${page.spaceId}/pages/${page.id}`,
+                      'DELETE',
+                    );
+                    onRefresh();
+                    onHome();
+                  } catch (error) {
+                    setNotice(
+                      error instanceof Error
+                        ? error.message
+                        : 'Could not delete page.',
+                    );
+                  }
+                },
+              },
             ]}
           />
         </header>
