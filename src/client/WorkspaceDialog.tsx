@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { Dot, Memory, State, WorkspaceState } from '../shared/types';
+import { ConnectionsSection } from './ConnectionsSection';
 export type Dialog =
   | { type: 'space' }
   | { type: 'dot'; dot?: Dot; spaceId: string }
@@ -336,6 +337,9 @@ export function WorkspaceDialog({
                 Set up Learning and review skills ↗
               </a>
             </fieldset>
+          )}
+          {dialog.type === 'dot' && dialog.dot && (
+            <ConnectionsSection dotId={dialog.dot.id} />
           )}
           {dialog.type === 'schedule' && (
             <>
