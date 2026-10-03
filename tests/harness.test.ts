@@ -331,7 +331,10 @@ describe.each<Provider>(['claude-code', 'codex'])(
         expect(row.present).toEqual([]);
         expect(dirname(row.cwd)).toBe(join(f.root, 'workspaces'));
         expect(row.cwd.slice(-64)).toMatch(/^[a-f0-9]{64}$/);
-        expect(alive(row.pid)).toBe(false);
+        await vi.waitFor(() => expect(alive(row.pid)).toBe(false), {
+          timeout: 4000,
+          interval: 50,
+        });
       }
       expect(receipts[0].cwd).toBe(receipts[1].cwd);
       const args = receipts[1].args;
@@ -447,8 +450,13 @@ describe.each<Provider>(['claude-code', 'codex'])(
         'threadId',
         'type',
       ]);
+      // A terminal event can precede the OS reaping the CLI child. Still require
+      // every recorded process to disappear within the teardown deadline.
       for (const row of await f.readReceipts())
-        expect(alive(row.pid)).toBe(false);
+        await vi.waitFor(() => expect(alive(row.pid)).toBe(false), {
+          timeout: 4000,
+          interval: 50,
+        });
     }, 15_000);
 
     it('promptly kills a stalled auth preflight when the owner cancels, without launching a turn', async () => {
