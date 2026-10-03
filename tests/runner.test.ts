@@ -34,7 +34,7 @@ it('aborts research when permissions are revoked outside the runner instance', a
   await tick;
   expect(requestSignal?.aborted).toBe(true);
   expect(request).toHaveBeenCalledOnce();
-  expect(store.tasks()[0].status).toBe('queued');
+  expect(store.tasks()[0].status).toBe('interrupted');
   runner.stop();
   store.close();
 });
@@ -73,7 +73,7 @@ it('omits stored memories from research when memory permission is disabled', asy
   );
   store.close();
 });
-it('requeues active work on graceful shutdown instead of losing it', async () => {
+it('holds active work for review on graceful shutdown', async () => {
   const store = new Store(':memory:');
   const runner = new Runner(store, config);
   const fetch = vi.fn(
@@ -92,7 +92,9 @@ it('requeues active work on graceful shutdown instead of losing it', async () =>
   await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
   runner.stop();
   await pending;
-  expect(store.tasks()[0].status).toBe('queued');
+  expect(store.tasks()[0].status).toBe('interrupted');
+  expect(store.claim()).toBeNull();
+  store.action(store.tasks()[0].id, 'run');
   expect(store.claim()).toBeTruthy();
   store.close();
 });
