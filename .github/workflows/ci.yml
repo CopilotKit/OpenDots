@@ -15,8 +15,11 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npm run env:check
       - run: npm run check-format
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run verify:themes

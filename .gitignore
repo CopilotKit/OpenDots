@@ -3,6 +3,7 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.schema
 .opendots/
 artifacts/
 playwright-report/
