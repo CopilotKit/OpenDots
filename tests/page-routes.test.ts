@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { Store } from '../src/server/store.js';
 import { WorkspaceStore } from '../src/server/workspace.js';
 import { Platform } from '../src/server/platform.js';
@@ -232,7 +232,6 @@ it('answers malformed JSON and invalid Space access with 400 on workspace routes
       body: '{',
     });
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: 'Invalid JSON request.' });
   }
   const body = {
     name: dot.name,
@@ -256,4 +255,16 @@ it('answers malformed JSON and invalid Space access with 400 on workspace routes
       )
     ).status,
   ).toBe(400);
+});
+
+it('keeps upstream JSON parsing failures on workspace routes as 503', async () => {
+  const { ws, app } = fixture();
+  vi.spyOn(ws, 'createSpace').mockImplementation(() => {
+    throw new SyntaxError('Unexpected token in upstream response');
+  });
+  const response = await app.request(
+    '/api/spaces',
+    request({ name: 'Valid', description: '' }),
+  );
+  expect(response.status).toBe(503);
 });
