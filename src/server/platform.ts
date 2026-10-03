@@ -16,8 +16,11 @@ import { runThreadTurn } from './headless.js';
 import { setupStatus, type PlatformConfig } from './platform-config.js';
 import { validateRuntimeScope } from './runtime-scope.js';
 import { learningSelector } from './learning.js';
+import type { BridgeStatus } from './imessage.js';
+import type { SetupStatus } from '../shared/types.js';
 export class Platform {
   private channelStartupFailed = false;
+  imessageStatus: () => BridgeStatus = () => 'not_configured';
   readonly pages: PageService;
   readonly computers: ComputerService;
   readonly intelligence?: CopilotKitIntelligence;
@@ -84,13 +87,16 @@ export class Platform {
       cors: { origin: [] },
     });
   }
-  setup() {
-    return setupStatus(
-      this.config,
-      this.handler?.channels?.status().overall ??
-        (this.config.slackChannel ? 'setup_required' : 'not_configured'),
-      this.channelStartupFailed,
-    );
+  setup(): SetupStatus {
+    return {
+      ...setupStatus(
+        this.config,
+        this.handler?.channels?.status().overall ??
+          (this.config.slackChannel ? 'setup_required' : 'not_configured'),
+        this.channelStartupFailed,
+      ),
+      imessage: this.imessageStatus(),
+    };
   }
   requireReady() {
     const missing = this.setup().missing;

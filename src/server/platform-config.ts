@@ -20,6 +20,9 @@ export interface PlatformConfig extends WebConfig {
   slackTeam?: string;
   slackUsers: string[];
   slackDotId?: string;
+  imessageHandles?: string[];
+  imessageDotId?: string;
+  imessageDbPath?: string;
   runtimeUrl: string;
   ownerToken?: string;
 }
