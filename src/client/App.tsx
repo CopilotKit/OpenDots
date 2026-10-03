@@ -433,7 +433,7 @@ export function App() {
           >
             <Clock3 size={17} />
             <span>Scheduled & activity</span>
-            <small>{state.tasks.length}</small>
+            {state.tasks.length > 0 && <small>{state.tasks.length}</small>}
           </button>
           <button
             className={`nav-item ${view === 'memories' ? 'active' : ''}`}
@@ -444,7 +444,9 @@ export function App() {
           >
             <BookOpen size={17} />
             <span>Memories</span>
-            <small>{state.memories.length}</small>
+            {state.memories.length > 0 && (
+              <small>{state.memories.length}</small>
+            )}
           </button>
           <button
             className="nav-item"
