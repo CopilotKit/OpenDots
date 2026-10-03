@@ -80,7 +80,7 @@ _Ask Scout to open a website, summarize it, save notes, and verify the file. Eve
 
 ### Review before saving
 
-Ask a Dot to show a draft before saving it. A CopilotKit human-in-the-loop card pauses the conversation for **Approve & save** or **Decline**. Approval creates the page in an authorized Space and returns a link; retries recover the same saved page. The agent continues after your decision.
+Ask a Dot to show a draft before saving it. A CopilotKit human-in-the-loop card pauses the conversation for **Approve & save** or **Decline**. Approval creates the page in an authorized Space and returns a link; retries with the same draft recover that saved page. A changed draft needs a new review. The agent continues after your decision.
 
 ### Text and calls
 
