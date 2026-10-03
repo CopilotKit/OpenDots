@@ -4,17 +4,17 @@ import type { ComputerService } from './computer-service.js';
 import type { ComputerAction } from '../shared/computer-types.js';
 export function computerRoutes(computers: ComputerService) {
   const app = new Hono();
-  app.onError((error, c) =>
-    c.json(
+  app.onError((error, c) => {
+    if (error instanceof SyntaxError)
+      return c.json({ error: 'Invalid JSON request.' }, 400);
+    const isValidation = error instanceof z.ZodError;
+    return c.json(
       {
-        error:
-          error instanceof z.ZodError
-            ? 'Invalid computer request.'
-            : error.message,
+        error: isValidation ? 'Invalid computer request.' : error.message,
       },
-      400,
-    ),
-  );
+      isValidation ? 400 : 503,
+    );
+  });
   app.get('/dots/:id/computer', async (c) =>
     c.json(await computers.status(c.req.param('id'))),
   );
