@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { research, type Config } from '../src/server/research.js';
+import { configured, research, type Config } from '../src/server/research.js';
 const signal = new AbortController().signal;
 const config: Config = {
   mode: 'live',
@@ -92,4 +92,46 @@ describe('research adapters', () => {
       research('Read https://example.com', [], config, signal, () => {}),
     ).rejects.toThrow('429');
   });
+  it.each(['claude-code', 'codex', 'chatgpt'])(
+    'rejects %s before source or model requests',
+    async (provider) => {
+      const fetch = vi.fn();
+      vi.stubGlobal('fetch', fetch);
+      const selected = { ...config, provider };
+      expect(configured(selected)).toBe(false);
+      await expect(
+        research('Read https://example.com', [], selected, signal, () => {}),
+      ).rejects.toThrow(/Research briefs need an HTTPS model/);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    { provider: 'typo', expected: 'MODEL_PROVIDER' },
+    {
+      provider: 'anthropic',
+      expected: 'ANTHROPIC_API_KEY and ANTHROPIC_MODEL',
+    },
+    { provider: 'cline-pass', expected: 'CLINE_API_KEY and CLINE_MODEL' },
+    {
+      provider: 'openai',
+      apiKey: ' ',
+      expected: 'OPENAI_API_KEY and OPENAI_MODEL',
+    },
+  ])(
+    'preserves actionable selected-provider failures for $provider',
+    async ({ expected, ...selection }) => {
+      const fetch = vi.fn();
+      vi.stubGlobal('fetch', fetch);
+      await expect(
+        research(
+          'Read https://example.com',
+          [],
+          { ...config, ...selection },
+          signal,
+          () => {},
+        ),
+      ).rejects.toThrow(expected);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
 });

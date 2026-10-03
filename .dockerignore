@@ -4,6 +4,7 @@ dist
 .env
 .env.*
 !.env.example
+!.env.schema
 data
 artifacts
 RESEARCH.md
