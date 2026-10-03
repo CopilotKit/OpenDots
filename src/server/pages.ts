@@ -59,6 +59,12 @@ export class Pages {
     if (!this.spaceExists(spaceId))
       throw new PageError('Space not found.', 404);
   }
+  exists(spaceId: string, id: string): boolean {
+    this.requireSpace(spaceId);
+    return !!this.db
+      .prepare('SELECT 1 FROM pages WHERE id=? AND spaceId=?')
+      .get(id, spaceId);
+  }
   list(spaceId: string): Page[] {
     this.requireSpace(spaceId);
     return this.db

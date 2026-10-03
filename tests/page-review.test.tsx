@@ -2,7 +2,10 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 vi.mock('../src/client/api', () => ({ api: vi.fn() }));
 import { api } from '../src/client/api';
-import { decidePageReview } from '../src/client/page-review-decision';
+import {
+  decidePageReview,
+  isDeletedReview,
+} from '../src/client/page-review-decision';
 import { PageReviewCard } from '../src/client/PageReviewCard';
 
 beforeEach(() => {
@@ -23,6 +26,19 @@ it('recovers an already committed save instead of emitting a decline', async () 
   vi.mocked(api).mockResolvedValue(page);
   expect(await decidePageReview('thread', 'call', {}, false)).toBe(page);
   expect(api).toHaveBeenCalledTimes(1);
+});
+
+it('recognizes a saved review whose page was deleted without saving again', async () => {
+  const deleted = { deleted: true, pageId: 'gone', spaceId: 'space' };
+  vi.mocked(api).mockResolvedValue(deleted);
+  const result = await decidePageReview('thread', 'call', {}, true);
+  expect(isDeletedReview(result)).toBe(true);
+  expect(result).toBe(deleted);
+  expect(
+    vi.mocked(api).mock.calls.filter((call) => call[1] === 'POST'),
+  ).toHaveLength(0);
+  expect(isDeletedReview({ id: 'page' })).toBe(false);
+  expect(isDeletedReview(null)).toBe(false);
 });
 
 it('does not decide or save when receipt recovery fails', async () => {

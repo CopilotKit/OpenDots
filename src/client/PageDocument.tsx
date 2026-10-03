@@ -214,6 +214,10 @@ export function PageDocument({
                       `/spaces/${page.spaceId}/pages/${page.id}`,
                       'DELETE',
                     );
+                    // Drop pending autosave so navigation is not blocked by the
+                    // unsaved-draft prompt for a page that no longer exists.
+                    controller.dispose();
+                    onDirty(false);
                     onRefresh();
                     onHome();
                   } catch (error) {

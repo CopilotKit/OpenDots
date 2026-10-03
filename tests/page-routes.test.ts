@@ -246,3 +246,36 @@ it('deletes pages through the API and returns 404 for missing pages or spaces', 
   expect(missingSpace.status).toBe(404);
   expect(await missingSpace.json()).toEqual({ error: 'Space not found.' });
 });
+
+it('reports a deleted reviewed page instead of failing or recreating it', async () => {
+  const { ws, app } = fixture();
+  const dot = ws.dots()[0];
+  ws.bindThread('review-deleted', dot.id, 'Review');
+  const base = '/api/conversations/review-deleted/reviewed-page';
+  const saved = ws.pages.createReviewed(
+    dot.spaceId,
+    { title: 'Saved', content: 'Evidence' },
+    'review-deleted',
+    'call',
+  );
+  expect(ws.pages.delete(dot.spaceId, saved.id)).toBe(true);
+  expect(await (await app.request(`${base}/call`)).json()).toEqual({
+    deleted: true,
+    pageId: saved.id,
+    spaceId: dot.spaceId,
+  });
+  const retry = await app.request(
+    base,
+    request(
+      {
+        title: 'Saved',
+        content: 'Evidence',
+        spaceId: dot.spaceId,
+        toolCallId: 'call',
+      },
+      'POST',
+    ),
+  );
+  expect(retry.status).toBe(404);
+  expect(ws.pages.list(dot.spaceId)).toHaveLength(0);
+});
