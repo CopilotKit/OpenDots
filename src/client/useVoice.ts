@@ -334,3 +334,15 @@ export function useVoice(
     toggleSpeaker,
   };
 }
+// Example conceptual pattern:
+.catch((error) => {
+  if (!firstFailureTime) {
+    firstFailureTime = Date.now();
+  }
+
+  const elapsed = Date.now() - firstFailureTime;
+  if (elapsed >= GRACE_PERIOD_MS) {
+    // Grace period exceeded; terminate call
+    end("Call control connection was lost.");
+  }
+});
