@@ -14,6 +14,8 @@ npm run dev
 
 Open http://127.0.0.1:5173. The API runs on port 4310. Without service credentials, the app shows its setup state; it does not generate simulated replies.
 
+During `npm run dev`, both http://localhost:5173 and http://127.0.0.1:5173 are allowed browser origins. The UI sends API requests through Vite's `/api` proxy. To use a different proxy or custom domain, set `APP_ORIGIN` to one exact origin or a comma-separated list, for example `APP_ORIGIN=http://localhost:5173,http://127.0.0.1:5173`. An explicit value replaces the development defaults. Origins must match the scheme, hostname, and port exactly; omit paths and trailing slashes. Whitespace around list entries is trimmed and empty entries are ignored. Outside development, leaving `APP_ORIGIN` unset requires the browser origin to match the request URL's origin. This setting preserves cross-site request blocking; it does not enable direct cross-origin browser access to the API.
+
 For a built local app:
 
 ```sh
@@ -27,16 +29,16 @@ Open http://127.0.0.1:4310. Keep the server running for background work.
 
 Edit `.env` on the server and restart after changes:
 
-| Variable                                      | Purpose                                                   |
-| --------------------------------------------- | --------------------------------------------------------- |
-| `INTELLIGENCE_API_KEY`                        | Project credential for conversation persistence           |
-| `INTELLIGENCE_API_URL`, `INTELLIGENCE_WS_URL` | Endpoint overrides for your Intelligence deployment       |
-| `OPENAI_API_KEY`, `OPENAI_MODEL`              | Model credential and model identifier                     |
-| `OPENAI_BASE_URL`                             | Compatible model API endpoint                             |
-| `OWNER_ID`                                    | Stable identity used for this deployment's conversations  |
-| `DATABASE_PATH`                               | SQLite file containing pages, workspace and work metadata |
-| `OWNER_TOKEN`                                 | Application access token; required for external bindings  |
-| `APP_ORIGIN`                                  | Exact browser origin when using a proxy or custom domain  |
+| Variable                                      | Purpose                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| `INTELLIGENCE_API_KEY`                        | Project credential for conversation persistence                    |
+| `INTELLIGENCE_API_URL`, `INTELLIGENCE_WS_URL` | Endpoint overrides for your Intelligence deployment                |
+| `OPENAI_API_KEY`, `OPENAI_MODEL`              | Model credential and model identifier                              |
+| `OPENAI_BASE_URL`                             | Compatible model API endpoint                                      |
+| `OWNER_ID`                                    | Stable identity used for this deployment's conversations           |
+| `DATABASE_PATH`                               | SQLite file containing pages, workspace and work metadata          |
+| `OWNER_TOKEN`                                 | Application access token; required for external bindings           |
+| `APP_ORIGIN`                                  | Comma-separated exact browser origins for a proxy or custom domain |
 
 The model environment variable names follow the configured provider adapter. Provider credentials belong in `.env`, not client-side variables or source code. Conversation history lives in the configured Intelligence project; copying the SQLite file alone does not back up that history.
 

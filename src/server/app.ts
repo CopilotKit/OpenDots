@@ -39,7 +39,9 @@ export function createApp({
     c.header('X-Content-Type-Options', 'nosniff');
     const requestUrl = new URL(c.req.url);
     const origins = origin
-      ? (Array.isArray(origin) ? origin : [origin])
+      ? Array.isArray(origin)
+        ? origin
+        : [origin]
       : undefined;
     const originHostnames = origins
       ? origins
@@ -61,9 +63,7 @@ export function createApp({
     if (!ownerToken && !allowedHosts.has(requestUrl.hostname))
       return c.json({ error: 'Unrecognized host.' }, 403);
     const requestOrigin = c.req.header('origin');
-    const allowedOrigins = new Set(
-      origins ?? [new URL(c.req.url).origin],
-    );
+    const allowedOrigins = new Set(origins ?? [new URL(c.req.url).origin]);
     if (requestOrigin && !allowedOrigins.has(requestOrigin))
       return c.json({ error: 'Cross-origin requests are not allowed.' }, 403);
     if (c.req.header('sec-fetch-site') === 'cross-site')
