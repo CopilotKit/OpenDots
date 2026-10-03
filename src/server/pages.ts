@@ -264,7 +264,7 @@ export class Pages {
       const now = Date.now();
       this.db
         .prepare(
-          'UPDATE pages SET parentId=?, updatedAt=? WHERE spaceId=? AND parentId=?',
+          'UPDATE pages SET parentId=?, revision=revision+1, updatedAt=? WHERE spaceId=? AND parentId=?',
         )
         .run(page.parentId, now, spaceId, id);
       // page_reviews rows stay: a retried approval must not recreate this page.

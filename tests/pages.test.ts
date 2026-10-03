@@ -70,6 +70,10 @@ it('deletes a page and reparents descendants safely', () => {
   expect(store.pages.delete(space, child.id)).toBe(false);
   expect(() => store.pages.get(space, child.id)).toThrow();
   expect(store.pages.get(space, grandChild.id).parentId).toBe(root.id);
+  // Reparenting bumps the revision so clients holding the old parent resync.
+  expect(store.pages.get(space, grandChild.id).revision).toBe(
+    grandChild.revision + 1,
+  );
 
   // Verify deletion of root: grandChild should be reparented to null (root level)
   expect(store.pages.delete(space, root.id)).toBe(true);

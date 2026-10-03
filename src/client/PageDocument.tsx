@@ -32,6 +32,7 @@ export function PageDocument({
   onDirty,
   onSaved,
   onRefresh,
+  onDeleted,
   onSchedule,
   onThread,
   onSettings,
@@ -47,6 +48,7 @@ export function PageDocument({
   onDirty: (value: boolean) => void;
   onSaved: (page: Page) => void;
   onRefresh: () => void;
+  onDeleted: (id: string) => void;
   onSchedule: (id: string) => void;
   onThread: (id: string) => void;
   onSettings: () => void;
@@ -218,6 +220,7 @@ export function PageDocument({
                     // unsaved-draft prompt for a page that no longer exists.
                     controller.dispose();
                     onDirty(false);
+                    onDeleted(page.id);
                     onRefresh();
                     onHome();
                   } catch (error) {
