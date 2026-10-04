@@ -1,5 +1,6 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+vi.mock('../src/client/api', () => ({ api: vi.fn() }));
 import { ConnectionActionCard } from '../src/client/ConnectionActionCard';
 it('shows the proposed action and its arguments before anything runs', () => {
   const html = renderToStaticMarkup(
