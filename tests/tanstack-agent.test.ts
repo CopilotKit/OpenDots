@@ -249,3 +249,26 @@ it('aborts the TanStack provider request when the owner pauses work', async () =
   await finished;
   expect(signal.aborted).toBe(true);
 });
+
+it('tells the model the current time so scheduled runs do not invent one', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-04T07:33:12.000Z'));
+  try {
+    const f = fixture();
+    const network = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        completion({ role: 'assistant', content: 'It is 07:33 UTC.' }),
+      );
+    await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+    const request = JSON.parse(String(network.mock.calls[0][1]?.body));
+    const system = request.messages.find(
+      (message: { role: string }) => message.role === 'system',
+    );
+    expect(system.content).toContain(
+      'Current time: 2026-10-04T07:33:12.000Z (UTC).',
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
