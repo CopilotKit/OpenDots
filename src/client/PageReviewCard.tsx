@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, FileText, ArrowUpRight } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { pageReviewSchema } from '../shared/page-review';
 import { decidePageReview, restorePageReview } from './page-review-decision';
 import { computerToolResult } from './ComputerToolCard';
@@ -123,6 +124,7 @@ export function PageReviewCard({
         <h3>{draft.success ? draft.data.title : 'Preparing your draft…'}</h3>
         {draft.success && (
           <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
             components={{
               img: ({ alt }) => <span>{alt}</span>,
               a: ({ href, children }) => (
