@@ -1,4 +1,5 @@
 import { openPageLink } from './page-navigation';
+import { afterPollSuccess } from './poll-error';
 import { SpaceNav } from './SpaceNav';
 import { SpaceWorkspace } from './SpaceWorkspace';
 import { useCallback, useEffect, useState, useRef } from 'react';
@@ -105,6 +106,8 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [taskDetail, setTaskDetail] = useState<Detail>();
+  const pollError = useRef<string | undefined>(undefined);
+  const captureError = useRef<string | undefined>(undefined);
   const refresh = useCallback(async () => {
     try {
       const [s, w] = await Promise.all([
@@ -115,12 +118,18 @@ export function App() {
       setWorkspace(w);
       setNeedsAuth(false);
       setSelectedDot((previous) => previous || w.dots[0]?.id || '');
+      // The server answered, so the failure this poll was reporting is over. Anything else on
+      // screen belongs to something the owner did and stays until they dismiss it.
+      setError((current) => afterPollSuccess(current, pollError.current));
+      pollError.current = undefined;
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setNeedsAuth(true);
-      else
-        setError(
-          e instanceof Error ? e.message : 'Could not connect to the server.',
-        );
+      else {
+        const message =
+          e instanceof Error ? e.message : 'Could not connect to the server.';
+        pollError.current = message;
+        setError(message);
+      }
     }
   }, []);
   useEffect(() => {
@@ -132,13 +141,21 @@ export function App() {
     setCapture(undefined);
     if (!selectedThread) return;
     let active = true;
+    captureError.current = undefined;
     const load = () =>
       void api<Result | null>(`/conversations/${selectedThread}/capture`)
         .then((result) => {
-          if (active) setCapture(result ?? undefined);
+          if (!active) return;
+          setCapture(result ?? undefined);
+          setError((current) =>
+            afterPollSuccess(current, captureError.current),
+          );
+          captureError.current = undefined;
         })
         .catch((e) => {
-          if (active) setError(e.message);
+          if (!active) return;
+          captureError.current = e.message;
+          setError(e.message);
         });
     load();
     const timer = setInterval(load, 3000);
