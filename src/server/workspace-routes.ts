@@ -1,6 +1,7 @@
 import { pageRoutes } from './page-routes.js';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
 import { Platform } from './platform.js';
 import { VoiceService } from './voice.js';
 import {
@@ -31,6 +32,19 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
       calls: platform.workspace.calls(),
     }),
   );
+  app.post('/codex/verify', async (c) => {
+    try {
+      return c.json(await platform.verifyCodex());
+    } catch {
+      return c.json(
+        {
+          error:
+            'Could not verify the local Codex session. Make sure Codex CLI is installed and signed in on this device.',
+        },
+        502,
+      );
+    }
+  });
   app.post('/spaces', async (c) => {
     const data = z
       .object({
@@ -139,6 +153,15 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
   });
   app.get('/conversations/:id/capture', (c) =>
     c.json(platform.workspace.capture(c.req.param('id'))),
+  );
+  app.get('/conversations/:id/history', async (c) =>
+    c.json(
+      (await platform.messages(c.req.param('id'))).map((message) => ({
+        id: randomUUID(),
+        role: message.role,
+        content: message.content,
+      })),
+    ),
   );
   app.post('/voice/calls', async (c) => {
     const data = z

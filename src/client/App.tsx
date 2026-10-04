@@ -239,7 +239,9 @@ export function App() {
             {error}
           </p>
         )}
-        <p className="muted">The token stays in this tab’s session storage.</p>
+        <p className="muted">
+          Your access token is stored in this browser on this device.
+        </p>
       </main>
     );
   if (!state || !workspace || !dot)
@@ -581,6 +583,7 @@ export function App() {
                   paused={state.settings.paused}
                   onSaved={refresh}
                   onComputer={() => setPane(true)}
+                  codexConnected={workspace.setup.codex ?? false}
                   onSchedule={() =>
                     setDialog({ type: 'schedule', threadId: thread.id })
                   }

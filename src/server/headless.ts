@@ -65,10 +65,13 @@ export async function runThreadTurn(
       role: 'user',
       content: prompt,
       ...(metadata ? { metadata } : {}),
-    });
+    } as Parameters<typeof agent.addMessage>[0]);
     const result = await agent.runAgent();
     signal.throwIfAborted();
-    return currentTurnText(result.newMessages, runError);
+    return currentTurnText(
+      result.newMessages as unknown as Message[],
+      runError,
+    );
   } finally {
     signal.removeEventListener('abort', stop);
     subscription.unsubscribe();

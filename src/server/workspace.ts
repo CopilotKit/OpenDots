@@ -22,7 +22,8 @@ export class WorkspaceStore {
       CREATE TABLE IF NOT EXISTS thread_bindings(id TEXT PRIMARY KEY, dotId TEXT NOT NULL, ownerId TEXT NOT NULL, title TEXT NOT NULL, createdAt INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS task_threads(taskId TEXT PRIMARY KEY, threadId TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS calls(id TEXT PRIMARY KEY, threadId TEXT NOT NULL, startedAt INTEGER NOT NULL, endedAt INTEGER, status TEXT NOT NULL, transcript TEXT NOT NULL, error TEXT);
-      CREATE TABLE IF NOT EXISTS captures(threadId TEXT PRIMARY KEY, value TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS captures(threadId TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS codex_threads(opendotsThreadId TEXT PRIMARY KEY, codexThreadId TEXT NOT NULL);`);
     for (const [table, column, definition] of [
       ['dots', 'learningContainerId', 'TEXT'],
       ['dots', 'skillDeliveryEnabled', 'INTEGER NOT NULL DEFAULT 0'],
@@ -76,6 +77,19 @@ export class WorkspaceStore {
   }
   close() {
     this.db.close();
+  }
+  codexThread(opendotsThreadId: string) {
+    const row = this.db
+      .prepare(
+        'SELECT codexThreadId FROM codex_threads WHERE opendotsThreadId=?',
+      )
+      .get(opendotsThreadId) as { codexThreadId: string } | undefined;
+    return row?.codexThreadId;
+  }
+  bindCodexThread(opendotsThreadId: string, codexThreadId: string) {
+    this.db
+      .prepare('INSERT OR REPLACE INTO codex_threads VALUES (?, ?)')
+      .run(opendotsThreadId, codexThreadId);
   }
   spaces(): Space[] {
     return this.db

@@ -27,12 +27,15 @@ export function setupStatus(
   config: PlatformConfig,
   slack = 'not_configured',
   activationFailed = false,
+  codexConnected = false,
 ): SetupStatus {
-  const missing = [
-    !config.intelligenceKey && 'INTELLIGENCE_API_KEY',
-    !config.apiKey && 'OPENAI_API_KEY',
-    !config.model && 'OPENAI_MODEL',
-  ].filter((item): item is string => !!item);
+  const missing = codexConnected
+    ? []
+    : [
+        !config.intelligenceKey && 'INTELLIGENCE_API_KEY',
+        !config.apiKey && 'OPENAI_API_KEY',
+        !config.model && 'OPENAI_MODEL',
+      ].filter((item): item is string => !!item);
   const declaredSlack = !!(
     config.slackChannel &&
     config.slackTeam &&
@@ -47,7 +50,8 @@ export function setupStatus(
       : 'not_configured';
   return {
     intelligence: !!config.intelligenceKey,
-    model: !!(config.apiKey && config.model),
+    model: codexConnected || !!(config.apiKey && config.model),
+    codex: codexConnected,
     browser: !!(config.browserUrl && config.browserSecret),
     voice: !!(config.voiceKey && config.voiceModel && !missing.length),
     slack,

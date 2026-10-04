@@ -3,6 +3,7 @@ import { pageReviewSchema, pageReviewTool } from '../shared/page-review';
 import { contextualMessage, type PageContext } from './page-context';
 import { api } from './api';
 import type { Page } from '../server/pages';
+import type { Message } from '@ag-ui/core';
 import { useEffect, useRef, useState } from 'react';
 import {
   CopilotChatToolCallsView,
@@ -41,6 +42,7 @@ export function Chat({
   onSaved,
   onSchedule,
   onComputer,
+  codexConnected,
 }: {
   thread: Conversation;
   dot: Dot;
@@ -52,6 +54,7 @@ export function Chat({
   onSaved: () => void;
   onSchedule: () => void;
   onComputer?: () => void;
+  codexConnected: boolean;
 }) {
   const { agent, isReady } = useAgent({
     agentId: `chat-${thread.id}`,
@@ -112,7 +115,13 @@ export function Chat({
     let active = true;
     void copilotkit
       .connectAgent({ agent })
-      .then(() => {
+      .then(async () => {
+        if (codexConnected) {
+          const history = await api<
+            Array<{ id: string; role: string; content: string }>
+          >(`/conversations/${thread.id}/history`);
+          agent.setMessages(history as unknown as typeof agent.messages);
+        }
         if (active) setLoaded(true);
       })
       .catch((e) => {
@@ -124,7 +133,7 @@ export function Chat({
     return () => {
       active = false;
     };
-  }, [agent, copilotkit, isReady]);
+  }, [agent, copilotkit, isReady, codexConnected, thread.id]);
   const send = async (text: string) => {
     if (!text.trim() || running || !loaded || !contextReady || paused) return;
     setError('');
@@ -212,7 +221,7 @@ export function Chat({
   );
   const visible = agent.messages.filter(
     (message) =>
-      !isInternalVoiceReceipt(message) &&
+      !isInternalVoiceReceipt(message as unknown as Message) &&
       ['user', 'assistant'].includes(message.role) &&
       ((typeof message.content === 'string' && message.content.trim()) ||
         (message.role === 'assistant' &&
@@ -319,7 +328,7 @@ export function Chat({
           </div>
         )}
         <ChatTranscript
-          messages={visible}
+          messages={visible as unknown as Message[]}
           calls={calls}
           renderTools={(message) => (
             <CopilotChatToolCallsView

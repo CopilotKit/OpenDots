@@ -42,6 +42,10 @@ export class PageService {
   constructor(
     private workspace: WorkspaceStore,
     private intelligence: () => PageIntelligence,
+    private useCodex: () => boolean = () => false,
+    private codexMessages?: (
+      threadId: string,
+    ) => Promise<{ role: string; content?: unknown }[]>,
   ) {}
   async conversation(spaceId: string, pageId: string, dotId: string) {
     const page = this.workspace.pages.get(spaceId, pageId);
@@ -57,7 +61,7 @@ export class PageService {
     const current = this.workspace.pages.thread(pageId, dotId);
     if (current?.ready)
       return this.workspace.requireThread(current.threadId, dotId);
-    const sdk = this.intelligence();
+    const sdk = this.useCodex() ? undefined : this.intelligence();
     const task = (async () => {
       const candidateId = randomUUID();
       if (!this.workspace.pages.reserveThread(pageId, dotId, candidateId))
@@ -67,14 +71,15 @@ export class PageService {
         );
       const threadId = this.workspace.pages.thread(pageId, dotId)!.threadId;
       try {
-        await bounded(
-          sdk.getOrCreateThread({
-            threadId,
-            userId: this.workspace.ownerId,
-            agentId: dotId,
-            name: page.title,
-          }),
-        );
+        if (sdk)
+          await bounded(
+            sdk.getOrCreateThread({
+              threadId,
+              userId: this.workspace.ownerId,
+              agentId: dotId,
+              name: page.title,
+            }),
+          );
         if (!this.workspace.canAccessSpace(dotId, spaceId))
           throw new PageError('Space access has been revoked.');
         const thread =
@@ -101,14 +106,18 @@ export class PageService {
   ) {
     const thread = this.workspace.requireThread(threadId);
     const dot = this.workspace.dot(thread.dotId)!;
-    const history = await bounded(
-      this.intelligence().getThreadMessages({
-        threadId,
-        userId: this.workspace.ownerId,
-      }),
-    );
+    const messages = this.useCodex()
+      ? await bounded(this.codexMessages?.(threadId) ?? Promise.resolve([]))
+      : (
+          await bounded(
+            this.intelligence().getThreadMessages({
+              threadId,
+              userId: this.workspace.ownerId,
+            }),
+          )
+        ).messages;
     const chunks: string[] = [];
-    for (const message of history.messages) {
+    for (const message of messages) {
       if (!['user', 'assistant'].includes(message.role)) continue;
       let text = '';
       if (typeof message.content === 'string') text = message.content;

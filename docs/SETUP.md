@@ -12,7 +12,44 @@ cp .env.example .env
 npm run dev
 ```
 
-Open http://127.0.0.1:5173. The API runs on port 4310. Without service credentials, the app shows its setup state; it does not generate simulated replies.
+Open http://127.0.0.1:5173. The API runs on port 4310. Without service credentials or a local Codex sign-in, the app shows its setup state; it does not generate simulated replies.
+
+## Use your local Codex account
+
+OpenDots can use the Codex account already signed in with Codex CLI. Run both Codex CLI and the OpenDots server on the same desktop. The server starts Codex's local app-server over standard input/output; it does not send your Codex sign-in to OpenDots, the browser, or a hosted service. Codex keeps its own sign-in on your device.
+
+This is a per-desktop setup, not a shared hosted login. Each person who wants to use their own Codex account runs their own OpenDots server on their computer. Do not expose the server to the public internet or share a server process between people: this template has one local workspace and one local Codex account, not per-user identity or account isolation. Docker and remote hosting do not inherit the desktop's Codex sign-in.
+
+1. Install Codex CLI using the [official Codex installation instructions](https://github.com/openai/codex#readme). The npm installation command is:
+
+   ```sh
+   npm install -g @openai/codex
+   ```
+
+2. Sign in with your ChatGPT account. Running `codex login` starts the browser sign-in flow:
+
+   ```sh
+   codex login
+   codex login status
+   ```
+
+   `codex login status` should report that you are logged in using ChatGPT. Complete the sign-in on the same desktop account that will run OpenDots.
+
+3. Start OpenDots locally as described above. If the server cannot find Codex CLI, put its executable path in `.env`:
+
+   ```dotenv
+   CODEX_CLI_PATH=/absolute/path/to/codex
+   ```
+
+   Find the path with `command -v codex` (macOS/Linux) or `where.exe codex` (Windows). Restart OpenDots after changing `.env`.
+
+4. In OpenDots, open **Settings & setup** and choose **Connect Codex**. A connected status means OpenDots can read the local Codex account. Start a new conversation and send a message to confirm model access.
+
+OpenDots checks the account through Codex's local app-server and chooses a model that the account currently reports as available. Conversation text and thread history remain in the local Codex profile; OpenDots stores the mapping from its conversation to the Codex thread in its SQLite database. To remove the connection, sign out with `codex logout` or stop the OpenDots server.
+
+If the account check fails, confirm `codex login status` succeeds in the same operating-system account, set `CODEX_CLI_PATH` if needed, and restart OpenDots. No API key or pasted Codex token is required for this local connection.
+
+For a built local app, keep the server bound to loopback (`HOST=127.0.0.1`) so only apps on that desktop can reach it.
 
 For a built local app:
 
@@ -27,16 +64,17 @@ Open http://127.0.0.1:4310. Keep the server running for background work.
 
 Edit `.env` on the server and restart after changes:
 
-| Variable                                      | Purpose                                                   |
-| --------------------------------------------- | --------------------------------------------------------- |
-| `INTELLIGENCE_API_KEY`                        | Project credential for conversation persistence           |
-| `INTELLIGENCE_API_URL`, `INTELLIGENCE_WS_URL` | Endpoint overrides for your Intelligence deployment       |
-| `OPENAI_API_KEY`, `OPENAI_MODEL`              | Model credential and model identifier                     |
-| `OPENAI_BASE_URL`                             | Compatible model API endpoint                             |
-| `OWNER_ID`                                    | Stable identity used for this deployment's conversations  |
-| `DATABASE_PATH`                               | SQLite file containing pages, workspace and work metadata |
-| `OWNER_TOKEN`                                 | Application access token; required for external bindings  |
-| `APP_ORIGIN`                                  | Exact browser origin when using a proxy or custom domain  |
+| Variable                                      | Purpose                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| `INTELLIGENCE_API_KEY`                        | Project credential for conversation persistence                    |
+| `INTELLIGENCE_API_URL`, `INTELLIGENCE_WS_URL` | Endpoint overrides for your Intelligence deployment                |
+| `OPENAI_API_KEY`, `OPENAI_MODEL`              | Model credential and model identifier                              |
+| `OPENAI_BASE_URL`                             | Compatible model API endpoint                                      |
+| `CODEX_CLI_PATH`                              | Optional path to the Codex CLI executable for local account access |
+| `OWNER_ID`                                    | Stable identity used for this deployment's conversations           |
+| `DATABASE_PATH`                               | SQLite file containing pages, workspace and work metadata          |
+| `OWNER_TOKEN`                                 | Application access token; required for external bindings           |
+| `APP_ORIGIN`                                  | Exact browser origin when using a proxy or custom domain           |
 
 The model environment variable names follow the configured provider adapter. Provider credentials belong in `.env`, not client-side variables or source code. Conversation history lives in the configured Intelligence project; copying the SQLite file alone does not back up that history.
 

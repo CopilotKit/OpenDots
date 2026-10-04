@@ -54,6 +54,7 @@ export function WorkspaceDialog({
     dialog.type === 'dot' ? (dialog.dot?.skillDeliveryEnabled ?? false) : false,
   );
   const [busy, setBusy] = useState(false);
+  const [codexBusy, setCodexBusy] = useState(false);
   const [error, setError] = useState('');
   const container = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -373,6 +374,27 @@ export function WorkspaceDialog({
                   : 'needs VOICE_API_KEY and VOICE_MODEL'}
                 .
               </p>
+              <strong>Codex account</strong>
+              <p>
+                {workspace.setup.codex
+                  ? 'Connected using the Codex account session stored on this device.'
+                  : 'Connect using the Codex CLI session on this device. OpenDots does not copy or store your Codex credentials.'}
+              </p>
+              <button
+                type="button"
+                disabled={codexBusy}
+                onClick={async () => {
+                  setCodexBusy(true);
+                  await mutate('/codex/verify', 'POST');
+                  setCodexBusy(false);
+                }}
+              >
+                {codexBusy
+                  ? 'Checking…'
+                  : workspace.setup.codex
+                    ? 'Verify connection'
+                    : 'Connect Codex'}
+              </button>
               <a
                 href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP.md"
                 target="_blank"

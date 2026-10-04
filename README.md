@@ -2,17 +2,17 @@
 
 # OpenDots
 
-### Always-on AI coworkers that move between text, calls, and Slack.
+### A self-hosted desktop AI workspace for your own Codex CLI account.
 
-**An open-source template for persistent AI agents, each with its own computer. Available on Web and Mobile.**
+**Run a personal AI workspace with your signed-in OpenAI Codex CLI account. Each user keeps their Codex session on their own computer.**
 
-Built with [CopilotKit](https://github.com/CopilotKit/CopilotKit) and [AG-UI](https://docs.ag-ui.com/introduction). · [Get started](#get-started) · [Overview](#overview) · [Architecture](#architecture) · [Features](#features) · [Contributing](CONTRIBUTING.md)
+OpenDots is an open-source, self-hosted AI agent workspace built with [CopilotKit](https://github.com/CopilotKit/CopilotKit) and [AG-UI](https://docs.ag-ui.com/introduction). This version connects locally to Codex CLI, so each person runs their own server and keeps Codex credentials in their desktop profile. · [Get started](#get-started) · [Connect Codex](docs/SETUP.md#use-your-local-codex-account) · [Features](#features) · [Contributing](CONTRIBUTING.md)
 
 [![CI](https://github.com/CopilotKit/OpenDots/actions/workflows/ci.yml/badge.svg)](https://github.com/CopilotKit/OpenDots/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![Alpha](https://img.shields.io/badge/status-alpha-orange.svg)
 
-Fully self-hostable. Clone this template and customize it however you want.
+Self-host it on the same desktop as Codex CLI. Your Codex credentials stay in Codex's local sign-in profile; OpenDots does not ask you to paste or upload a token.
 
 [**Building on OpenDots? Meet with the CopilotKit team →**](https://www.copilotkit.ai/talk-to-an-engineer?ref=opendots_readme)
 
@@ -160,7 +160,7 @@ cp .env.example .env
 npm run dev
 ```
 
-Open **http://127.0.0.1:5173**. You can create Spaces, write pages, and configure Dots before connecting services. Add your conversation and model settings to `.env` to start chatting.
+Open **http://127.0.0.1:5173**. You can create Spaces, write pages, and configure Dots before connecting services. To chat using the Codex account on this desktop, install and sign in to Codex CLI, then choose **Connect Codex** in Settings; see [local Codex setup](docs/SETUP.md#use-your-local-codex-account). You can also configure a server-side conversation and model provider in `.env`.
 
 See [Setup](docs/SETUP.md) for configuration, Slack, calls, the browser service, and Docker.
 
@@ -171,6 +171,7 @@ See [Setup](docs/SETUP.md) for configuration, Slack, calls, the browser service,
 | Spaces and Specialist Dots | Saved names, role instructions, and per-Dot research and memory permissions                                                             |
 | Pages                      | Searchable library, visual editor, slash commands, autosave, and revision checks                                                        |
 | Conversations              | React SDK chat and Threads integration, page-specific conversations, and source links                                                   |
+| Local Codex account        | Connect the Codex CLI session on this desktop; each self-hosted user runs their own local server and account                            |
 | Slack                      | Managed Channels SDK declaration with workspace and user allowlists                                                                     |
 | Calls                      | WebRTC speech, delegated compute, bounded sessions, hangup, and timeline receipts                                                       |
 | Background work            | Scheduled server-side turns in their original conversation, with pause and retry controls                                               |

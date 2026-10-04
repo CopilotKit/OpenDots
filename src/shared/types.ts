@@ -104,6 +104,7 @@ export interface CallReceipt {
 export interface SetupStatus {
   intelligence: boolean;
   model: boolean;
+  codex?: boolean;
   browser: boolean;
   voice: boolean;
   slack: string;
