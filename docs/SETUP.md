@@ -38,6 +38,8 @@ Edit `.env` on the server and restart after changes:
 | `OWNER_TOKEN`                                 | Application access token; required for external bindings  |
 | `APP_ORIGIN`                                  | Exact browser origin when using a proxy or custom domain  |
 
+`npx copilotkit project select` deletes an `INTELLIGENCE_API_KEY` line and writes the same credential as `CPK_INTELLIGENCE_API_KEY`. The server reads either name. A non-empty `CPK_INTELLIGENCE_API_KEY` takes precedence over `INTELLIGENCE_API_KEY`.
+
 The model environment variable names follow the configured provider adapter. Provider credentials belong in `.env`, not client-side variables or source code. Conversation history lives in the configured Intelligence project; copying the SQLite file alone does not back up that history.
 
 ## Pages and page conversations
@@ -135,8 +137,9 @@ For remote hosting, configure an HTTPS reverse proxy and the matching `APP_ORIGI
 ## Automatic Learning
 
 OpenDots connects [CopilotKit Automatic Learning](https://docs.copilotkit.ai/learning)
-to individual Dots. It uses the existing server-side `INTELLIGENCE_API_KEY` and
-optional `INTELLIGENCE_API_URL`; no additional model key or frontend key is needed.
+to individual Dots. It uses the server-side Intelligence credential
+(`CPK_INTELLIGENCE_API_KEY` or `INTELLIGENCE_API_KEY`) and optional
+`INTELLIGENCE_API_URL`; no additional model key or frontend key is needed.
 
 1. Open **Learning** in the same Intelligence project and create a container for
    one focused workflow, such as `research-workflow`. IDs use 1–64 lowercase
