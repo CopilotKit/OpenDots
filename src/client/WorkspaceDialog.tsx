@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { Dot, Memory, State, WorkspaceState } from '../shared/types';
+import {
+  setThemePreference,
+  themePreference,
+  type ThemePreference,
+} from './theme';
 export type Dialog =
   | { type: 'space' }
   | { type: 'dot'; dot?: Dot; spaceId: string }
@@ -55,6 +60,7 @@ export function WorkspaceDialog({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [theme, setTheme] = useState(themePreference);
   const container = useRef<HTMLElement>(null);
   useEffect(() => {
     const previous =
@@ -357,6 +363,33 @@ export function WorkspaceDialog({
                 closed. Failed runs wait for manual retry.
               </p>
             </>
+          )}
+          {dialog.type === 'settings' && (
+            <fieldset className="appearance-fields">
+              <legend>Appearance</legend>
+              <div className="segmented" role="radiogroup">
+                {(['system', 'light', 'dark'] as ThemePreference[]).map(
+                  (option) => (
+                    <label key={option}>
+                      <input
+                        type="radio"
+                        name="theme"
+                        value={option}
+                        checked={theme === option}
+                        onChange={() => {
+                          setTheme(option);
+                          setThemePreference(option);
+                        }}
+                      />
+                      <span>{option[0].toUpperCase() + option.slice(1)}</span>
+                    </label>
+                  ),
+                )}
+              </div>
+              <p className="muted">
+                Saved in this browser. System follows your device.
+              </p>
+            </fieldset>
           )}
           {dialog.type === 'settings' && (
             <div className="config-note">

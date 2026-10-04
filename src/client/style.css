@@ -3788,6 +3788,7 @@ h3 {
   color: #a33e35;
 }
 
+/* theme: fixed */
 /* A focused voice surface, with chat one click away. */
 .call-view {
   position: fixed;
@@ -3992,4 +3993,59 @@ h3 {
 .call-caption .call-user-caption {
   font-size: 14px;
   color: #c9e8dd;
+}
+
+/* theme: end */
+
+/* Dark theme: colors are derived at build time (src/build/dark-theme.ts);
+   this only tells the browser to draw native controls dark too. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+.appearance-fields {
+  border: 0;
+  margin: 18px 0 0;
+  padding: 0;
+}
+.appearance-fields legend {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f4f4f4;
+}
+.segmented label {
+  position: relative;
+}
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.segmented span {
+  display: block;
+  padding: 6px 14px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: #6b6b6b;
+}
+.segmented input:checked + span {
+  background: #fff;
+  color: #242424;
+  box-shadow: 0 1px 2px #0000001a;
+}
+.segmented input:focus-visible + span {
+  outline: 2px solid #242424;
+  outline-offset: 1px;
+}
+.appearance-fields .muted {
+  margin: 6px 0 0;
+  font-size: 11px;
 }
