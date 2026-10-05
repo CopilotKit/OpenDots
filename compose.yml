@@ -22,6 +22,19 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-openai}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-https://api.anthropic.com/v1}
+      CLINE_API_KEY: ${CLINE_API_KEY:-}
+      CLINE_MODEL: ${CLINE_MODEL:-}
+      CLINE_BASE_URL: ${CLINE_BASE_URL:-https://api.cline.bot/api/v1}
+      # Subscription harnesses are local-dev only: run `claude auth login` /
+      # `codex login` on the host and use npm run dev, never Docker.
+      CLAUDE_AUTH_MODE: ${CLAUDE_AUTH_MODE:-host}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-}
+      CODEX_AUTH_MODE: ${CODEX_AUTH_MODE:-host}
+      CODEX_MODEL: ${CODEX_MODEL:-}
       WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-parallel}
       PARALLEL_API_KEY: ${PARALLEL_API_KEY:-}
       BROWSER_URL: http://browser:4311

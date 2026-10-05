@@ -1,4 +1,7 @@
+import 'varlock/auto-load';
 import { webSearchProvider } from './parallel.js';
+import { parseProvider } from './models.js';
+import { assertHarnessRuntime, harnessEnvironment } from './harness-runtime.js';
 import { createShutdown } from './shutdown.js';
 import { reportChannelFailure, safeFailure } from './slack-channel.js';
 import { serve } from '@hono/node-server';
@@ -9,8 +12,12 @@ import { createApp } from './app.js';
 import { WorkspaceStore } from './workspace.js';
 import { Platform } from './platform.js';
 import type { PlatformConfig } from './platform-config.js';
-const host = process.env.HOST ?? '127.0.0.1';
-const port = Number(process.env.PORT ?? 4310);
+const host = process.env.HOST?.trim() || '127.0.0.1';
+const port = Number(process.env.PORT || 4310);
+if (!Number.isInteger(port) || port < 1 || port > 65535)
+  throw new Error('PORT must be an integer between 1 and 65535.');
+const modelProvider = parseProvider(process.env.MODEL_PROVIDER);
+assertHarnessRuntime({ provider: modelProvider, ...harnessEnvironment() });
 const ownerToken = process.env.OWNER_TOKEN;
 if (
   !['127.0.0.1', '::1', 'localhost'].includes(host) &&
@@ -19,11 +26,11 @@ if (
   throw new Error(
     'External binding requires an OWNER_TOKEN of at least 24 characters.',
   );
-const database = process.env.DATABASE_PATH ?? 'data/opendots.sqlite';
+const database = process.env.DATABASE_PATH || 'data/opendots.sqlite';
 const store = new Store(database);
 const workspace = new WorkspaceStore(
   database,
-  process.env.OWNER_ID ?? 'opendots-owner',
+  process.env.OWNER_ID || 'opendots-owner',
 );
 const config: PlatformConfig = {
   intelligenceKey: process.env.INTELLIGENCE_API_KEY,
@@ -32,6 +39,20 @@ const config: PlatformConfig = {
   apiKey: process.env.OPENAI_API_KEY,
   model: process.env.OPENAI_MODEL,
   baseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
+  modelProvider,
+  anthropicKey: process.env.ANTHROPIC_API_KEY,
+  anthropicModel: process.env.ANTHROPIC_MODEL,
+  anthropicBaseUrl: process.env.ANTHROPIC_BASE_URL,
+  clineKey: process.env.CLINE_API_KEY,
+  clineModel: process.env.CLINE_MODEL,
+  clineBaseUrl: process.env.CLINE_BASE_URL,
+  claudeAuthMode: process.env.CLAUDE_AUTH_MODE || 'host',
+  claudeModel: process.env.CLAUDE_MODEL,
+  claudeCwd: process.env.CLAUDE_CWD,
+  claudePermissionMode: process.env.CLAUDE_PERMISSION_MODE,
+  codexAuthMode: process.env.CODEX_AUTH_MODE || 'host',
+  codexModel: process.env.CODEX_MODEL,
+  codexCwd: process.env.CODEX_CWD,
   webSearchProvider: webSearchProvider(process.env.WEB_SEARCH_PROVIDER),
   parallelApiKey: process.env.PARALLEL_API_KEY,
   browserUrl: process.env.BROWSER_URL,
@@ -59,6 +80,13 @@ const researchConfig = {
   apiKey: config.apiKey,
   model: config.model,
   baseUrl: config.baseUrl,
+  provider: config.modelProvider,
+  anthropicKey: config.anthropicKey,
+  anthropicModel: config.anthropicModel,
+  anthropicBaseUrl: config.anthropicBaseUrl,
+  clineKey: config.clineKey,
+  clineModel: config.clineModel,
+  clineBaseUrl: config.clineBaseUrl,
   webSearchProvider: config.webSearchProvider,
   parallelApiKey: config.parallelApiKey,
   browserUrl: config.browserUrl,
@@ -87,7 +115,7 @@ const app = createApp({
   config: researchConfig,
   ownerToken,
   origin:
-    process.env.APP_ORIGIN ??
+    process.env.APP_ORIGIN ||
     (process.env.NODE_ENV === 'development'
       ? 'http://127.0.0.1:5173'
       : undefined),

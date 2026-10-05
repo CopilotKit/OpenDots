@@ -32,6 +32,7 @@ import type {
   WorkspaceState,
 } from '../shared/types';
 import { api, ApiError, authHeaders, setToken } from './api';
+import { THEMES, useTheme, isTheme } from './theme';
 import { Mascot } from './Mascot';
 import { Chat } from './Chat';
 import { ThreadList } from './ThreadList';
@@ -41,6 +42,7 @@ import { TaskActions } from './TaskActions';
 import { WorkspaceDialog, type Dialog } from './WorkspaceDialog';
 
 export function App() {
+  const { theme, setTheme } = useTheme();
   const [state, setState] = useState<State>();
   const [workspace, setWorkspace] = useState<WorkspaceState>();
   const [selectedDot, setSelectedDot] = useState('');
@@ -495,6 +497,25 @@ export function App() {
             </strong>
           </div>
           <div className="top-actions">
+            <label className="theme-picker">
+              <span className="theme-picker-label" aria-hidden="true">
+                &#127795;
+              </span>
+              <select
+                aria-label="Color theme"
+                value={theme}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (isTheme(value)) setTheme(value);
+                }}
+              >
+                {THEMES.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <span className="mode-badge">
               {configured ? 'SELF-HOSTED' : 'SETUP REQUIRED'}
             </span>
