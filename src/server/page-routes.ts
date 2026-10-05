@@ -17,9 +17,10 @@ export function pageRoutes(platform: Platform) {
         { error: 'This Dot no longer has access to the selected Space.' },
         403,
       );
-    return c.json(
-      platform.workspace.pages.get(receipt.spaceId, receipt.pageId),
-    );
+    return c.json({
+      ...platform.workspace.pages.get(receipt.spaceId, receipt.pageId),
+      reviewDraft: receipt.draft,
+    });
   });
   app.post('/conversations/:id/reviewed-page', async (c) => {
     const data = pageReviewSchema
@@ -130,13 +131,16 @@ export function pageRoutes(platform: Platform) {
       ? c.json({ error: 'Invalid JSON request.' }, 400)
       : error instanceof PageError
         ? c.json({ error: error.message }, error.status)
-        : c.json(
-            {
-              error:
-                'Page operation could not complete. Check Intelligence setup or retry; your draft has not been discarded.',
-            },
-            503,
-          ),
+        : error.message ===
+            'Conversation does not belong to this Dot and owner.'
+          ? c.json({ error: error.message }, 404)
+          : c.json(
+              {
+                error:
+                  'Page operation could not complete. Check Intelligence setup or retry; your draft has not been discarded.',
+              },
+              503,
+            ),
   );
   return app;
 }

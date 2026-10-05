@@ -13,7 +13,11 @@ import { Store } from './store.js';
 import { WorkspaceStore } from './workspace.js';
 import { DotAgent } from './dot-agent.js';
 import { runThreadTurn } from './headless.js';
-import { setupStatus, type PlatformConfig } from './platform-config.js';
+import {
+  INTELLIGENCE_KEY_MISSING_LABEL,
+  setupStatus,
+  type PlatformConfig,
+} from './platform-config.js';
 import { validateRuntimeScope } from './runtime-scope.js';
 import { learningSelector } from './learning.js';
 import type { BridgeStatus } from './imessage.js';
@@ -157,7 +161,7 @@ export class Platform {
   async handle(request: Request): Promise<Response> {
     if (!this.handler)
       return Response.json(
-        { error: 'Setup required: INTELLIGENCE_API_KEY.' },
+        { error: `Setup required: ${INTELLIGENCE_KEY_MISSING_LABEL}.` },
         { status: 503 },
       );
     let body: unknown;
