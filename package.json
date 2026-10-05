@@ -13,7 +13,7 @@
     "start": "node --env-file-if-exists=.env dist/server/server/index.js",
     "browser": "node --env-file-if-exists=.env --import tsx src/browser/index.ts",
     "browser:start": "node --env-file-if-exists=.env dist/server/browser/index.js",
-    "test": "vitest run",
+    "test": "cross-env DO_NOT_TRACK=1 vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests vite.config.ts",
     "format": "prettier --write src tests *.json *.ts *.js index.html public .github Dockerfile \"compose*.yml\" deployment README.md docs .env.example --ignore-unknown",

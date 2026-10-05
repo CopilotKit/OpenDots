@@ -22,8 +22,10 @@ import { validateRuntimeScope } from './runtime-scope.js';
 import { learningSelector } from './learning.js';
 import type { BridgeStatus } from './imessage.js';
 import type { SetupStatus } from '../shared/types.js';
+import { SetupTelemetry } from './setup-telemetry.js';
 export class Platform {
   private channelStartupFailed = false;
+  readonly setupTelemetry: SetupTelemetry;
   imessageStatus: () => BridgeStatus = () => 'not_configured';
   readonly pages: PageService;
   readonly computers: ComputerService;
@@ -34,6 +36,7 @@ export class Platform {
     readonly workspace: WorkspaceStore,
     readonly config: PlatformConfig,
   ) {
+    this.setupTelemetry = new SetupTelemetry(store);
     this.computers = new ComputerService(
       workspace,
       config,
@@ -63,12 +66,22 @@ export class Platform {
         config,
         ownerId: workspace.ownerId,
         paused: () => store.settings().paused,
-        agent: () => new DotAgent(store, workspace, config, dotId, true),
+        agent: () =>
+          new DotAgent(
+            store,
+            workspace,
+            config,
+            dotId,
+            true,
+            this.setupTelemetry,
+          ),
       });
       channels.push(slack);
     }
     const runtime = new CopilotRuntime({
       intelligence: this.intelligence,
+      telemetryId: this.setupTelemetry.identity,
+      telemetryProperties: this.setupTelemetry.metadata,
       identifyUser: async () => ({
         id: workspace.ownerId,
         name: 'OpenDots owner',
@@ -79,7 +92,14 @@ export class Platform {
             .dots()
             .map((dot) => [
               dot.id,
-              new DotAgent(store, workspace, config, dot.id),
+              new DotAgent(
+                store,
+                workspace,
+                config,
+                dot.id,
+                false,
+                this.setupTelemetry,
+              ),
             ]),
         ),
       channels,
@@ -110,17 +130,24 @@ export class Platform {
       );
   }
   async start() {
+    this.setupTelemetry.start();
     if (this.handler?.channels) {
       try {
         await this.handler.channels.ready({ timeoutMs: 15000 });
         this.channelStartupFailed = false;
       } catch (error) {
         this.channelStartupFailed = true;
+        this.setupTelemetry.capture({
+          kind: 'setup_failed',
+          step: 'settings',
+          error_class: 'channel_start_failed',
+        });
         throw error;
       }
     }
   }
   async stop() {
+    await this.setupTelemetry.stop();
     await this.handler?.channels?.stop();
   }
   async createConversation(dotId: string, title: string) {
