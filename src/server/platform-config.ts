@@ -11,7 +11,23 @@ export const INTELLIGENCE_KEY_MISSING_LABEL = `${INTELLIGENCE_API_KEY_ENV_NAMES[
 export function intelligenceApiKeyFromEnv(
   env: Record<string, string | undefined>,
 ): string | undefined {
-  for (const name of INTELLIGENCE_API_KEY_ENV_NAMES) {
+  return firstNonEmptyEnvValue(env, INTELLIGENCE_API_KEY_ENV_NAMES);
+}
+
+export function intelligenceWsUrlFromEnv(
+  env: Record<string, string | undefined>,
+): string | undefined {
+  return firstNonEmptyEnvValue(env, [
+    'INTELLIGENCE_GATEWAY_WS_URL',
+    'INTELLIGENCE_WS_URL',
+  ]);
+}
+
+function firstNonEmptyEnvValue(
+  env: Record<string, string | undefined>,
+  names: readonly string[],
+): string | undefined {
+  for (const name of names) {
     const value = env[name]?.trim();
     if (value) return value;
   }

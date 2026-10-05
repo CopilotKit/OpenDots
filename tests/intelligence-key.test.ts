@@ -3,6 +3,7 @@ import { Platform } from '../src/server/platform.js';
 import {
   INTELLIGENCE_KEY_MISSING_LABEL,
   intelligenceApiKeyFromEnv,
+  intelligenceWsUrlFromEnv,
   setupStatus,
   type PlatformConfig,
 } from '../src/server/platform-config.js';
@@ -70,4 +71,31 @@ it('reports either accepted name from the same label used by setup status and th
     store.close();
     workspace.close();
   }
+});
+
+it('uses the local CLI gateway URL instead of a stale hosted override', () => {
+  expect(
+    intelligenceWsUrlFromEnv({
+      INTELLIGENCE_GATEWAY_WS_URL: ' ws://localhost:5080 ',
+      INTELLIGENCE_WS_URL: 'wss://hosted.example.com',
+    }),
+  ).toBe('ws://localhost:5080');
+});
+
+it('keeps the existing WebSocket override when the CLI value is absent or blank', () => {
+  expect(
+    intelligenceWsUrlFromEnv({
+      INTELLIGENCE_WS_URL: ' wss://hosted.example.com ',
+    }),
+  ).toBe('wss://hosted.example.com');
+  expect(
+    intelligenceWsUrlFromEnv({
+      INTELLIGENCE_GATEWAY_WS_URL: '   ',
+      INTELLIGENCE_WS_URL: 'ws://localhost:5080',
+    }),
+  ).toBe('ws://localhost:5080');
+  expect(intelligenceWsUrlFromEnv({})).toBeUndefined();
+  expect(
+    intelligenceWsUrlFromEnv({ INTELLIGENCE_GATEWAY_WS_URL: '  ' }),
+  ).toBeUndefined();
 });

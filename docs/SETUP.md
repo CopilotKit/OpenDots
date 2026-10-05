@@ -25,7 +25,11 @@ Open http://127.0.0.1:4310. Keep the server running for background work.
 
 ## Conversation services
 
-OpenDots stores conversations in a CopilotKit Intelligence project. To get the project key, run these commands in the OpenDots folder after `cp .env.example .env`:
+OpenDots requires CopilotKit Intelligence for conversations. Choose local evaluation below, a licensed [self-hosted deployment](https://docs.copilotkit.ai/intelligence/self-hosting), or hosted Intelligence. Pages and workspace metadata remain in SQLite; conversation history is stored separately. See [Data and privacy](../README.md#data-and-privacy).
+
+### Hosted Intelligence
+
+To get a hosted project key, run these commands in the OpenDots folder after `cp .env.example .env`:
 
 ```sh
 npx copilotkit@latest login
@@ -36,20 +40,46 @@ npx copilotkit@latest project select
 
 Do not run `copilotkit onboard` in this folder. Onboarding is for apps that do not have CopilotKit yet. OpenDots already has its integration.
 
+### Local Intelligence evaluation
+
+The [local evaluation preview](https://docs.copilotkit.ai/intelligence/self-hosting-local) runs Intelligence in Docker Desktop on macOS. Allocate at least 4 CPUs, 12 GiB RAM, and 40 GiB free storage. OpenDots needs Node.js 24. A CopilotKit account is required; the free Developer plan qualifies for a renewable 30-day evaluation license. This is not a production installation.
+
+Run from the OpenDots folder after `cp .env.example .env`, with Docker Desktop running:
+
+```sh
+npx copilotkit@latest login
+npx copilotkit@latest local setup
+npx copilotkit@latest local connect
+npx copilotkit@latest local connect --approve-connection
+```
+
+`local connect` previews the changes; the approved command writes the local API URL, gateway WebSocket URL, and project key to `.env`. OpenDots accepts these directly. Do not run `project select` afterward: it selects a hosted project. Add `OPENAI_API_KEY` and `OPENAI_MODEL` for the app, then restart `npm run dev`. Setup's Learning model is separate from the app's model.
+
+Send a message and verify it appears in the local dashboard (`npx copilotkit@latest local login`). Use `local status` to inspect service health. Threads, Automatic Learning, and Channels are included; User Memory and Product Analytics are not. Channels require a public HTTPS address reachable by Slack or Teams.
+
+To restore the previous app connection, run `npx copilotkit@latest local cancel` and restart the app. This keeps the stack and its data. Use `local stop` to stop the stack, or `local renew` to renew its evaluation license. Existing hosted conversations are not copied into the local project.
+
+For this preview, run OpenDots directly on your Mac with `npm run dev`; Intelligence runs in Docker. The CLI's `localhost` URLs do not work from an OpenDots container. A containerized app needs an API address reachable from its container and a gateway address reachable from both the server and the browser, because the runtime advertises that gateway to browser clients. Changing the gateway to a Docker-only hostname is not sufficient.
+
+### Connection settings
+
 Edit `.env` on the server and restart after changes:
 
-| Variable                                      | Purpose                                                   |
-| --------------------------------------------- | --------------------------------------------------------- |
-| `INTELLIGENCE_API_KEY`                        | Project credential for conversation persistence           |
-| `INTELLIGENCE_API_URL`, `INTELLIGENCE_WS_URL` | Endpoint overrides for your Intelligence deployment       |
-| `OPENAI_API_KEY`, `OPENAI_MODEL`              | Model credential and model identifier                     |
-| `OPENAI_BASE_URL`                             | Compatible model API endpoint                             |
-| `OWNER_ID`                                    | Stable identity used for this deployment's conversations  |
-| `DATABASE_PATH`                               | SQLite file containing pages, workspace and work metadata |
-| `OWNER_TOKEN`                                 | Application access token; required for external bindings  |
-| `APP_ORIGIN`                                  | Exact browser origin when using a proxy or custom domain  |
+| Variable                                             | Purpose                                                                |
+| ---------------------------------------------------- | ---------------------------------------------------------------------- |
+| `INTELLIGENCE_API_KEY`                               | Project credential for conversation persistence                        |
+| `INTELLIGENCE_API_URL`                               | API endpoint override for your Intelligence deployment                 |
+| `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_WS_URL` | Gateway WebSocket override (CLI name preferred; legacy name supported) |
+| `OPENAI_API_KEY`, `OPENAI_MODEL`                     | Model credential and model identifier                                  |
+| `OPENAI_BASE_URL`                                    | Compatible model API endpoint                                          |
+| `OWNER_ID`                                           | Stable identity used for this deployment's conversations               |
+| `DATABASE_PATH`                                      | SQLite file containing pages, workspace and work metadata              |
+| `OWNER_TOKEN`                                        | Application access token; required for external bindings               |
+| `APP_ORIGIN`                                         | Exact browser origin when using a proxy or custom domain               |
 
 `npx copilotkit project select` deletes an `INTELLIGENCE_API_KEY` line and writes the same credential as `CPK_INTELLIGENCE_API_KEY`. The server reads either name. A non-empty `CPK_INTELLIGENCE_API_KEY` takes precedence over `INTELLIGENCE_API_KEY`.
+
+A non-empty `INTELLIGENCE_GATEWAY_WS_URL` takes precedence over `INTELLIGENCE_WS_URL`. Without either WebSocket override, OpenDots uses the hosted gateway. Set both the API and gateway endpoints when connecting a self-hosted deployment.
 
 The model environment variable names follow the configured provider adapter. Provider credentials belong in `.env`, not client-side variables or source code. Conversation history lives in the configured Intelligence project; copying the SQLite file alone does not back up that history.
 
@@ -85,6 +115,8 @@ For a separate browser, persistent files, and optional shell for each specialist
 ## Slack
 
 OpenDots uses `@copilotkit/channels` with a managed Slack connection, following the runtime and channel pattern in [OpenTag](https://github.com/CopilotKit/OpenTag). The application declares the channel and its specialist agent; Intelligence manages the Slack adapter and delivery. You do not need a separate Slack webhook server or Socket Mode connection in OpenDots.
+
+The CLI project-selection commands below are for hosted Intelligence. For local evaluation, configure Channels in the local dashboard and follow the [local Channels requirements](https://docs.copilotkit.ai/intelligence/self-hosting-local#connect-slack-or-microsoft-teams), including a public HTTPS address. Do not replace the local project key with `project select`.
 
 ### Create the managed channel
 

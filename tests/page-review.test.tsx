@@ -156,3 +156,21 @@ it('does not claim a canceled or declined review was unsaved before recovering i
     expect(html).not.toContain('Decline');
   }
 });
+
+it('renders a Markdown table in the draft as a table, not raw pipe text', () => {
+  const content = '| Category | Score |\n| --- | --- |\n| Speed | 9 |';
+  const html = renderToStaticMarkup(
+    <PageReviewCard
+      args={{ title: 'Brief', content, spaceId: 'space' }}
+      status="executing"
+      respond={async () => {}}
+      threadId="thread"
+      toolCallId="call"
+      onSaved={() => {}}
+    />,
+  );
+  expect(html).toContain('<table>');
+  expect(html).toContain('<th>Category</th>');
+  expect(html).toContain('<td>Speed</td>');
+  expect(html).not.toContain('| Category |');
+});
