@@ -206,6 +206,12 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
       /^(Setup|Voice setup|Dot |Space |Specialist |Conversation |Call |This call|End the current|Voice provider|An audio|Intelligence could not)/.test(
         text,
       );
+    // A conversation, call or Dot the caller named that does not exist is a missing resource, not a
+    // server fault.
+    if (
+      /^(Dot not found|Call not found|Conversation does not belong)/.test(text)
+    )
+      return c.json({ error: text }, 404);
     return c.json(
       {
         error: known

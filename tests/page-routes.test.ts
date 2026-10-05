@@ -314,3 +314,17 @@ it('keeps real Intelligence failures as 503 without exposing details', async () 
       'Page operation could not complete. Check Intelligence setup or retry; your draft has not been discarded.',
   });
 });
+
+it('answers 404, not 503, for a conversation or call that does not exist', async () => {
+  const { app } = fixture();
+  for (const path of [
+    '/api/conversations/missing/capture',
+    '/api/voice/calls/missing',
+  ]) {
+    const response = await app.request(path);
+    expect(response.status).toBe(404);
+    expect(((await response.json()) as { error: string }).error).toMatch(
+      /not found|does not belong/,
+    );
+  }
+});
