@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
+import {
+  pageReviewSchema,
+  type PageReviewDraft,
+} from '../shared/page-review.js';
 export const pageInput = z
   .object({
     title: z.string().trim().min(1).max(160),
@@ -27,6 +31,9 @@ export interface Page {
   updatedAt: number;
   sourceThreadId: string | null;
 }
+export type ReviewedPage = Page & {
+  reviewDraft: PageReviewDraft | null;
+};
 export class PageError extends Error {
   constructor(
     message: string,
@@ -41,8 +48,15 @@ export class Pages {
     private spaceExists: (id: string) => boolean,
   ) {
     db.exec(
-      'CREATE TABLE IF NOT EXISTS page_reviews(threadId TEXT NOT NULL, toolCallId TEXT NOT NULL, pageId TEXT NOT NULL, spaceId TEXT NOT NULL, PRIMARY KEY(threadId,toolCallId))',
+      'CREATE TABLE IF NOT EXISTS page_reviews(threadId TEXT NOT NULL, toolCallId TEXT NOT NULL, pageId TEXT NOT NULL, spaceId TEXT NOT NULL, draft TEXT, PRIMARY KEY(threadId,toolCallId))',
     );
+    if (
+      !db
+        .prepare('PRAGMA table_info(page_reviews)')
+        .all()
+        .some((row) => row.name === 'draft')
+    )
+      db.exec('ALTER TABLE page_reviews ADD COLUMN draft TEXT');
     db.exec(`CREATE TABLE IF NOT EXISTS pages(id TEXT PRIMARY KEY, spaceId TEXT NOT NULL, parentId TEXT, title TEXT NOT NULL, content TEXT NOT NULL, revision INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, sourceThreadId TEXT);
  CREATE TABLE IF NOT EXISTS page_threads(pageId TEXT NOT NULL,dotId TEXT NOT NULL,threadId TEXT NOT NULL UNIQUE,ready INTEGER NOT NULL DEFAULT 0, leaseUntil INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(pageId,dotId));`);
     if (
@@ -117,45 +131,63 @@ export class Pages {
   reviewReceipt(
     threadId: string,
     toolCallId: string,
-  ): { pageId: string; spaceId: string } | null {
+  ): { pageId: string; spaceId: string; draft: PageReviewDraft | null } | null {
     const row = this.db
       .prepare(
-        'SELECT pageId,spaceId FROM page_reviews WHERE threadId=? AND toolCallId=?',
+        'SELECT pageId,spaceId,draft FROM page_reviews WHERE threadId=? AND toolCallId=?',
       )
       .get(threadId, toolCallId);
     return row
-      ? { pageId: String(row.pageId), spaceId: String(row.spaceId) }
+      ? {
+          pageId: String(row.pageId),
+          spaceId: String(row.spaceId),
+          draft: row.draft
+            ? pageReviewSchema.parse(JSON.parse(String(row.draft)))
+            : null,
+        }
       : null;
   }
   createReviewed(
     spaceId: string,
-    input: z.input<typeof pageInput>,
+    input: Pick<PageReviewDraft, 'title' | 'content'>,
     threadId: string,
     toolCallId: string,
-  ): Page {
+  ): ReviewedPage {
+    const draft = pageReviewSchema.parse({ ...input, spaceId });
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const previous = this.db
-        .prepare(
-          'SELECT pageId,spaceId FROM page_reviews WHERE threadId=? AND toolCallId=?',
-        )
-        .get(threadId, toolCallId);
+      const previous = this.reviewReceipt(threadId, toolCallId);
       if (previous) {
         if (previous.spaceId !== spaceId)
           throw new PageError(
             'This review was already saved to another Space.',
             409,
           );
-        const page = this.get(spaceId, String(previous.pageId));
+        if (
+          previous.draft &&
+          (previous.draft.title !== draft.title ||
+            previous.draft.content !== draft.content)
+        )
+          throw new PageError(
+            'This review was already saved with a different draft. Start a new review for the changed draft.',
+            409,
+          );
+        const page = this.get(spaceId, previous.pageId);
         this.db.exec('COMMIT');
-        return page;
+        return { ...page, reviewDraft: previous.draft };
       }
-      const page = this.create(spaceId, input, threadId);
+      const page = this.create(
+        spaceId,
+        { title: draft.title, content: draft.content },
+        threadId,
+      );
       this.db
-        .prepare('INSERT INTO page_reviews VALUES (?,?,?,?)')
-        .run(threadId, toolCallId, page.id, spaceId);
+        .prepare(
+          'INSERT INTO page_reviews (threadId,toolCallId,pageId,spaceId,draft) VALUES (?,?,?,?,?)',
+        )
+        .run(threadId, toolCallId, page.id, spaceId, JSON.stringify(draft));
       this.db.exec('COMMIT');
-      return page;
+      return { ...page, reviewDraft: draft };
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;

@@ -8,7 +8,11 @@ import { Runner } from './runner.js';
 import { createApp } from './app.js';
 import { WorkspaceStore } from './workspace.js';
 import { Platform } from './platform.js';
-import type { PlatformConfig } from './platform-config.js';
+import {
+  intelligenceApiKeyFromEnv,
+  intelligenceWsUrlFromEnv,
+  type PlatformConfig,
+} from './platform-config.js';
 const host = process.env.HOST ?? '127.0.0.1';
 const port = Number(process.env.PORT ?? 4310);
 const ownerToken = process.env.OWNER_TOKEN;
@@ -26,9 +30,9 @@ const workspace = new WorkspaceStore(
   process.env.OWNER_ID ?? 'opendots-owner',
 );
 const config: PlatformConfig = {
-  intelligenceKey: process.env.INTELLIGENCE_API_KEY,
+  intelligenceKey: intelligenceApiKeyFromEnv(process.env),
   intelligenceApiUrl: process.env.INTELLIGENCE_API_URL || undefined,
-  intelligenceWsUrl: process.env.INTELLIGENCE_WS_URL || undefined,
+  intelligenceWsUrl: intelligenceWsUrlFromEnv(process.env),
   apiKey: process.env.OPENAI_API_KEY,
   model: process.env.OPENAI_MODEL,
   baseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
