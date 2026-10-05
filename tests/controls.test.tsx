@@ -62,6 +62,19 @@ it('shows a failed task that will retry on its own and lets the owner pause it',
   expect(html).toContain('Retry task');
   expect(statusLabel(failed)).toMatch(/^Failed, retrying at /);
 });
+it('labels an interrupted task for owner review before retry', () => {
+  const html = renderToStaticMarkup(
+    <TaskActions
+      task={{ ...task, status: 'interrupted' }}
+      settings={settings}
+      busy={false}
+      onAction={() => {}}
+      onSchedule={() => {}}
+    />,
+  );
+  expect(html).toContain('Retry after review');
+  expect(html).not.toContain('Pause task');
+});
 it('keeps the plain Failed label and no pause control without a next run', () => {
   const failed: Task = { ...task, status: 'failed', nextRunAt: null };
   const html = renderToStaticMarkup(

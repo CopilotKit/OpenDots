@@ -17,9 +17,10 @@ export function pageRoutes(platform: Platform) {
         { error: 'This Dot no longer has access to the selected Space.' },
         403,
       );
-    return c.json(
-      platform.workspace.pages.get(receipt.spaceId, receipt.pageId),
-    );
+    return c.json({
+      ...platform.workspace.pages.get(receipt.spaceId, receipt.pageId),
+      reviewDraft: receipt.draft,
+    });
   });
   app.post('/conversations/:id/reviewed-page', async (c) => {
     const data = pageReviewSchema

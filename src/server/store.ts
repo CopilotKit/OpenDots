@@ -74,8 +74,8 @@ export class Store {
         for (const task of running) {
           this.invalidate(
             task,
-            'queued',
-            'Run stopped because settings changed.',
+            'interrupted',
+            'Run interrupted because settings changed. Review completed effects before retrying.',
           );
         }
       }
@@ -141,9 +141,9 @@ export class Store {
         .run(now, reason, task.lease);
     this.db
       .prepare(
-        'UPDATE tasks SET status=?, lease=NULL, leaseUntil=NULL, updatedAt=? WHERE id=?',
+        'UPDATE tasks SET status=?, lease=NULL, leaseUntil=NULL, updatedAt=?, error=? WHERE id=?',
       )
-      .run(status, now, task.id);
+      .run(status, now, status === 'interrupted' ? reason : null, task.id);
     this.event(task.id, task.lease, reason);
   }
   action(id: string, action: Action): Task | undefined {
@@ -199,8 +199,8 @@ export class Store {
       for (const task of expired)
         this.invalidate(
           task,
-          'queued',
-          'Previous worker lease expired; safely retrying.',
+          'interrupted',
+          'Worker lease expired. Review completed effects before retrying.',
         );
       const task = this.db
         .prepare(
@@ -255,9 +255,9 @@ export class Store {
       return true;
     });
   }
-  release(claim: Claim, reason: string) {
+  interrupt(claim: Claim, reason: string) {
     this.transaction(() => {
-      if (this.owns(claim)) this.invalidate(claim, 'queued', reason);
+      if (this.owns(claim)) this.invalidate(claim, 'interrupted', reason);
     });
   }
   fail(claim: Claim, error: string) {

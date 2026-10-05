@@ -10,8 +10,11 @@ services:
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:4310}
       OWNER_ID: ${OWNER_ID:-opendots-owner}
       INTELLIGENCE_API_KEY: ${INTELLIGENCE_API_KEY:-}
+      CPK_INTELLIGENCE_API_KEY: ${CPK_INTELLIGENCE_API_KEY:-}
       INTELLIGENCE_API_URL: ${INTELLIGENCE_API_URL:-}
+      INTELLIGENCE_GATEWAY_WS_URL: ${INTELLIGENCE_GATEWAY_WS_URL:-}
       INTELLIGENCE_WS_URL: ${INTELLIGENCE_WS_URL:-}
+      COPILOTKIT_TELEMETRY_DISABLED: ${COPILOTKIT_TELEMETRY_DISABLED:-false}
       VOICE_API_KEY: ${VOICE_API_KEY:-}
       VOICE_MODEL: ${VOICE_MODEL:-}
       VOICE_NAME: ${VOICE_NAME:-marin}
@@ -22,8 +25,10 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
+      WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-parallel}
+      PARALLEL_API_KEY: ${PARALLEL_API_KEY:-}
       BROWSER_URL: http://browser:4311
-      BROWSER_SECRET: ${BROWSER_SECRET:?Set a 24+ character BROWSER_SECRET in .env}
+      BROWSER_SECRET: ${BROWSER_SECRET:-}
     volumes:
       - opendots-data:/data
     networks:
@@ -36,11 +41,12 @@ services:
     cap_drop:
       - ALL
   browser:
+    profiles: [browser]
     build:
       context: .
       target: browser
     environment:
-      BROWSER_SECRET: ${BROWSER_SECRET:?Set a 24+ character BROWSER_SECRET in .env}
+      BROWSER_SECRET: ${BROWSER_SECRET:-}
     networks:
       - browser-link
       - browser-egress

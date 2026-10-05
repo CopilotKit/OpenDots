@@ -1,5 +1,11 @@
 export type Status =
-  'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+  | 'queued'
+  | 'running'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'interrupted'
+  | 'cancelled';
 export interface Settings {
   name: string;
   paused: boolean;

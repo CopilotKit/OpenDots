@@ -175,7 +175,54 @@ it('saves reviewed drafts once and rechecks the Dot’s Space access', async () 
   const saved = await first.json();
   const retry = await app.request(path, request(draft));
   expect((await retry.json()).id).toBe(saved.id);
+  expect(
+    (await app.request(path, request({ ...draft, title: '  Launch brief  ' })))
+      .status,
+  ).toBe(201);
+  expect(saved.reviewDraft).toEqual({
+    title: draft.title,
+    content: draft.content,
+    spaceId: dot.spaceId,
+  });
+  for (const changed of [
+    { ...draft, title: 'Different title' },
+    { ...draft, content: 'Different content.' },
+  ]) {
+    const conflict = await app.request(path, request(changed));
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toMatchObject({
+      error: expect.stringContaining('different draft'),
+    });
+  }
   expect(ws.pages.list(dot.spaceId)).toHaveLength(1);
+  ws.pages.update(dot.spaceId, saved.id, {
+    expectedRevision: 1,
+    content: 'The saved page was edited later.',
+  });
+  const restored = await app.request(`${path}/review-1`);
+  expect(await restored.json()).toMatchObject({
+    content: 'The saved page was edited later.',
+    reviewDraft: {
+      title: draft.title,
+      content: draft.content,
+      spaceId: dot.spaceId,
+    },
+  });
+  const retryAfterEdit = await app.request(path, request(draft));
+  expect((await retryAfterEdit.json()).id).toBe(saved.id);
+  const authorizedOther = ws.createSpace('Authorized other', '');
+  ws.updateDot(dot.id, {
+    ...dot,
+    spaceIds: [dot.spaceId, authorizedOther.id],
+  });
+  expect(
+    (
+      await app.request(
+        path,
+        request({ ...draft, spaceId: authorizedOther.id }),
+      )
+    ).status,
+  ).toBe(409);
   const other = ws.createSpace('Other', '');
   ws.updateDot(dot.id, { ...dot, spaceId: other.id, spaceIds: [other.id] });
   expect((await app.request(path, request(draft))).status).toBe(403);
