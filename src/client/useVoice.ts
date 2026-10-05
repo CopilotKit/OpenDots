@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, authHeaders } from './api';
+// A single failed control poll is usually a network flap, not a dead call.
+// Only treat the control connection as lost after this many consecutive
+// poll failures, mirroring the grace period #26 gives the peer connection.
+const CONTROL_POLL_FAILURE_LIMIT = 3;
 export function useVoice(
   threadId: string,
   onSaved: () => void,
@@ -29,6 +33,7 @@ export function useVoice(
         channel: RTCDataChannel;
         transcript: string[];
         timer?: ReturnType<typeof setTimeout>;
+        controlPollFailures: number;
         disconnectTimer?: ReturnType<typeof setTimeout>;
         cancelled: boolean;
       }
@@ -114,10 +119,18 @@ export function useVoice(
       if (id)
         void api<{ endedAt: number | null }>(`/voice/calls/${id}`)
           .then((call) => {
-            if (session.current === current && call.endedAt) void end();
+            if (session.current !== current) return;
+            if (call.endedAt) {
+              void end();
+              return;
+            }
+            current.controlPollFailures = 0;
           })
           .catch(() => {
             if (session.current !== current) return;
+            current.controlPollFailures += 1;
+            if (current.controlPollFailures < CONTROL_POLL_FAILURE_LIMIT)
+              return;
             setError('Call control connection was lost.');
             void end();
           });
@@ -156,6 +169,7 @@ export function useVoice(
         cancelled: false,
         id: undefined as string | undefined,
         timer: undefined as ReturnType<typeof setTimeout> | undefined,
+        controlPollFailures: 0,
         disconnectTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       };
       session.current = current;
