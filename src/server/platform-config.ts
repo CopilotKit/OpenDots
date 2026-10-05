@@ -1,5 +1,23 @@
 import type { WebConfig } from './parallel.js';
 import type { SetupStatus } from '../shared/types.js';
+
+// `copilotkit project select` writes the CLI name and deletes the template name.
+const INTELLIGENCE_API_KEY_ENV_NAMES = [
+  'CPK_INTELLIGENCE_API_KEY',
+  'INTELLIGENCE_API_KEY',
+] as const;
+export const INTELLIGENCE_KEY_MISSING_LABEL = `${INTELLIGENCE_API_KEY_ENV_NAMES[1]} (or ${INTELLIGENCE_API_KEY_ENV_NAMES[0]})`;
+
+export function intelligenceApiKeyFromEnv(
+  env: Record<string, string | undefined>,
+): string | undefined {
+  for (const name of INTELLIGENCE_API_KEY_ENV_NAMES) {
+    const value = env[name]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
 export interface PlatformConfig extends WebConfig {
   intelligenceKey?: string;
   intelligenceApiUrl?: string;
@@ -29,7 +47,7 @@ export function setupStatus(
   activationFailed = false,
 ): SetupStatus {
   const missing = [
-    !config.intelligenceKey && 'INTELLIGENCE_API_KEY',
+    !config.intelligenceKey && INTELLIGENCE_KEY_MISSING_LABEL,
     !config.apiKey && 'OPENAI_API_KEY',
     !config.model && 'OPENAI_MODEL',
   ].filter((item): item is string => !!item);

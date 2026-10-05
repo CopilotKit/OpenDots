@@ -6,6 +6,7 @@ export const pageReviewSchema = z
     spaceId: z.string().min(1),
   })
   .strict();
+export type PageReviewDraft = z.infer<typeof pageReviewSchema>;
 export const pageReviewTool = {
   name: 'review_space_page',
   description:

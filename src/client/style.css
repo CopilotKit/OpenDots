@@ -780,7 +780,8 @@ h3 {
   color: #788bc3;
   background: #edf0f9;
 }
-.status.failed {
+.status.failed,
+.status.interrupted {
   color: #b17d73;
   background: #faf0ed;
 }
