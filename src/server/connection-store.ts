@@ -12,6 +12,7 @@ type Row = Omit<Connection, 'hasToken' | 'tools'> & {
 export class ConnectionStore {
   constructor(private db: DatabaseSync) {
     db.exec(`CREATE TABLE IF NOT EXISTS mcp_connections(id TEXT PRIMARY KEY, dotId TEXT NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL, token TEXT, tools TEXT NOT NULL, error TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS mcp_approvals(id TEXT PRIMARY KEY, threadId TEXT NOT NULL, dotId TEXT NOT NULL, connectionId TEXT NOT NULL, tool TEXT NOT NULL, arguments TEXT NOT NULL, createdAt INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS mcp_actions(threadId TEXT NOT NULL, toolCallId TEXT NOT NULL, connectionId TEXT NOT NULL, tool TEXT NOT NULL, status TEXT NOT NULL, result TEXT, createdAt INTEGER NOT NULL, PRIMARY KEY(threadId, toolCallId));`);
   }
   private rows(dotId?: string) {
@@ -89,6 +90,44 @@ export class ConnectionStore {
   // Keep updatedAt strictly increasing so rapid edits always change the fingerprint.
   private tick(id: string) {
     return Math.max(Date.now(), (this.get(id)?.updatedAt ?? 0) + 1);
+  }
+  // Binds a gated call to its exact connection, tool, and arguments, so a
+  // later approval runs that call and nothing else.
+  createApproval(value: {
+    threadId: string;
+    dotId: string;
+    connectionId: string;
+    tool: string;
+    arguments: Record<string, unknown>;
+  }) {
+    const id = randomUUID();
+    this.db
+      .prepare('INSERT INTO mcp_approvals VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(
+        id,
+        value.threadId,
+        value.dotId,
+        value.connectionId,
+        value.tool,
+        JSON.stringify(value.arguments),
+        Date.now(),
+      );
+    return id;
+  }
+  approval(id: string) {
+    const row = this.db
+      .prepare('SELECT * FROM mcp_approvals WHERE id=?')
+      .get(id);
+    if (!row) return undefined;
+    return {
+      id: String(row.id),
+      threadId: String(row.threadId),
+      dotId: String(row.dotId),
+      connectionId: String(row.connectionId),
+      tool: String(row.tool),
+      arguments: JSON.parse(String(row.arguments)) as Record<string, unknown>,
+      createdAt: Number(row.createdAt),
+    };
   }
   action(threadId: string, toolCallId: string) {
     const row = this.db

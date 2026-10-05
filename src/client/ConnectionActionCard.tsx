@@ -3,6 +3,7 @@ import { Check, PlugZap } from 'lucide-react';
 import {
   connectionActionSchema,
   type ConnectionActionResult,
+  type PendingApproval,
 } from '../shared/connection-types';
 import { api } from './api';
 import { computerToolResult } from './ComputerToolCard';
@@ -10,8 +11,8 @@ type Receipt = {
   status: 'running' | 'done';
   result: ConnectionActionResult | null;
 };
-const actions = (threadId: string) =>
-  `/conversations/${encodeURIComponent(threadId)}/connection-actions`;
+const conversation = (threadId: string) =>
+  `/conversations/${encodeURIComponent(threadId)}`;
 const display = (value: unknown) =>
   typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 export function ConnectionActionCard({
@@ -31,45 +32,62 @@ export function ConnectionActionCard({
 }) {
   const action = connectionActionSchema.safeParse(args);
   const recorded = computerToolResult(result);
-  const [label, setLabel] = useState<{ connection: string; title: string }>();
+  const [approval, setApproval] = useState<PendingApproval>();
+  const [approvalError, setApprovalError] = useState('');
   const [receipt, setReceipt] = useState<Receipt | null>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const pending = useRef(false);
   const finished = status === 'complete';
-  const tool = action.success ? action.data.tool : '';
+  const approvalId = action.success ? action.data.approvalId : '';
+  // Show the server's record of what will run, not the model's description.
   useEffect(() => {
-    if (!tool) return;
+    if (!approvalId) return;
     let active = true;
-    void api<{ connection: string; title: string }>(
-      `/conversations/${encodeURIComponent(threadId)}/connection-tools/${encodeURIComponent(tool)}`,
+    setApprovalError('');
+    void api<PendingApproval>(
+      `${conversation(threadId)}/connection-approvals/${encodeURIComponent(approvalId)}`,
     )
-      .then((value) => active && setLabel(value))
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [threadId, tool]);
-  useEffect(() => {
-    let active = true;
-    setError('');
-    void api<Receipt | null>(
-      `${actions(threadId)}/${encodeURIComponent(toolCallId)}`,
-    )
-      .then((value) => active && setReceipt(value))
-      .catch((cause) => {
-        if (active)
-          setError(
+      .then((value) => active && setApproval(value))
+      .catch(
+        (cause) =>
+          active &&
+          setApprovalError(
             cause instanceof Error
               ? cause.message
-              : 'Could not check this action.',
-          );
-      });
+              : 'Could not load this request.',
+          ),
+      );
     return () => {
       active = false;
     };
-  }, [threadId, toolCallId, attempt]);
+  }, [threadId, approvalId]);
+  // A receipt that is still running is checked until the server finishes.
+  const running = receipt?.status === 'running';
+  useEffect(() => {
+    let active = true;
+    const load = () =>
+      api<Receipt | null>(
+        `${conversation(threadId)}/connection-actions/${encodeURIComponent(toolCallId)}`,
+      )
+        .then((value) => active && setReceipt(value))
+        .catch((cause) => {
+          if (active)
+            setError(
+              cause instanceof Error
+                ? cause.message
+                : 'Could not check this action.',
+            );
+        });
+    setError('');
+    void load();
+    const timer = running ? setInterval(() => void load(), 2000) : undefined;
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [threadId, toolCallId, attempt, running]);
   const outcome = receipt?.result ?? null;
   const approved = recorded.approved === true || receipt?.status === 'done';
   const declined = recorded.approved === false;
@@ -91,11 +109,11 @@ export function ConnectionActionCard({
       // A previous approval may have run even if its response never arrived.
       const value =
         outcome ??
-        (await api<ConnectionActionResult>(actions(threadId), 'POST', {
-          toolCallId,
-          tool: action.data.tool,
-          arguments: action.data.arguments,
-        }));
+        (await api<ConnectionActionResult>(
+          `${conversation(threadId)}/connection-actions`,
+          'POST',
+          { toolCallId, approvalId: action.data.approvalId },
+        ));
       setReceipt({ status: 'done', result: value });
       await respond({ approved: true, ...value });
     } catch (cause) {
@@ -107,7 +125,7 @@ export function ConnectionActionCard({
       setBusy(false);
     }
   };
-  const entries = action.success ? Object.entries(action.data.arguments) : [];
+  const entries = approval ? Object.entries(approval.arguments) : [];
   return (
     <section
       className="page-review-card connection-action-card"
@@ -116,7 +134,9 @@ export function ConnectionActionCard({
       <header>
         <PlugZap size={17} />
         <strong>
-          {label ? `${label.connection} · ${label.title}` : tool || 'Action'}
+          {approval
+            ? `${approval.connection} · ${approval.title}`
+            : 'Connected service'}
         </strong>
         <span>
           {approved
@@ -125,11 +145,13 @@ export function ConnectionActionCard({
               : 'Approved'
             : declined
               ? 'Declined'
-              : finished
-                ? 'Ended'
-                : !ready
-                  ? 'Checking'
-                  : 'Needs your approval'}
+              : running
+                ? 'Running'
+                : finished
+                  ? 'Ended'
+                  : !ready
+                    ? 'Checking'
+                    : 'Needs your approval'}
         </span>
       </header>
       <div className="page-review-body">
@@ -145,6 +167,12 @@ export function ConnectionActionCard({
               </div>
             ))}
           </dl>
+        )}
+        {approvalError && !outcome && (
+          <div className="connection-action-result failed">
+            <strong>Cannot run</strong>
+            <pre>{approvalError}</pre>
+          </div>
         )}
         {outcome && (
           <div
@@ -164,12 +192,12 @@ export function ConnectionActionCard({
             Retry
           </button>
         )}
-        {!finished && respond && ready && receipt?.status !== 'running' && (
+        {!finished && respond && ready && !running && (
           <>
             <button
               type="button"
               className="review-primary"
-              disabled={busy || !action.success}
+              disabled={busy || !action.success || (!outcome && !approval)}
               onClick={() => void decide(true)}
             >
               <Check size={15} />
@@ -191,11 +219,11 @@ export function ConnectionActionCard({
           </>
         )}
         <small>
-          {receipt?.status === 'running'
+          {running
             ? 'This action is still running on the server.'
             : approved || declined || finished
               ? ''
-              : 'Nothing runs until you approve.'}
+              : 'Nothing runs until you approve. These are the exact arguments.'}
         </small>
       </footer>
     </section>

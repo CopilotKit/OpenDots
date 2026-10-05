@@ -1,6 +1,10 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { connectionActionSchema } from '../shared/connection-types.js';
+import {
+  APPROVAL_TTL_MS,
+  connectionActionSchema,
+  type PendingApproval,
+} from '../shared/connection-types.js';
 import type { WorkspaceStore } from './workspace.js';
 import { connectionInput, type ConnectionService } from './connections.js';
 export function connectionRoutes(
@@ -63,17 +67,39 @@ export function connectionRoutes(
     connections.store.remove(owned(c.req.param('id')).id);
     return c.json({ ok: true });
   });
-  app.get('/conversations/:id/connection-tools/:name', (c) => {
+  // An approval record is usable only from its own conversation, for an
+  // hour, and only while the Dot still has that exact tool enabled.
+  const approvalFor = (threadId: string, approvalId: string) => {
+    const approval = connections.store.approval(approvalId);
+    if (!approval || approval.threadId !== threadId)
+      throw new Error('Approval request not found.');
+    if (Date.now() - approval.createdAt > APPROVAL_TTL_MS)
+      throw new Error(
+        'This approval request expired. Ask the Dot to try again.',
+      );
+    return {
+      approval,
+      exposed: connections.bound(
+        approval.dotId,
+        approval.connectionId,
+        approval.tool,
+      ),
+    };
+  };
+  app.get('/conversations/:id/connection-approvals/:approvalId', (c) => {
     const thread = workspace.requireThread(c.req.param('id'));
-    const { connection, tool } = connections.resolve(
-      thread.dotId,
-      c.req.param('name'),
+    const { approval, exposed } = approvalFor(
+      thread.id,
+      c.req.param('approvalId'),
     );
     return c.json({
-      connection: connection.name,
-      title: tool.title,
-      description: tool.description,
-    });
+      id: approval.id,
+      connection: exposed.connection.name,
+      title: exposed.tool.title,
+      description: exposed.tool.description,
+      arguments: approval.arguments,
+      expiresAt: approval.createdAt + APPROVAL_TTL_MS,
+    } satisfies PendingApproval);
   });
   app.get('/conversations/:id/connection-actions/:toolCallId', (c) => {
     const thread = workspace.requireThread(c.req.param('id'));
@@ -81,15 +107,18 @@ export function connectionRoutes(
       connections.store.action(thread.id, c.req.param('toolCallId')) ?? null,
     );
   });
-  // The only path that runs an approval-gated tool: an owner request for a
-  // tool this conversation's Dot currently has enabled.
+  // The only path that runs an approval-gated tool: the owner approving a
+  // stored request. It runs that request's connection, tool, and arguments,
+  // never ones supplied with the approval.
   app.post('/conversations/:id/connection-actions', async (c) => {
     const body = connectionActionSchema
       .omit({ summary: true })
       .extend({ toolCallId: z.string().min(1).max(200) })
       .parse(await c.req.json());
     const thread = workspace.requireThread(c.req.param('id'));
-    const exposed = connections.resolve(thread.dotId, body.tool);
+    const previous = connections.store.action(thread.id, body.toolCallId);
+    if (previous?.result) return c.json(previous.result);
+    const { approval, exposed } = approvalFor(thread.id, body.approvalId);
     if (
       !connections.store.claimAction(
         thread.id,
@@ -103,7 +132,7 @@ export function connectionRoutes(
       return c.json({ error: 'This action is already running.' }, 409);
     }
     // Not tied to the request: once approved, finish even if the tab closes.
-    const result = await connections.call(exposed, body.arguments);
+    const result = await connections.call(exposed, approval.arguments);
     connections.store.finishAction(thread.id, body.toolCallId, result);
     return c.json(result);
   });

@@ -14,7 +14,7 @@ Use **Refresh** after the server adds or changes tools. Your choices for existin
 
 Every tool starts enabled. A tool the server marks as read-only (`readOnlyHint`) runs on its own. Every other tool starts with **Ask first** on.
 
-When a Dot calls an **Ask first** tool, the tool does not run. The Dot shows an approval card in chat with a summary and the exact arguments. The action runs only when you select **Approve & run**, through an owner-only server route. That route checks that the conversation's Dot still has the tool enabled. Each approval runs at most once, and reopening the conversation shows the saved result.
+When a Dot calls an **Ask first** tool, the tool does not run. The server stores the exact connection, tool and arguments, and the Dot shows an approval card in chat with a summary and those stored arguments. The action runs only when you select **Approve & run**, through an owner-only server route. That route runs the stored request, never arguments sent with the approval, and only if the conversation's Dot still has that exact tool enabled. Requests expire after an hour. Each approval runs at most once, and reopening the conversation shows the saved result, or keeps checking while the action is still running.
 
 The read-only hint comes from the server, so it is only a hint. Turn on **Ask first** for any tool you do not fully trust, and turn off tools a Dot does not need.
 

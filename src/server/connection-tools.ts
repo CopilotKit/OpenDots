@@ -7,6 +7,7 @@ import type { ConnectionService } from './connections.js';
 export function connectionTools(
   connections: ConnectionService,
   dotId: string,
+  threadId: string,
   check: () => void,
   signal: AbortSignal,
   approvals: boolean,
@@ -29,8 +30,14 @@ export function connectionTools(
         return approvals
           ? {
               status: 'approval_required',
-              instruction: `Call ${connectionActionTool.name} with tool "${exposed.name}", these exact arguments, and a one-sentence summary. Then wait for the owner.`,
-              arguments: input,
+              approvalId: connections.store.createApproval({
+                threadId,
+                dotId,
+                connectionId: current.connection.id,
+                tool: current.tool.name,
+                arguments: input,
+              }),
+              instruction: `Call ${connectionActionTool.name} with this approvalId and a one-sentence summary of what it will do. Then wait for the owner.`,
             }
           : {
               status: 'unavailable',

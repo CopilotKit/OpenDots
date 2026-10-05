@@ -76,19 +76,22 @@ export interface ExposedTool {
   connection: Connection;
   tool: ConnectionTool;
 }
+// Names are assigned over every tool, enabled or not, so turning one tool
+// off never moves its name to another. Approvals do not rely on names: they
+// bind to a stored connection, tool, and arguments.
 export function exposedTools(connections: Connection[]): ExposedTool[] {
   const used = new Set<string>();
-  return connections.flatMap((connection) =>
-    connection.tools
-      .filter((tool) => tool.enabled)
-      .map((tool) => {
+  return connections
+    .flatMap((connection) =>
+      connection.tools.map((tool) => {
         const base = `${slug(connection.name, 20)}__${slug(tool.name, 40)}`;
         let name = base;
         for (let n = 2; used.has(name); n++) name = `${base.slice(0, 60)}_${n}`;
         used.add(name);
         return { name, connection, tool };
       }),
-  );
+    )
+    .filter(({ tool }) => tool.enabled);
 }
 export function normalizeResult(result: unknown): ConnectionActionResult {
   const envelope = z
@@ -214,9 +217,23 @@ export class ConnectionService {
     const connection = this.store.get(id);
     if (!connection) throw new Error('Connection not found.');
     try {
+      const discovered = await this.discover(this.store.credentials(id));
+      // Owner changes made while discovery ran win: merge against the
+      // settings as they are now, not as they were when it started.
+      const current = this.store.get(id);
+      if (!current) throw new Error('Connection not found.');
       return this.store.saveTools(
         id,
-        await this.discover(this.store.credentials(id), connection.tools),
+        discovered.map((tool) => {
+          const owner = current.tools.find((item) => item.name === tool.name);
+          return owner
+            ? {
+                ...tool,
+                enabled: owner.enabled,
+                requiresApproval: owner.requiresApproval,
+              }
+            : tool;
+        }),
       );
     } catch (error) {
       return this.store.setError(id, failure(error));
@@ -246,6 +263,19 @@ export class ConnectionService {
     const match = this.tools(dotId).find((tool) => tool.name === name);
     if (!match)
       throw new Error('Connection tool is not available to this Dot.');
+    return match;
+  }
+  // The tool an approval was created for, by connection and real tool name,
+  // if the Dot still has it enabled.
+  bound(dotId: string, connectionId: string, toolName: string) {
+    const match = this.tools(dotId).find(
+      (item) =>
+        item.connection.id === connectionId && item.tool.name === toolName,
+    );
+    if (!match)
+      throw new Error(
+        'This tool is no longer enabled for this Dot. Nothing was run.',
+      );
     return match;
   }
   async call(
