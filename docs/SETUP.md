@@ -38,7 +38,7 @@ npx copilotkit@latest login
 npx copilotkit@latest project select
 ```
 
-`login` opens the browser to sign in or create an account. `project select` lets you select or create a project, and writes a project-scoped key to `.env` as `CPK_INTELLIGENCE_API_KEY`. It removes an `INTELLIGENCE_API_KEY` line, so that the file holds one credential. Use the same project for Slack and Automatic Learning below.
+`login` opens the browser to sign in or create an account. `project select` lets you select or create a project, and writes a project-scoped key to `.env` as `CPK_INTELLIGENCE_API_KEY`. Keep the generated `CPK_TELEMETRY_ID` together with the project key when deploying, including Docker. It connects SDK telemetry to the selected Intelligence account; see [signup and usage tracking](TELEMETRY.md). It removes an `INTELLIGENCE_API_KEY` line, so that the file holds one credential. Use the same project for Slack and Automatic Learning below.
 
 Do not run `copilotkit onboard` in this folder. Onboarding is for apps that do not have CopilotKit yet. OpenDots already has its integration.
 

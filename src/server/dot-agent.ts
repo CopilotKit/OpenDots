@@ -20,6 +20,7 @@ import { Store } from './store.js';
 import { WorkspaceStore } from './workspace.js';
 import type { PlatformConfig } from './platform-config.js';
 import { browserResponse } from './research.js';
+import { answerObserver, type SetupTelemetry } from './setup-telemetry.js';
 const channelError = () => ({
   type: EventType.RUN_ERROR,
   message:
@@ -35,6 +36,7 @@ export class DotAgent extends AbstractAgent {
     private config: PlatformConfig,
     private dotId: string,
     private channel = false,
+    private setupTelemetry?: SetupTelemetry,
   ) {
     super({ agentId: dotId });
   }
@@ -45,6 +47,7 @@ export class DotAgent extends AbstractAgent {
       this.config,
       this.dotId,
       this.channel,
+      this.setupTelemetry,
     );
   }
   abortRun() {
@@ -59,8 +62,13 @@ export class DotAgent extends AbstractAgent {
       let watcher: ReturnType<typeof setInterval> | undefined;
       let timedOut = false;
       let finished = false;
+      let configurationFailure = false;
+      const observe = answerObserver((event) =>
+        this.setupTelemetry?.capture(event),
+      );
       const timeout = setTimeout(() => {
         timedOut = true;
+        observe({ type: EventType.RUN_ERROR });
         this.abortRun();
       }, TURN_TIME_LIMIT_MS);
       const timeLimitError = () => ({
@@ -89,8 +97,15 @@ export class DotAgent extends AbstractAgent {
           !this.config.intelligenceKey ||
           !this.config.apiKey ||
           !this.config.model
-        )
+        ) {
+          configurationFailure = true;
+          this.setupTelemetry?.capture({
+            kind: 'setup_failed',
+            step: 'setup_required',
+            error_class: 'configuration_missing',
+          });
           throw new Error('Intelligence and model configuration are required.');
+        }
         const initialSettings = this.store.settings();
         const check = () => {
           const settings = this.store.settings();
@@ -334,6 +349,9 @@ export class DotAgent extends AbstractAgent {
           })
           .subscribe({
             next: (event) => {
+              if (controller.signal.aborted)
+                observe({ type: EventType.RUN_ERROR });
+              observe(event);
               if (
                 event.type === EventType.RUN_ERROR ||
                 event.type === EventType.RUN_FINISHED
@@ -346,6 +364,7 @@ export class DotAgent extends AbstractAgent {
               );
             },
             error: (error: unknown) => {
+              observe({ type: EventType.RUN_ERROR });
               if (this.channel) {
                 subscriber.next(channelError());
                 subscriber.complete();
@@ -355,14 +374,19 @@ export class DotAgent extends AbstractAgent {
               } else subscriber.error(error);
             },
             complete: () => {
-              if (timedOut && !finished)
+              if (controller.signal.aborted && !finished)
+                observe({ type: EventType.RUN_ERROR });
+              if (timedOut && !finished) {
+                observe({ type: EventType.RUN_ERROR });
                 subscriber.next(
                   this.channel ? channelError() : timeLimitError(),
                 );
+              }
               subscriber.complete();
             },
           });
       } catch (error) {
+        if (!configurationFailure) observe({ type: EventType.RUN_ERROR });
         subscriber.next(
           this.channel
             ? channelError()

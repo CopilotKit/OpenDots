@@ -1,3 +1,4 @@
+import { setupInputSchema } from './setup-telemetry.js';
 import { pageRoutes } from './page-routes.js';
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -22,6 +23,22 @@ const dotSchema = z
 export function workspaceRoutes(platform: Platform, voice: VoiceService) {
   const app = new Hono();
   app.route('/', pageRoutes(platform));
+  app.post('/setup-telemetry', async (c) => {
+    const parsed = setupInputSchema.safeParse(
+      await c.req.json().catch(() => null),
+    );
+    if (!parsed.success) return c.json({ error: 'Invalid setup event.' }, 400);
+    const event = parsed.data;
+    if (
+      event.kind === 'step_viewed' &&
+      event.step !== 'settings' &&
+      event.step !==
+        (platform.setup().missing.length ? 'setup_required' : 'ready')
+    )
+      return c.json({ error: 'Setup step does not match server state.' }, 400);
+    platform.setupTelemetry.capture(event);
+    return c.json({ ok: true });
+  });
   app.get('/workspace', (c) =>
     c.json({
       spaces: platform.workspace.spaces(),
