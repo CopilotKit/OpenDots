@@ -4004,7 +4004,9 @@ h3 {
   --disabled-bg: #ececec;
   --disabled-ink: #9a9a9a;
 }
-.template-app :is(button, a, input, textarea, select):focus-visible {
+/* The call view is intentionally dark; it keeps the pale base focus ring. */
+.template-app
+  :is(button, a, input, textarea, select):not(.call-view *):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
