@@ -1,9 +1,12 @@
 export type ThemePreference = 'system' | 'light' | 'dark';
 const key = 'opendots-theme';
+// The choice for this page, even if storage refuses to keep it.
+let chosen: ThemePreference | undefined;
 const query = () => window.matchMedia('(prefers-color-scheme: dark)');
 // Storage can be unavailable (private windows, blocked site data); the theme
 // then follows the system for this visit.
 export function themePreference(): ThemePreference {
+  if (chosen) return chosen;
   try {
     const value = localStorage.getItem(key);
     if (value === 'light' || value === 'dark') return value;
@@ -23,6 +26,7 @@ function apply() {
     ?.setAttribute('content', theme === 'dark' ? '#1b1b1b' : '#f8f7f4');
 }
 export function setThemePreference(preference: ThemePreference) {
+  chosen = preference;
   try {
     if (preference === 'system') localStorage.removeItem(key);
     else localStorage.setItem(key, preference);

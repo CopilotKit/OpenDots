@@ -1,6 +1,7 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import postcss from 'postcss';
 import {
+  contrast,
   darkColor,
   darkSelector,
   darkTheme,
@@ -62,7 +63,7 @@ it('keeps the light cascade order when later rules have no literal color', () =>
     ":root[data-theme='dark'] .primary { background: var(--accent); }",
   );
 });
-it('leaves fixed surfaces, keyframes, and images alone', () => {
+it('keeps fixed surfaces as they are, ahead of generated global rules', () => {
   const css = run(`
     /* theme: fixed */
     .call-view { background: #1c544c; }
@@ -71,7 +72,11 @@ it('leaves fixed surfaces, keyframes, and images alone', () => {
     @keyframes glow { from { color: #fff; } }
     .logo { background: url(/dot.png); }
   `);
-  expect(css).not.toContain("'dark'] .call-view");
+  // Same colors, but with the generated rules' specificity, so a global
+  // button twin cannot repaint the call controls.
+  expect(css).toContain(
+    ":root[data-theme='dark'] .call-view { background: #1c544c; }",
+  );
   expect(css).toContain(":root[data-theme='dark'] .after { color: #eeeeee; }");
   expect(css).not.toMatch(/dark'\] from/);
   expect(css).not.toContain("'dark'] .logo");
@@ -81,4 +86,75 @@ it('resolves the system preference', () => {
   expect(resolveTheme('system', false)).toBe('light');
   expect(resolveTheme('light', true)).toBe('light');
   expect(resolveTheme('dark', false)).toBe('dark');
+});
+
+const declared = (css: string, selector: string, prop: string) =>
+  css.match(
+    new RegExp(
+      `${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{[^}]*?${prop}: (#[0-9a-f]{6})`,
+    ),
+  )?.[1];
+it('keeps text readable on its own, without the separate polish layer', () => {
+  // The Settings service-setup note: text and surface come from two rules.
+  const note = run(`
+    .config-note { background: #f5f4f8; }
+    .config-note p { color: #a2a0ad; }
+  `);
+  const surface = declared(note, "'dark'] .config-note", 'background')!;
+  const text = declared(note, "'dark'] .config-note p", 'color')!;
+  expect(contrast(text, surface)).toBeGreaterThanOrEqual(4.5);
+  // Any text color stays readable on the darkest and lightest dark surfaces.
+  for (const light of ['#ffffff', '#f8f7f4', '#e9e8e6'])
+    for (const ink of ['#a2a0ad', '#c7cee9', '#b0b0b7', '#999eaa']) {
+      const css = run(`.a { color: ${ink}; }`);
+      expect(
+        contrast(declared(css, "'dark'] .a", 'color')!, darkColor(light)),
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+});
+it("keeps a rule's own text and background pair at AA", () => {
+  // The enabled Save button: mid-tone lavender with white text.
+  for (const background of ['#7689d3', '#8292d6', '#496d61', '#c4473a']) {
+    const css = run(`.primary { background: ${background}; color: white; }`);
+    const fill = declared(css, "'dark'] .primary", 'background')!;
+    const text = declared(css, "'dark'] .primary", 'color')!;
+    expect(contrast(text, fill)).toBeGreaterThanOrEqual(4.5);
+  }
+});
+it('applies the chosen theme even when storage is unavailable', async () => {
+  const dataset: Record<string, string> = {};
+  const listeners: (() => void)[] = [];
+  const failing = () => {
+    throw new Error('SecurityError');
+  };
+  vi.stubGlobal('localStorage', {
+    getItem: failing,
+    setItem: failing,
+    removeItem: failing,
+  });
+  vi.stubGlobal('window', {
+    matchMedia: () => ({
+      matches: false,
+      addEventListener: (_: string, listener: () => void) =>
+        listeners.push(listener),
+    }),
+  });
+  vi.stubGlobal('document', {
+    documentElement: { dataset },
+    querySelector: () => null,
+  });
+  try {
+    vi.resetModules();
+    const theme = await import('../src/client/theme');
+    theme.watchSystemTheme();
+    expect(dataset.theme).toBe('light');
+    theme.setThemePreference('dark');
+    expect(dataset.theme).toBe('dark');
+    expect(theme.themePreference()).toBe('dark');
+    // A system change does not undo the choice for this page.
+    listeners.forEach((listener) => listener());
+    expect(dataset.theme).toBe('dark');
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

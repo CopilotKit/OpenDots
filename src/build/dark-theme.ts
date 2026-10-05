@@ -60,6 +60,41 @@ export function darkColor(value: string) {
   const next = 0.95 - 0.73 * L ** 1.3;
   return hex(oklabToRgb([next, a * 0.85, b * 0.85]), alpha);
 }
+// WCAG relative luminance and contrast, for checking generated pairs.
+const luminance = (rgb: number[]) => {
+  const [r, g, b] = rgb.map(toLinear);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+export function contrast(a: string, b: string) {
+  const [x, y] = [luminance(parseHex(a).rgb), luminance(parseHex(b).rgb)];
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+const withLightness = (value: string, next: (L: number) => number) => {
+  const { rgb, alpha } = parseHex(value);
+  const [L, a, b] = rgbToOklab(rgb);
+  return hex(oklabToRgb([next(L), a, b]), alpha);
+};
+// Dark text sits on surfaces from #1b1b1b to about #2a2a2a; this floor
+// keeps any text color at 4.5:1 or better there.
+const TEXT_FLOOR = 0.72;
+export const readableText = (value: string) =>
+  withLightness(value, (L) => Math.max(L, TEXT_FLOOR));
+const LIGHT_TEXT = '#f2f2f2';
+const DARK_TEXT = '#141414';
+// A rule that sets both its text and background must stay readable after
+// mapping: pick the better text extreme, then darken a mid-tone background
+// until the pair reaches AA.
+export function readablePair(text: string, background: string) {
+  if (contrast(text, background) >= 4.5) return { text, background };
+  const best = [LIGHT_TEXT, DARK_TEXT].reduce((a, b) =>
+    contrast(a, background) >= contrast(b, background) ? a : b,
+  );
+  if (contrast(best, background) >= 4.5) return { text: best, background };
+  let next = background;
+  while (contrast(LIGHT_TEXT, next) < 4.5)
+    next = withLightness(next, (L) => L - 0.02);
+  return { text: LIGHT_TEXT, background: next };
+}
 const named: Record<string, string> = { white: '#ffffff', black: '#000000' };
 const colorToken = /#[0-9a-fA-F]{3,8}\b|\b(?:white|black)\b/g;
 export function darkValue(prop: string, value: string) {
@@ -93,19 +128,42 @@ export function darkSelector(selector: string) {
     })
     .join(', ');
 }
+const solid = (value: string) => {
+  const token = value.trim();
+  const color = named[token] ?? token;
+  return /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : undefined;
+};
+function darkDeclarations(colors: Declaration[]) {
+  const mapped = colors.map((decl) =>
+    decl.clone({ value: darkValue(decl.prop, decl.value) }),
+  );
+  const text = mapped.find((decl) => decl.prop === 'color');
+  const textColor = text && solid(text.value);
+  if (!text || !textColor) return mapped;
+  const background = mapped.find(
+    (decl) => /^background(-color)?$/.test(decl.prop) && solid(decl.value),
+  );
+  if (!background) {
+    text.value = readableText(textColor);
+    return mapped;
+  }
+  const pair = readablePair(textColor, solid(background.value)!);
+  text.value = pair.text;
+  background.value = pair.background;
+  return mapped;
+}
 export function darkTheme(): Plugin {
   return {
     postcssPlugin: 'opendots-dark-theme',
     Once(root) {
       let fixed = false;
-      const rules: Rule[] = [];
+      const rules: { rule: Rule; fixed: boolean }[] = [];
       root.each(function visit(node): void {
         if (node.type === 'comment') {
           if (/^\s*theme:\s*fixed\s*$/.test(node.text)) fixed = true;
           if (/^\s*theme:\s*end\s*$/.test(node.text)) fixed = false;
           return;
         }
-        if (fixed) return;
         if (node.type === 'atrule') {
           // Animations interpolate their own colors; leave them alone.
           if (!/keyframes$/.test((node as AtRule).name))
@@ -113,17 +171,21 @@ export function darkTheme(): Plugin {
           return;
         }
         if (node.type === 'rule' && !node.selector.startsWith(DARK))
-          rules.push(node);
+          rules.push({ rule: node, fixed });
       });
-      for (const rule of rules) {
+      for (const { rule, fixed } of rules) {
         const colors = rule.nodes.filter(
           (node): node is Declaration => node.type === 'decl' && themed(node),
         );
         if (!colors.length) continue;
         const dark = rule.clone({ selector: darkSelector(rule.selector) });
         dark.removeAll();
-        for (const decl of colors)
-          dark.append(decl.clone({ value: darkValue(decl.prop, decl.value) }));
+        // Fixed surfaces keep their colors, but still get a twin with the
+        // same specificity so generated global rules cannot override them.
+        for (const decl of fixed
+          ? colors.map((decl) => decl.clone())
+          : darkDeclarations(colors))
+          dark.append(decl);
         rule.after(dark);
       }
     },
