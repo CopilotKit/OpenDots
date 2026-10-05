@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -59,6 +60,13 @@ export function PageDocument({
   const [source, setSource] = useState(false);
   const [move, setMove] = useState(false);
   const [notice, setNotice] = useState('');
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
   const [chatOpen, setChatOpen] = useState(false);
   const safety = useMemo(() => inspectMarkdown(draft.content), [draft.content]);
   const sourceMode = source || !safety.supported;
@@ -216,13 +224,16 @@ export function PageDocument({
                       `/spaces/${page.spaceId}/pages/${page.id}`,
                       'DELETE',
                     );
-                    // Drop pending autosave so navigation is not blocked by the
-                    // unsaved-draft prompt for a page that no longer exists.
-                    controller.dispose();
-                    onDirty(false);
                     onDeleted(page.id);
                     onRefresh();
-                    onHome();
+                    // A slow DELETE can finish after the user opened another
+                    // page: only leave, and drop the pending autosave, if this
+                    // document is still the one on screen.
+                    if (open.current) {
+                      controller.dispose();
+                      onDirty(false);
+                      onHome();
+                    }
                   } catch (error) {
                     setNotice(
                       error instanceof Error

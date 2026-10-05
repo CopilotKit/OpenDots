@@ -83,6 +83,7 @@ export function PageReviewCard({
         return;
       }
       if (isDeletedReview(page)) {
+        setSavedPage(undefined);
         setDeletedReview(page);
         await respond({
           approved: true,
