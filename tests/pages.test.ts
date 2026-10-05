@@ -108,3 +108,96 @@ it('migrates review receipts and retains their original draft after restart', ()
   store.close();
   rmSync(dir, { recursive: true });
 });
+it('applies an approved review to the page it names instead of creating a copy', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dots-review-update-'));
+  const store = new WorkspaceStore(join(dir, 'db'), 'owner');
+  const space = store.spaces()[0].id;
+  const original = store.pages.create(space, {
+    title: 'Plan',
+    content: 'First version',
+  });
+  const before = store.pages.list(space).length;
+  const draft = {
+    title: 'Plan',
+    content: 'Revised version',
+    pageId: original.id,
+    expectedRevision: original.revision,
+  };
+  const saved = store.pages.createReviewed(space, draft, 'thread', 'call');
+  expect(saved.id).toBe(original.id);
+  expect(saved).toMatchObject({ content: 'Revised version', revision: 2 });
+  expect(store.pages.list(space)).toHaveLength(before);
+  // Replaying the same approval is idempotent and does not bump the revision.
+  expect(
+    store.pages.createReviewed(space, draft, 'thread', 'call').revision,
+  ).toBe(2);
+  expect(() =>
+    store.pages.createReviewed(
+      space,
+      { ...draft, content: 'Another draft' },
+      'thread',
+      'call',
+    ),
+  ).toThrow('different draft');
+  store.close();
+  rmSync(dir, { recursive: true });
+});
+it('refuses to revise a page that changed after the review was drafted', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dots-review-stale-'));
+  const store = new WorkspaceStore(join(dir, 'db'), 'owner');
+  const space = store.spaces()[0].id;
+  const page = store.pages.create(space, { title: 'Plan', content: 'v1' });
+  store.pages.update(space, page.id, {
+    expectedRevision: 1,
+    content: 'edited by the owner',
+  });
+  expect(() =>
+    store.pages.createReviewed(
+      space,
+      {
+        title: 'Plan',
+        content: 'stale draft',
+        pageId: page.id,
+        expectedRevision: 1,
+      },
+      'thread',
+      'call',
+    ),
+  ).toThrow('This page changed');
+  expect(store.pages.get(space, page.id).content).toBe('edited by the owner');
+  expect(store.pages.reviewReceipt('thread', 'call')).toBeNull();
+  expect(() =>
+    store.pages.createReviewed(
+      space,
+      { title: 'Plan', content: 'no revision', pageId: page.id },
+      'thread',
+      'call2',
+    ),
+  ).toThrow('needs the revision');
+  store.close();
+  rmSync(dir, { recursive: true });
+});
+it('treats null pageId and expectedRevision from a strict tool call as a new page', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dots-review-null-'));
+  const store = new WorkspaceStore(join(dir, 'db'), 'owner');
+  const space = store.spaces()[0].id;
+  const before = store.pages.list(space).length;
+  const saved = store.pages.createReviewed(
+    space,
+    { title: 'New', content: 'Body', pageId: null, expectedRevision: null },
+    'thread',
+    'call',
+  );
+  expect(saved).toMatchObject({ title: 'New', revision: 1 });
+  expect(store.pages.list(space)).toHaveLength(before + 1);
+  expect(
+    store.pages.createReviewed(
+      space,
+      { title: 'New', content: 'Body', pageId: null, expectedRevision: null },
+      'thread',
+      'call',
+    ).id,
+  ).toBe(saved.id);
+  store.close();
+  rmSync(dir, { recursive: true });
+});

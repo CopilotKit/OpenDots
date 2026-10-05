@@ -19,7 +19,11 @@ export function matchesReviewedDraft(page: ReviewedPage, args: unknown) {
     draft.success &&
     draft.data.title === page.reviewDraft.title &&
     draft.data.content === page.reviewDraft.content &&
-    draft.data.spaceId === page.reviewDraft.spaceId
+    draft.data.spaceId === page.reviewDraft.spaceId &&
+    (draft.data.pageId ?? undefined) ===
+      (page.reviewDraft.pageId ?? undefined) &&
+    (draft.data.expectedRevision ?? undefined) ===
+      (page.reviewDraft.expectedRevision ?? undefined)
   );
 }
 
