@@ -3,6 +3,7 @@ import { research, type Config } from '../src/server/research.js';
 const signal = new AbortController().signal;
 const config: Config = {
   mode: 'live',
+  webSearchProvider: 'browser',
   apiKey: 'secret',
   model: 'test-model',
   baseUrl: 'https://model.example/v1',
