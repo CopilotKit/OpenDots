@@ -44,7 +44,7 @@ export class ComputerStore {
   audit(id: string): ComputerAudit[] {
     return this.db
       .prepare(
-        'SELECT id,action,actor,outcome,createdAt FROM computer_audit WHERE dotId=? ORDER BY createdAt DESC LIMIT 50',
+        'SELECT id,action,actor,outcome,createdAt FROM computer_audit WHERE dotId=? ORDER BY createdAt DESC,rowid DESC LIMIT 50',
       )
       .all(id) as unknown as ComputerAudit[];
   }
