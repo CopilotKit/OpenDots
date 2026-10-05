@@ -19,7 +19,9 @@ export const relative = (value: number) => {
 export const statusLabel = (task: Task) =>
   task.status === 'completed' && task.nextRunAt
     ? 'Scheduled'
-    : task.status.charAt(0).toUpperCase() + task.status.slice(1);
+    : task.status === 'failed' && task.nextRunAt
+      ? `Failed, retrying at ${new Date(task.nextRunAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+      : task.status.charAt(0).toUpperCase() + task.status.slice(1);
 export function Status({ task }: { task: Task }) {
   return (
     <span className={`status ${task.status}`}>
