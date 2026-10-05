@@ -266,7 +266,7 @@ it('allows a rejected compute call to be retried with the same tool ID', async (
   expect(f.turn).toHaveBeenCalledTimes(2);
   await f.voice.end(call.id, '');
 });
-it('does not count failed compute calls toward the six-turn limit', async () => {
+it('counts failed compute attempts toward the six-turn limit', async () => {
   const f = fixture();
   const call = await f.voice.begin(
     'thread',
@@ -280,9 +280,30 @@ it('does not count failed compute calls toward the six-turn limit', async () => 
       f.voice.compute(call.id, `failed-${i}`, 'Research'),
     ).rejects.toThrow('Provider unavailable');
   }
-  await expect(f.voice.compute(call.id, 'success', 'Research')).resolves.toBe(
-    'Current answer',
+  await expect(f.voice.compute(call.id, 'success', 'Research')).rejects.toThrow(
+    'six compute-turn limit',
   );
+  expect(f.turn).toHaveBeenCalledTimes(6);
+  await f.voice.end(call.id, '');
+});
+it('counts a retry of the same tool ID as another attempt', async () => {
+  const f = fixture();
+  const call = await f.voice.begin(
+    'thread',
+    offer,
+    new AbortController().signal,
+  );
+  f.voice.activate(call.id);
+  for (let i = 0; i < 6; i++) {
+    f.turn.mockRejectedValueOnce(new Error('Provider unavailable'));
+    await expect(f.voice.compute(call.id, 'same', 'Research')).rejects.toThrow(
+      'Provider unavailable',
+    );
+  }
+  await expect(f.voice.compute(call.id, 'same', 'Research')).rejects.toThrow(
+    'six compute-turn limit',
+  );
+  expect(f.turn).toHaveBeenCalledTimes(6);
   await f.voice.end(call.id, '');
 });
 it('keeps successful compute turns cached and enforces the six-turn cap', async () => {
