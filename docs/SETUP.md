@@ -14,6 +14,8 @@ npm run dev
 
 Open http://127.0.0.1:5173. The API runs on port 4310. Without service credentials, the app shows its setup state; it does not generate simulated replies.
 
+During `npm run dev`, both http://localhost:5173 and http://127.0.0.1:5173 are allowed browser origins. The UI sends API requests through Vite's `/api` proxy. To use a different proxy or custom domain, set `APP_ORIGIN` to one exact origin or a comma-separated list, for example `APP_ORIGIN=http://localhost:5173,http://127.0.0.1:5173`. An explicit value replaces the development defaults. Origins must match the scheme, hostname, and port exactly; omit paths and trailing slashes. Whitespace around list entries is trimmed and empty entries are ignored. Outside development, leaving `APP_ORIGIN` unset requires the browser origin to match the request URL's origin. This setting preserves cross-site request blocking; it does not enable direct cross-origin browser access to the API.
+
 For a built local app:
 
 ```sh
@@ -75,7 +77,7 @@ Edit `.env` on the server and restart after changes:
 | `OWNER_ID`                                           | Stable identity used for this deployment's conversations               |
 | `DATABASE_PATH`                                      | SQLite file containing pages, workspace and work metadata              |
 | `OWNER_TOKEN`                                        | Application access token; required for external bindings               |
-| `APP_ORIGIN`                                         | Exact browser origin when using a proxy or custom domain               |
+| `APP_ORIGIN`                                         | Comma-separated exact browser origins for a proxy or custom domain     |
 
 `npx copilotkit project select` deletes an `INTELLIGENCE_API_KEY` line and writes the same credential as `CPK_INTELLIGENCE_API_KEY`. The server reads either name. A non-empty `CPK_INTELLIGENCE_API_KEY` takes precedence over `INTELLIGENCE_API_KEY`.
 
