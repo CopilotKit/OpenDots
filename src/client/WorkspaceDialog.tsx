@@ -378,6 +378,16 @@ export function WorkspaceDialog({
                   : 'needs VOICE_API_KEY and VOICE_MODEL'}
                 .
               </p>
+              <p>
+                Setup and usage metadata is collected by default.{' '}
+                <a
+                  href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP-TELEMETRY.md"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Tracking and opt-out details
+                </a>
+              </p>
               <a
                 href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP.md"
                 target="_blank"
