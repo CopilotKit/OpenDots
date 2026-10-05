@@ -46,6 +46,7 @@ import { ResultPane } from './ResultPane';
 import { TaskRow } from './TaskPresentation';
 import { TaskActions } from './TaskActions';
 import { WorkspaceDialog, type Dialog } from './WorkspaceDialog';
+import { submitComposerOnEnter } from './chat-composer';
 
 function describeFailure(error: unknown, fallback: string) {
   return {
@@ -678,6 +679,12 @@ export function App() {
                       value={prompt}
                       maxLength={4000}
                       onChange={(e) => setPrompt(e.target.value)}
+                      onKeyDown={(e) =>
+                        submitComposerOnEnter(
+                          e,
+                          configured && !busy && !!prompt.trim(),
+                        )
+                      }
                       disabled={!configured}
                     />
                     <div className="composer-bottom">
