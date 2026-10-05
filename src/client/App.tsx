@@ -108,7 +108,8 @@ export function App() {
   };
 
   const [notices, setNotices] = useState<Notices>({
-    connection: '',
+    refresh: '',
+    capture: '',
     action: '',
   });
   const error = visibleNotice(notices);
