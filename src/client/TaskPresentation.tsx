@@ -16,11 +16,21 @@ export const relative = (value: number) => {
         ? `${Math.floor(minutes / 60)}h ago`
         : new Date(value).toLocaleDateString();
 };
+const retryTimeLabel = (nextRunAt: number) => {
+  const next = new Date(nextRunAt);
+  const time = next.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const today = new Date();
+  const sameDay =
+    next.getFullYear() === today.getFullYear() &&
+    next.getMonth() === today.getMonth() &&
+    next.getDate() === today.getDate();
+  return sameDay ? time : `${next.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+};
 export const statusLabel = (task: Task) =>
   task.status === 'completed' && task.nextRunAt
     ? 'Scheduled'
     : task.status === 'failed' && task.nextRunAt
-      ? `Failed, retrying at ${new Date(task.nextRunAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+      ? `Failed, retrying at ${retryTimeLabel(task.nextRunAt)}`
       : task.status.charAt(0).toUpperCase() + task.status.slice(1);
 export function Status({ task }: { task: Task }) {
   return (

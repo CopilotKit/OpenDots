@@ -76,3 +76,10 @@ it('keeps the plain Failed label and no pause control without a next run', () =>
   expect(html).not.toContain('Pause schedule');
   expect(statusLabel(failed)).toBe('Failed');
 });
+it('adds the date to the retry label when the next run is not today', () => {
+  const tomorrow: Task = { ...task, status: 'failed', nextRunAt: Date.now() + 86400000 };
+  const expected = new Date(tomorrow.nextRunAt!).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  expect(statusLabel(tomorrow)).toContain(expected);
+  const today: Task = { ...task, status: 'failed', nextRunAt: Date.now() + 60000 };
+  expect(statusLabel(today)).not.toContain(new Date(today.nextRunAt!).toLocaleDateString([], { month: 'short', day: 'numeric' }));
+});
