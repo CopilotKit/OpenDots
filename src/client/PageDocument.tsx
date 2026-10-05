@@ -207,7 +207,7 @@ export function PageDocument({
                 action: async () => {
                   if (
                     !window.confirm(
-                      `Delete "${draft.title || 'Untitled'}"? Any subpages will move to this page's parent.`,
+                      `Delete "${draft.title || 'Untitled'}"? This can't be undone. Any subpages will move to this page's parent.`,
                     )
                   )
                     return;

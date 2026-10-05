@@ -25,6 +25,17 @@ Open http://127.0.0.1:4310. Keep the server running for background work.
 
 ## Conversation services
 
+OpenDots stores conversations in a CopilotKit Intelligence project. To get the project key, run these commands in the OpenDots folder after `cp .env.example .env`:
+
+```sh
+npx copilotkit@latest login
+npx copilotkit@latest project select
+```
+
+`login` opens the browser to sign in or create an account. `project select` lets you select or create a project, and writes a project-scoped key to `.env` as `CPK_INTELLIGENCE_API_KEY`. It removes an `INTELLIGENCE_API_KEY` line, so that the file holds one credential. Use the same project for Slack and Automatic Learning below.
+
+Do not run `copilotkit onboard` in this folder. Onboarding is for apps that do not have CopilotKit yet. OpenDots already has its integration.
+
 Edit `.env` on the server and restart after changes:
 
 | Variable                                      | Purpose                                                   |
@@ -37,6 +48,8 @@ Edit `.env` on the server and restart after changes:
 | `DATABASE_PATH`                               | SQLite file containing pages, workspace and work metadata |
 | `OWNER_TOKEN`                                 | Application access token; required for external bindings  |
 | `APP_ORIGIN`                                  | Exact browser origin when using a proxy or custom domain  |
+
+`npx copilotkit project select` deletes an `INTELLIGENCE_API_KEY` line and writes the same credential as `CPK_INTELLIGENCE_API_KEY`. The server reads either name. A non-empty `CPK_INTELLIGENCE_API_KEY` takes precedence over `INTELLIGENCE_API_KEY`.
 
 The model environment variable names follow the configured provider adapter. Provider credentials belong in `.env`, not client-side variables or source code. Conversation history lives in the configured Intelligence project; copying the SQLite file alone does not back up that history.
 
@@ -135,8 +148,9 @@ For remote hosting, configure an HTTPS reverse proxy and the matching `APP_ORIGI
 ## Automatic Learning
 
 OpenDots connects [CopilotKit Automatic Learning](https://docs.copilotkit.ai/learning)
-to individual Dots. It uses the existing server-side `INTELLIGENCE_API_KEY` and
-optional `INTELLIGENCE_API_URL`; no additional model key or frontend key is needed.
+to individual Dots. It uses the server-side Intelligence credential
+(`CPK_INTELLIGENCE_API_KEY` or `INTELLIGENCE_API_KEY`) and optional
+`INTELLIGENCE_API_URL`; no additional model key or frontend key is needed.
 
 1. Open **Learning** in the same Intelligence project and create a container for
    one focused workflow, such as `research-workflow`. IDs use 1–64 lowercase

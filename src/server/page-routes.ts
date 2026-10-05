@@ -17,11 +17,14 @@ export function pageRoutes(platform: Platform) {
         { error: 'This Dot no longer has access to the selected Space.' },
         403,
       );
-    const { pageId, spaceId } = receipt;
+    const { pageId, spaceId, draft: reviewDraft } = receipt;
     // The receipt outlives its page so a retried approval cannot recreate it.
     if (!platform.workspace.pages.exists(spaceId, pageId))
-      return c.json({ deleted: true, pageId, spaceId });
-    return c.json(platform.workspace.pages.get(spaceId, pageId));
+      return c.json({ deleted: true, pageId, spaceId, reviewDraft });
+    return c.json({
+      ...platform.workspace.pages.get(spaceId, pageId),
+      reviewDraft,
+    });
   });
   app.post('/conversations/:id/reviewed-page', async (c) => {
     const data = pageReviewSchema
