@@ -72,7 +72,7 @@ export class PageAutosave {
       this.publish({ remote: page });
       return;
     }
-    if (this.changed || this.state.status === 'conflict') {
+    if (this.dirty) {
       clearTimeout(this.timer);
       this.publish({
         remote: page,

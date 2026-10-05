@@ -358,7 +358,8 @@ export function WorkspaceDialog({
               </select>
               <p className="muted">
                 Runs on the server in this same conversation, even with the tab
-                closed. Failed runs wait for manual retry.
+                closed. Failed or interrupted runs wait for manual retry. Review
+                completed work before retrying an interrupted run.
               </p>
             </>
           )}
