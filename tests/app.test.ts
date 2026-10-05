@@ -3,16 +3,17 @@ import { createApp } from '../src/server/app.js';
 import { Store } from '../src/server/store.js';
 import { Runner } from '../src/server/runner.js';
 import type { Config } from '../src/server/research.js';
+import { resolveAppOrigins } from '../src/server/app-origin.js';
 const stores: Store[] = [];
 const config: Config = { mode: 'sample', baseUrl: 'https://api.openai.com/v1' };
-function fixture(token?: string) {
+function fixture(token?: string, origin?: string | string[]) {
   const store = new Store(':memory:');
   stores.push(store);
   const runner = new Runner(store, config);
   return {
     store,
     runner,
-    app: createApp({ store, runner, config, ownerToken: token }),
+    app: createApp({ store, runner, config, ownerToken: token, origin }),
   };
 }
 const json = (body: unknown) => ({
@@ -54,6 +55,157 @@ describe('API boundaries', () => {
         })
       ).status,
     ).toBe(415);
+  });
+  it.each(['http://localhost:5173', 'http://127.0.0.1:5173'])(
+    'allows a same-origin Vite proxy mutation from %s',
+    async (origin) => {
+      const { app } = fixture(
+        undefined,
+        resolveAppOrigins(undefined, 'development'),
+      );
+      const response = await app.request(`${origin}/api/tasks`, {
+        ...json({ prompt: 'test' }),
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: origin,
+          'Sec-Fetch-Site': 'same-origin',
+        },
+      });
+      expect(response.status).toBe(201);
+    },
+  );
+  it.each([
+    'https://evil.example',
+    'http://localhost:5174',
+    'https://localhost:5173',
+  ])(
+    'rejects an unlisted origin %s with multiple origins configured',
+    async (origin) => {
+      const { app } = fixture(
+        undefined,
+        resolveAppOrigins(undefined, 'development'),
+      );
+      const response = await app.request('http://localhost:5173/api/tasks', {
+        ...json({ prompt: 'test' }),
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: origin,
+          'Sec-Fetch-Site': 'same-origin',
+        },
+      });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({
+        error: 'Cross-origin requests are not allowed.',
+      });
+    },
+  );
+  it('rejects cross-site requests even from a configured origin', async () => {
+    const { app } = fixture(
+      undefined,
+      resolveAppOrigins(undefined, 'development'),
+    );
+    const response = await app.request('http://127.0.0.1:4310/api/tasks', {
+      ...json({ prompt: 'test' }),
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'http://localhost:5173',
+        'Sec-Fetch-Site': 'cross-site',
+      },
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: 'Cross-site requests are not allowed.',
+    });
+  });
+  it('preserves exact matching for a single configured origin', async () => {
+    const { app } = fixture(undefined, 'http://localhost:5173');
+    for (const [origin, status] of [
+      ['http://localhost:5173', 201],
+      ['http://127.0.0.1:5173', 403],
+    ] as const) {
+      const response = await app.request('http://localhost:5173/api/tasks', {
+        ...json({ prompt: 'test' }),
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: origin,
+          'Sec-Fetch-Site': 'same-origin',
+        },
+      });
+      expect(response.status).toBe(status);
+    }
+  });
+  it.each(['http://localhost:5173', 'http://127.0.0.1:5173'])(
+    'requires owner authentication for an allowed origin %s',
+    async (origin) => {
+      const { app } = fixture(
+        'private-token',
+        resolveAppOrigins(undefined, 'development'),
+      );
+      for (const [authorization, status] of [
+        [undefined, 401],
+        ['Bearer wrong-token', 401],
+        ['Bearer private-token', 201],
+      ] as const) {
+        const response = await app.request(`${origin}/api/tasks`, {
+          ...json({ prompt: 'test' }),
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: origin,
+            'Sec-Fetch-Site': 'same-origin',
+            ...(authorization ? { Authorization: authorization } : {}),
+          },
+        });
+        expect(response.status).toBe(status);
+      }
+    },
+  );
+  it('rejects unrecognized hosts even when the origin is explicitly allowed', async () => {
+    const { app } = fixture(
+      undefined,
+      resolveAppOrigins(undefined, 'development'),
+    );
+    const response = await app.request('http://attacker.example/api/tasks', {
+      ...json({ prompt: 'test' }),
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'http://localhost:5173',
+        'Sec-Fetch-Site': 'same-origin',
+      },
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'Unrecognized host.' });
+  });
+  it('does not widen access when an explicit origin list contains only blank entries', async () => {
+    const { app } = fixture(undefined, resolveAppOrigins(' , ', 'development'));
+    const response = await app.request('http://localhost:5173/api/tasks', {
+      ...json({ prompt: 'test' }),
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'http://localhost:5173',
+        'Sec-Fetch-Site': 'same-origin',
+      },
+    });
+    expect(response.status).toBe(403);
+  });
+  it('requires the request URL origin by default in production', async () => {
+    const { app } = fixture(
+      undefined,
+      resolveAppOrigins(undefined, 'production'),
+    );
+    for (const [origin, status] of [
+      ['http://localhost:4310', 201],
+      ['http://localhost:5173', 403],
+    ] as const) {
+      const response = await app.request('http://localhost:4310/api/tasks', {
+        ...json({ prompt: 'test' }),
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: origin,
+          'Sec-Fetch-Site': 'same-origin',
+        },
+      });
+      expect(response.status).toBe(status);
+    }
   });
   it('validates inputs and enforces research permissions on the server', async () => {
     const { app, store } = fixture();
