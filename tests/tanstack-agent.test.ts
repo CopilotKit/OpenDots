@@ -249,3 +249,35 @@ it('aborts the TanStack provider request when the owner pauses work', async () =
   await finished;
   expect(signal.aborted).toBe(true);
 });
+
+it('reports a turn that hits the time limit as a RUN_ERROR instead of ending silently', async () => {
+  vi.useFakeTimers();
+  try {
+    const f = fixture();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(init.signal?.reason),
+            {
+              once: true,
+            },
+          );
+        }),
+    );
+    const finished = lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+    await vi.advanceTimersByTimeAsync(90_001);
+    const events = await finished;
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: EventType.RUN_ERROR,
+          message: expect.stringMatching(/time limit/i),
+        }),
+      ]),
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});

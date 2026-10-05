@@ -25,6 +25,7 @@ const channelError = () => ({
   message:
     'OpenDots could not complete this request. Please check the app and try again.',
 });
+const TURN_TIME_LIMIT_MS = 90_000;
 export class DotAgent extends AbstractAgent {
   private inner?: BuiltInAgent;
   private controller?: AbortController;
@@ -56,7 +57,16 @@ export class DotAgent extends AbstractAgent {
       this.controller = controller;
       let subscription: { unsubscribe(): void } | undefined;
       let watcher: ReturnType<typeof setInterval> | undefined;
-      const timeout = setTimeout(() => this.abortRun(), 90_000);
+      let timedOut = false;
+      let finished = false;
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        this.abortRun();
+      }, TURN_TIME_LIMIT_MS);
+      const timeLimitError = () => ({
+        type: EventType.RUN_ERROR,
+        message: `This turn reached the ${TURN_TIME_LIMIT_MS / 1000} second time limit and was stopped. Try a smaller request.`,
+      });
       try {
         const dot = this.workspace.dot(this.dotId);
         if (!dot) throw new Error('Specialist Dot not found.');
@@ -323,19 +333,34 @@ export class DotAgent extends AbstractAgent {
             forwardedProps: {},
           })
           .subscribe({
-            next: (event) =>
+            next: (event) => {
+              if (
+                event.type === EventType.RUN_ERROR ||
+                event.type === EventType.RUN_FINISHED
+              )
+                finished = true;
               subscriber.next(
                 this.channel && event.type === EventType.RUN_ERROR
                   ? channelError()
                   : event,
-              ),
+              );
+            },
             error: (error: unknown) => {
               if (this.channel) {
                 subscriber.next(channelError());
                 subscriber.complete();
+              } else if (timedOut && !finished) {
+                subscriber.next(timeLimitError());
+                subscriber.complete();
               } else subscriber.error(error);
             },
-            complete: () => subscriber.complete(),
+            complete: () => {
+              if (timedOut && !finished)
+                subscriber.next(
+                  this.channel ? channelError() : timeLimitError(),
+                );
+              subscriber.complete();
+            },
           });
       } catch (error) {
         subscriber.next(
