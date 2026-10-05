@@ -52,7 +52,12 @@ interface CapturedEvent {
   headers: Record<string, string>;
   body: {
     event: string;
-    global_properties: { accessibility_title?: string; sampleRate: number };
+    global_properties: {
+      accessibility_title?: string;
+      sampleRate: number;
+      installation_id?: string;
+      opendots_distribution?: string;
+    };
   };
 }
 
@@ -125,4 +130,19 @@ it('forwards the CLI identity and both opt-outs into the Docker app', async () =
   expect(compose).toContain(
     'COPILOTKIT_TELEMETRY_DISABLED: ${COPILOTKIT_TELEMETRY_DISABLED:-false}',
   );
+});
+
+it('hands the persistent installation fallback to the installed runtime when CLI identity is absent', async () => {
+  const events = await captureRuntime({ CPK_TELEMETRY_ID: '' });
+  const created = events.find(
+    (event) => event.body.event === 'oss.runtime.instance_created',
+  );
+  expect(created).toBeDefined();
+  expect(created?.body.global_properties.installation_id).toMatch(
+    /^[0-9a-f-]{36}$/,
+  );
+  expect(created?.headers['X-CopilotKit-Telemetry-Id']).toBe(
+    created?.body.global_properties.installation_id,
+  );
+  expect(created?.body.global_properties.opendots_distribution).toBe('web');
 });
