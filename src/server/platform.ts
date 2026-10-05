@@ -66,6 +66,7 @@ export class Platform {
     }
     const runtime = new CopilotRuntime({
       intelligence: this.intelligence,
+      telemetryProperties: { accessibility_title: 'OpenDots' },
       identifyUser: async () => ({
         id: workspace.ownerId,
         name: 'OpenDots owner',
