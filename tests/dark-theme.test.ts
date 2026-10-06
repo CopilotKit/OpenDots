@@ -63,21 +63,43 @@ it('keeps the light cascade order when later rules have no literal color', () =>
     ":root[data-theme='dark'] .primary { background: var(--accent); }",
   );
 });
-it('keeps fixed surfaces as they are, ahead of generated global rules', () => {
+it('keeps fixed surfaces in their light colors, untouched by global rules', () => {
   const css = run(`
-    /* theme: fixed */
+    button:focus-visible { outline: 3px solid #b8c4fa; }
+    input::placeholder { color: #999; }
+    .row:not(:last-child):before { background: #eee; }
+    ::-webkit-scrollbar-thumb:hover { background: #ccc; }
+    /* theme: fixed .call-view */
     .call-view { background: #1c544c; }
+    .call-view button { color: #fff; }
     /* theme: end */
     .after { color: #000; }
     @keyframes glow { from { color: #fff; } }
     .logo { background: url(/dot.png); }
   `);
-  // Same colors, but with the generated rules' specificity, so a global
-  // button twin cannot repaint the call controls.
+  // Nothing is generated for the fixed surface itself...
+  expect(css).not.toMatch(/dark'\] \.call-view \{/);
+  // ...and generated global rules skip it, so a keyboard focus ring inside
+  // keeps its light color (the reviewer's #373e64 regression).
   expect(css).toContain(
-    ":root[data-theme='dark'] .call-view { background: #1c544c; }",
+    ":root[data-theme='dark'] button:focus-visible:not(.call-view, .call-view *) { outline: 3px solid #",
   );
-  expect(css).toContain(":root[data-theme='dark'] .after { color: #eeeeee; }");
+  expect(css).toContain(
+    ":root[data-theme='dark'] input:not(.call-view, .call-view *)::placeholder",
+  );
+  expect(css).toContain(
+    ":root[data-theme='dark'] .after:not(.call-view, .call-view *) { color: #eeeeee; }",
+  );
+  expect(css).toContain(
+    ":root[data-theme='dark'] .row:not(:last-child):not(.call-view, .call-view *):before",
+  );
+  expect(css).toContain(
+    ":root[data-theme='dark'] :not(.call-view, .call-view *)::-webkit-scrollbar-thumb:hover",
+  );
+  // A pseudo-element cannot be followed by :not() (the minifier rejects it).
+  expect(css).not.toMatch(
+    /(::[\w-]+|:(before|after|first-line|first-letter))[^,{]*:not\(\.call-view/,
+  );
   expect(css).not.toMatch(/dark'\] from/);
   expect(css).not.toContain("'dark'] .logo");
 });
@@ -157,4 +179,17 @@ it('applies the chosen theme even when storage is unavailable', async () => {
   } finally {
     vi.unstubAllGlobals();
   }
+});
+it('checks text against a variable background in the same rule', () => {
+  // Current main: the enabled Save button is background: var(--accent).
+  const css = run(`
+    .template-app { --accent: #242424; }
+    .template-app .primary { background: var(--accent); color: #fff; }
+  `);
+  const text = declared(css, "'dark'] .template-app .primary", 'color')!;
+  // The variable keeps its own dark mapping; the text is chosen for it.
+  expect(css).toMatch(
+    /\.template-app \.primary \{ background: var\(--accent\);/,
+  );
+  expect(contrast(text, darkColor('#242424'))).toBeGreaterThanOrEqual(4.5);
 });

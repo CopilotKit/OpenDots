@@ -133,7 +133,18 @@ const solid = (value: string) => {
   const color = named[token] ?? token;
   return /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : undefined;
 };
-function darkDeclarations(colors: Declaration[]) {
+// Light values of custom properties, so `var(--x)` backgrounds can be
+// checked against their text in dark (last definition wins, like :root).
+type Variables = Map<string, string>;
+const variable = /^var\(\s*(--[\w-]+)\s*\)$/;
+function backgroundColor(value: string, variables: Variables) {
+  const literal = solid(value);
+  if (literal) return { color: literal, literal: true };
+  const name = value.trim().match(variable)?.[1];
+  const light = name && variables.get(name);
+  return light ? { color: darkColor(light), literal: false } : undefined;
+}
+function darkDeclarations(colors: Declaration[], variables: Variables) {
   const mapped = colors.map((decl) =>
     decl.clone({ value: darkValue(decl.prop, decl.value) }),
   );
@@ -141,26 +152,58 @@ function darkDeclarations(colors: Declaration[]) {
   const textColor = text && solid(text.value);
   if (!text || !textColor) return mapped;
   const background = mapped.find(
-    (decl) => /^background(-color)?$/.test(decl.prop) && solid(decl.value),
+    (decl) =>
+      /^background(-color)?$/.test(decl.prop) &&
+      backgroundColor(decl.value, variables),
   );
   if (!background) {
     text.value = readableText(textColor);
     return mapped;
   }
-  const pair = readablePair(textColor, solid(background.value)!);
+  const fill = backgroundColor(background.value, variables)!;
+  const pair = readablePair(textColor, fill.color);
   text.value = pair.text;
-  background.value = pair.background;
+  // A variable background stays a variable unless it must change for AA.
+  if (fill.literal || pair.background !== fill.color)
+    background.value = pair.background;
   return mapped;
+}
+// Generated rules skip fixed surfaces and everything inside them, so global
+// rules (like a focus ring) keep their light values there.
+export function excludeFixed(selector: string, containers: string[]) {
+  if (!containers.length) return selector;
+  const not = `:not(${containers.flatMap((item) => [item, `${item} *`]).join(', ')})`;
+  return selector
+    .split(',')
+    .map((part) => {
+      const item = part.trim();
+      // :not() must come before any pseudo-element, including the legacy
+      // single-colon forms and ones followed by states (::thumb:hover).
+      const pseudo = item.search(
+        /::[\w-]+|:(?:before|after|first-line|first-letter)(?![\w-])/,
+      );
+      return pseudo < 0
+        ? `${item}${not}`
+        : `${item.slice(0, pseudo)}${not}${item.slice(pseudo)}`;
+    })
+    .join(', ');
 }
 export function darkTheme(): Plugin {
   return {
     postcssPlugin: 'opendots-dark-theme',
     Once(root) {
       let fixed = false;
+      const containers: string[] = [];
+      const variables: Variables = new Map();
       const rules: { rule: Rule; fixed: boolean }[] = [];
       root.each(function visit(node): void {
         if (node.type === 'comment') {
-          if (/^\s*theme:\s*fixed\s*$/.test(node.text)) fixed = true;
+          // `/* theme: fixed .call-view */` names the surface it keeps.
+          const start = node.text.match(/^\s*theme:\s*fixed\s+(.+?)\s*$/);
+          if (start) {
+            fixed = true;
+            containers.push(start[1]);
+          }
           if (/^\s*theme:\s*end\s*$/.test(node.text)) fixed = false;
           return;
         }
@@ -170,21 +213,29 @@ export function darkTheme(): Plugin {
             (node as AtRule).each(visit);
           return;
         }
-        if (node.type === 'rule' && !node.selector.startsWith(DARK))
+        if (node.type === 'rule' && !node.selector.startsWith(DARK)) {
           rules.push({ rule: node, fixed });
+          if (!fixed)
+            node.each((decl) => {
+              if (decl.type === 'decl' && decl.prop.startsWith('--')) {
+                const color = solid(decl.value);
+                if (color) variables.set(decl.prop, color);
+              }
+            });
+        }
       });
       for (const { rule, fixed } of rules) {
+        // Fixed surfaces keep their light colors and get no dark rules.
+        if (fixed) continue;
         const colors = rule.nodes.filter(
           (node): node is Declaration => node.type === 'decl' && themed(node),
         );
         if (!colors.length) continue;
-        const dark = rule.clone({ selector: darkSelector(rule.selector) });
+        const dark = rule.clone({
+          selector: excludeFixed(darkSelector(rule.selector), containers),
+        });
         dark.removeAll();
-        // Fixed surfaces keep their colors, but still get a twin with the
-        // same specificity so generated global rules cannot override them.
-        for (const decl of fixed
-          ? colors.map((decl) => decl.clone())
-          : darkDeclarations(colors))
+        for (const decl of darkDeclarations(colors, variables))
           dark.append(decl);
         rule.after(dark);
       }

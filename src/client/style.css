@@ -3807,7 +3807,7 @@ h3 {
   color: #a33e35;
 }
 
-/* theme: fixed */
+/* theme: fixed .call-view */
 /* A focused voice surface, with chat one click away. */
 .call-view {
   position: fixed;
