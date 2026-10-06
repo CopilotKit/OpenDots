@@ -8,6 +8,7 @@ import {
 import { api } from './api';
 import { computerToolResult } from './ComputerToolCard';
 type Receipt = {
+  approvalId: string | null;
   status: 'running' | 'done';
   result: ConnectionActionResult | null;
 };
@@ -63,8 +64,11 @@ export function ConnectionActionCard({
       active = false;
     };
   }, [threadId, approvalId]);
+  // A saved result counts only if it came from this card's approval.
+  const mismatch = !!receipt && receipt.approvalId !== approvalId;
+  const own = mismatch ? null : receipt;
   // A receipt that is still running is checked until the server finishes.
-  const running = receipt?.status === 'running';
+  const running = own?.status === 'running';
   useEffect(() => {
     let active = true;
     const load = () =>
@@ -88,8 +92,8 @@ export function ConnectionActionCard({
       clearInterval(timer);
     };
   }, [threadId, toolCallId, attempt, running]);
-  const outcome = receipt?.result ?? null;
-  const approved = recorded.approved === true || receipt?.status === 'done';
+  const outcome = own?.result ?? null;
+  const approved = recorded.approved === true || own?.status === 'done';
   const declined = recorded.approved === false;
   const ready = receipt !== undefined;
   const decide = async (approve: boolean) => {
@@ -114,7 +118,7 @@ export function ConnectionActionCard({
           'POST',
           { toolCallId, approvalId: action.data.approvalId },
         ));
-      setReceipt({ status: 'done', result: value });
+      setReceipt({ approvalId, status: 'done', result: value });
       await respond({ approved: true, ...value });
     } catch (cause) {
       setError(
@@ -168,6 +172,15 @@ export function ConnectionActionCard({
             ))}
           </dl>
         )}
+        {mismatch && (
+          <div className="connection-action-result failed">
+            <strong>Cannot run</strong>
+            <pre>
+              This card’s saved result belongs to a different approval request.
+              Nothing was run for this one.
+            </pre>
+          </div>
+        )}
         {approvalError && !outcome && (
           <div className="connection-action-result failed">
             <strong>Cannot run</strong>
@@ -192,7 +205,7 @@ export function ConnectionActionCard({
             Retry
           </button>
         )}
-        {!finished && respond && ready && !running && (
+        {!finished && respond && ready && !running && !mismatch && (
           <>
             <button
               type="button"

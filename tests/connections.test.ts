@@ -443,3 +443,46 @@ it('normalizes and bounds tool results', () => {
   ).toHaveLength(20000 + '\n[truncated]'.length);
   expect(normalizeResult('nope').isError).toBe(true);
 });
+it('returns a saved result only for the approval that produced it', async () => {
+  const { dot, connections, request, sent } = fixture();
+  await connections.add(dot.id, {
+    name: 'Mail',
+    url: 'https://mail.example.com/mcp',
+  });
+  const alice = await requestApproval(connections, dot.id, 'mail__send_mail', {
+    to: 'alice@example.com',
+    body: 'Hi',
+  });
+  const bob = await requestApproval(connections, dot.id, 'mail__send_mail', {
+    to: 'bob@example.com',
+    body: 'Hi',
+  });
+  const approve = (approvalId: string) =>
+    request('/conversations/thread/connection-actions', 'POST', {
+      toolCallId: 'tc1',
+      approvalId,
+    });
+  expect(await (await approve(alice)).json()).toEqual({
+    isError: false,
+    text: 'Sent to alice@example.com',
+  });
+  // Bob's approval must not be shown Alice's result, nor run under her call.
+  const mismatched = await approve(bob);
+  expect(mismatched.status).toBe(409);
+  expect(await mismatched.json()).toEqual({
+    error: 'This action belongs to a different approval request.',
+  });
+  // The receipt names its approval, so the card can reject a mismatch too.
+  const receipt = await request('/conversations/thread/connection-actions/tc1');
+  expect(await receipt.json()).toMatchObject({
+    approvalId: alice,
+    status: 'done',
+  });
+  // Retrying the original approval still recovers its result.
+  expect(await (await approve(alice)).json()).toEqual({
+    isError: false,
+    text: 'Sent to alice@example.com',
+  });
+  expect(sent).toHaveBeenCalledOnce();
+  expect(sent.mock.calls[0][0]).toMatchObject({ to: 'alice@example.com' });
+});

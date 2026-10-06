@@ -116,21 +116,32 @@ export function connectionRoutes(
       .extend({ toolCallId: z.string().min(1).max(200) })
       .parse(await c.req.json());
     const thread = workspace.requireThread(c.req.param('id'));
-    const previous = connections.store.action(thread.id, body.toolCallId);
-    if (previous?.result) return c.json(previous.result);
+    // A saved result is returned only for the approval that produced it.
+    const recovered = () => {
+      const previous = connections.store.action(thread.id, body.toolCallId);
+      if (!previous) return undefined;
+      if (previous.approvalId !== body.approvalId)
+        return c.json(
+          { error: 'This action belongs to a different approval request.' },
+          409,
+        );
+      return previous.result
+        ? c.json(previous.result)
+        : c.json({ error: 'This action is already running.' }, 409);
+    };
+    const earlier = recovered();
+    if (earlier) return earlier;
     const { approval, exposed } = approvalFor(thread.id, body.approvalId);
     if (
       !connections.store.claimAction(
         thread.id,
         body.toolCallId,
+        approval.id,
         exposed.connection.id,
         exposed.tool.name,
       )
-    ) {
-      const previous = connections.store.action(thread.id, body.toolCallId);
-      if (previous?.result) return c.json(previous.result);
-      return c.json({ error: 'This action is already running.' }, 409);
-    }
+    )
+      return recovered()!;
     // Not tied to the request: once approved, finish even if the tab closes.
     const result = await connections.call(exposed, approval.arguments);
     connections.store.finishAction(thread.id, body.toolCallId, result);
