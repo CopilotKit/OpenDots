@@ -47,6 +47,7 @@ import { ResultPane } from './ResultPane';
 import { TaskRow } from './TaskPresentation';
 import { TaskActions } from './TaskActions';
 import { WorkspaceDialog, type Dialog } from './WorkspaceDialog';
+import { submitComposerOnEnter } from './chat-composer';
 
 function describeFailure(error: unknown, fallback: string) {
   return {
@@ -480,7 +481,7 @@ export function App() {
           >
             <Clock3 size={17} />
             <span>Scheduled & activity</span>
-            <small>{state.tasks.length}</small>
+            {state.tasks.length > 0 && <small>{state.tasks.length}</small>}
           </button>
           <button
             className={`nav-item ${view === 'memories' ? 'active' : ''}`}
@@ -491,7 +492,9 @@ export function App() {
           >
             <BookOpen size={17} />
             <span>Memories</span>
-            <small>{state.memories.length}</small>
+            {state.memories.length > 0 && (
+              <small>{state.memories.length}</small>
+            )}
           </button>
           <button
             className="nav-item"
@@ -700,6 +703,12 @@ export function App() {
                       value={prompt}
                       maxLength={4000}
                       onChange={(e) => setPrompt(e.target.value)}
+                      onKeyDown={(e) =>
+                        submitComposerOnEnter(
+                          e,
+                          configured && !busy && !!prompt.trim(),
+                        )
+                      }
                       disabled={!configured}
                     />
                     <div className="composer-bottom">
