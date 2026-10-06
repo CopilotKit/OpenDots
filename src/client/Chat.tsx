@@ -103,6 +103,9 @@ export function Chat({
     });
     const events = agent.subscribe({
       onRunErrorEvent: ({ event }) => setError(event.message),
+      onRunFinishedEvent: ({ outcome }) => {
+        if (outcome === 'success') setError('');
+      },
     });
     return () => {
       subscription.unsubscribe();
