@@ -5,11 +5,17 @@ import remarkGfm from 'remark-gfm';
 import { pageReviewSchema } from '../shared/page-review';
 import {
   decidePageReview,
+  fetchReviewTarget,
   matchesReviewedDraft,
   restorePageReview,
 } from './page-review-decision';
+import type { ReviewTarget } from './page-review-decision';
 import { openPageLink } from './page-navigation';
 import type { ReviewedPage } from '../server/pages';
+export function approveLabel(isUpdate: boolean) {
+  return isUpdate ? 'Approve & update page' : 'Approve & create page';
+}
+
 export function PageReviewCard({
   args,
   status,
@@ -32,12 +38,33 @@ export function PageReviewCard({
   const [busy, setBusy] = useState(false);
   const [receiptReady, setReceiptReady] = useState(false);
   const [restoreAttempt, setRestoreAttempt] = useState(0);
+  const [target, setTarget] = useState<ReviewTarget | null>(null);
   const pending = useRef(false);
   const finished = status === 'complete';
   const conflict = !!savedPage && !matchesReviewedDraft(savedPage, args);
   const saved = !!savedPage && !conflict;
   const pageId = savedPage?.id ?? '';
   const spaceId = savedPage?.spaceId ?? '';
+  const targetPageId = draft.success ? (draft.data.pageId ?? null) : null;
+  const targetSpaceId = draft.success ? draft.data.spaceId : null;
+  useEffect(() => {
+    if (!targetPageId || !targetSpaceId) {
+      setTarget(null);
+      return;
+    }
+    let active = true;
+    setTarget(null);
+    void fetchReviewTarget(targetSpaceId, targetPageId)
+      .then((found) => {
+        if (active) setTarget(found);
+      })
+      .catch(() => {
+        if (active) setTarget(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [targetPageId, targetSpaceId]);
   useEffect(() => {
     let active = true;
     setReceiptReady(false);
@@ -123,6 +150,15 @@ export function PageReviewCard({
         </span>
       </header>
       <div className="page-review-body">
+        {targetPageId && (
+          <p className="page-review-target">
+            {target
+              ? `Updates existing page "${target.title}"${
+                  target.spaceName ? ` in ${target.spaceName}` : ''
+                }.`
+              : 'Updates an existing page.'}
+          </p>
+        )}
         <h3>{draft.success ? draft.data.title : 'Preparing your draft…'}</h3>
         {draft.success && (
           <ReactMarkdown
@@ -183,7 +219,7 @@ export function PageReviewCard({
                 ? 'Saving…'
                 : saved
                   ? 'Continue conversation'
-                  : 'Approve & save'}
+                  : approveLabel(!!targetPageId)}
             </button>
             {!saved && (
               <button

@@ -1,5 +1,5 @@
 import { pageReviewSchema } from '../shared/page-review';
-import type { ReviewedPage } from '../server/pages';
+import type { Page, ReviewedPage } from '../server/pages';
 import { api } from './api';
 
 const reviewPath = (threadId: string) =>
@@ -48,4 +48,34 @@ export async function decidePageReview(
     ...draft,
     toolCallId,
   });
+}
+
+export interface ReviewTarget {
+  pageId: string;
+  title: string;
+  spaceId: string;
+  spaceName: string | null;
+}
+
+// The approval card must identify which existing page an update would
+// overwrite before the owner approves: identical drafts targeting
+// different pages otherwise render identical cards.
+export async function fetchReviewTarget(
+  spaceId: string,
+  pageId: string | null | undefined,
+): Promise<ReviewTarget | null> {
+  if (!pageId) return null;
+  const page = await api<Page>(
+    `/spaces/${encodeURIComponent(spaceId)}/pages/${encodeURIComponent(pageId)}`,
+  );
+  const workspace = await api<{ spaces: { id: string; name: string }[] }>(
+    '/workspace',
+  ).catch(() => null);
+  return {
+    pageId: page.id,
+    title: page.title,
+    spaceId,
+    spaceName:
+      workspace?.spaces.find((space) => space.id === spaceId)?.name ?? null,
+  };
 }
