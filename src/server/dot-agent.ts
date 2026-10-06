@@ -12,7 +12,7 @@ import {
   convertInputToTanStackAI,
 } from '@copilotkit/runtime/v2';
 import { chat, maxIterations } from '@tanstack/ai';
-import { openaiCompatibleText } from '@tanstack/ai-openai/compatible';
+import { createDotModel } from './dot-model.js';
 import { learnedSkillTools, tanstackTools } from './tanstack-tools.js';
 import { Observable } from 'rxjs';
 import { z } from 'zod';
@@ -276,12 +276,7 @@ export class DotAgent extends AbstractAgent {
           initialSettings.memoryAllowed && dot.memoryAllowed
             ? this.store.memories().map((memory) => memory.text)
             : [];
-        const adapter = openaiCompatibleText(this.config.model, {
-          apiKey: this.config.apiKey,
-          baseURL: this.config.baseUrl ?? 'https://api.openai.com/v1',
-          api: 'chat-completions',
-          maxRetries: 1,
-        });
+        const { adapter, modelOptions } = createDotModel(this.config);
         const serverTools = [
           ...tools,
           ...pageTools(pages),
@@ -323,7 +318,7 @@ export class DotAgent extends AbstractAgent {
               abortController: ctx.abortController,
               threadId: ctx.input.threadId,
               runId: ctx.input.runId,
-              modelOptions: { max_completion_tokens: 2200 },
+              modelOptions,
               agentLoopStrategy: maxIterations(
                 dot.skillDeliveryEnabled && conversation.learningContainerId
                   ? 10
