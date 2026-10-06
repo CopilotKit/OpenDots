@@ -187,7 +187,7 @@ export class Store {
     const task = this.task(id);
     if (!task) return undefined;
     const next =
-      intervalSeconds && task.status === 'completed'
+      intervalSeconds && ['completed', 'failed'].includes(task.status)
         ? Date.now() + intervalSeconds * 1000
         : null;
     this.db
@@ -199,7 +199,7 @@ export class Store {
       id,
       null,
       intervalSeconds
-        ? `Repeats every ${intervalSeconds / 60} minutes after a successful run.`
+        ? `Repeats every ${intervalSeconds / 60} minutes after each run.`
         : 'Repeat schedule removed.',
     );
     return this.task(id);
@@ -219,7 +219,7 @@ export class Store {
         );
       const task = this.db
         .prepare(
-          "SELECT * FROM tasks WHERE status='queued' OR (status='completed' AND nextRunAt IS NOT NULL AND nextRunAt<=?) ORDER BY createdAt LIMIT 1",
+          "SELECT * FROM tasks WHERE status='queued' OR (status IN ('completed', 'failed') AND nextRunAt IS NOT NULL AND nextRunAt<=?) ORDER BY createdAt LIMIT 1",
         )
         .get(now) as unknown as Task | undefined;
       if (!task) return null;
@@ -277,6 +277,7 @@ export class Store {
     this.transaction(() => {
       if (!this.owns(claim)) return;
       const now = Date.now();
+      const task = this.task(claim.id)!;
       this.db
         .prepare(
           "UPDATE runs SET status='failed', finishedAt=?, error=? WHERE id=?",
@@ -284,9 +285,14 @@ export class Store {
         .run(now, error, claim.lease);
       this.db
         .prepare(
-          "UPDATE tasks SET status='failed', lease=NULL, leaseUntil=NULL, error=?, updatedAt=? WHERE id=?",
+          "UPDATE tasks SET status='failed', lease=NULL, leaseUntil=NULL, error=?, updatedAt=?, nextRunAt=? WHERE id=?",
         )
-        .run(error, now, claim.id);
+        .run(
+          error,
+          now,
+          task.intervalSeconds ? now + task.intervalSeconds * 1000 : null,
+          claim.id,
+        );
       this.event(claim.id, claim.lease, error);
     });
   }

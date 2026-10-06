@@ -36,12 +36,14 @@ export function TaskActions({
                 : 'Run again'}
         </button>
       )}
-      {task.status === 'completed' && !!task.intervalSeconds && (
-        <button disabled={busy} onClick={() => onAction('pause')}>
-          <Pause size={14} />
-          Pause schedule
-        </button>
-      )}
+      {(task.status === 'completed' ||
+        (task.status === 'failed' && !!task.nextRunAt)) &&
+        !!task.intervalSeconds && (
+          <button disabled={busy} onClick={() => onAction('pause')}>
+            <Pause size={14} />
+            Pause schedule
+          </button>
+        )}
       <button onClick={onSchedule}>
         <Clock3 size={14} />
         {task.intervalSeconds ? 'Edit schedule' : 'Set a schedule'}
