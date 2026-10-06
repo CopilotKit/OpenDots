@@ -1,17 +1,31 @@
-import { pageReviewSchema } from '../shared/page-review';
+import { pageReviewSchema, type PageReviewDraft } from '../shared/page-review';
 import type { ReviewedPage } from '../server/pages';
 import { api } from './api';
 
 const reviewPath = (threadId: string) =>
   `/conversations/${encodeURIComponent(threadId)}/reviewed-page`;
 
+export type DeletedReview = {
+  deleted: true;
+  pageId: string;
+  spaceId: string;
+  reviewDraft: PageReviewDraft | null;
+};
+export const isDeletedReview = (value: unknown): value is DeletedReview =>
+  !!value &&
+  typeof value === 'object' &&
+  (value as DeletedReview).deleted === true;
+
 export function restorePageReview(threadId: string, toolCallId: string) {
-  return api<ReviewedPage | null>(
+  return api<ReviewedPage | DeletedReview | null>(
     `${reviewPath(threadId)}/${encodeURIComponent(toolCallId)}`,
   );
 }
 
-export function matchesReviewedDraft(page: ReviewedPage, args: unknown) {
+export function matchesReviewedDraft(
+  page: { reviewDraft: PageReviewDraft | null },
+  args: unknown,
+) {
   // Receipts created before draft binding have no original snapshot.
   if (!page.reviewDraft) return true;
   const draft = pageReviewSchema.safeParse(args);
@@ -28,7 +42,7 @@ export async function decidePageReview(
   toolCallId: string,
   args: unknown,
   approved: boolean,
-): Promise<ReviewedPage | null> {
+): Promise<ReviewedPage | DeletedReview | null> {
   // A previous save may have committed even if its response never arrived.
   const previous = await restorePageReview(threadId, toolCallId);
   if (previous) {
