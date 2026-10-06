@@ -158,7 +158,7 @@ Local tests exercise channel behavior with fixtures. A live Slack mention/reply 
 
 ## Text messages (Sendblue)
 
-Text a Dot over iMessage or SMS through a [Sendblue](https://www.sendblue.com) line. Sendblue posts each received text to a webhook listener in OpenDots. The reply runs as a server-side turn in that phone number's own conversation with the selected Dot, the same path scheduled tasks use, and goes back through Sendblue's send-message API. The conversation also appears in the web app. No Intelligence channel declaration is involved.
+Text a Dot over iMessage or SMS through a [Sendblue](https://www.sendblue.com) line. Sendblue hosts the iMessage line, so the machine running OpenDots doesn't need to be a Mac or have the Messages app; it can run on Linux, in Docker, or on any server that can receive HTTPS webhooks. Sendblue posts each received text to a webhook listener in OpenDots. The reply runs as a server-side turn in that phone number's own conversation with the selected Dot, the same path scheduled tasks use, and goes back through Sendblue's send-message API. The conversation also appears in the web app. No Intelligence channel declaration is involved.
 
 Start with working conversations: send a message in the web app and get a reply before adding a phone.
 

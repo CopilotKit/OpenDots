@@ -120,7 +120,7 @@ Bring your agents into Slack with [Channels SDK](https://github.com/CopilotKit/c
 
 ### Text messages
 
-Text a Dot over iMessage or SMS through a [Sendblue](https://www.sendblue.com) line. Each allowlisted phone number gets its own persistent conversation with the selected Dot, which you can also open in the web app; texting `/new` starts a fresh one. See [text message setup](docs/SETUP.md#text-messages-sendblue).
+Text a Dot over iMessage or SMS through a [Sendblue](https://www.sendblue.com) line. Sendblue hosts the iMessage line, so the machine running OpenDots doesn't need to be a Mac or have the Messages app; it can run on Linux, in Docker, or on any server. Each allowlisted phone number gets its own persistent conversation with the selected Dot, which you can also open in the web app; texting `/new` starts a fresh one. See [text message setup](docs/SETUP.md#text-messages-sendblue).
 
 ## Architecture
 
@@ -197,7 +197,7 @@ CopilotKit SDK telemetry collects usage metadata separately from conversation pe
 | Pages                      | Searchable library, visual editor, slash commands, autosave, and revision checks                                                        |
 | Conversations              | React SDK chat and Threads integration, page-specific conversations, and source links                                                   |
 | Slack                      | Managed Channels SDK declaration with workspace and user allowlists                                                                     |
-| Text messages              | Optional Sendblue iMessage/SMS webhook with a phone-number allowlist and one persistent conversation per number                         |
+| Text messages              | Optional Sendblue iMessage/SMS webhook, no Mac required, with a phone-number allowlist and one persistent conversation per number       |
 | Calls                      | WebRTC speech, delegated compute, bounded sessions, hangup, and timeline receipts                                                       |
 | Background work            | Scheduled server-side turns in their original conversation, with pause and retry controls                                               |
 | Browser                    | Separate read-only public-page service with page capture and navigation limits                                                          |
