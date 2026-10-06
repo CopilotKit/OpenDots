@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { Dot, Memory, State, WorkspaceState } from '../shared/types';
+import { ConnectionsSection } from './ConnectionsSection';
+import {
+  setThemePreference,
+  themePreference,
+  type ThemePreference,
+} from './theme';
 export type Dialog =
   | { type: 'space' }
   | { type: 'dot'; dot?: Dot; spaceId: string }
@@ -55,6 +61,7 @@ export function WorkspaceDialog({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [theme, setTheme] = useState(themePreference);
   const container = useRef<HTMLElement>(null);
   useEffect(() => {
     const previous =
@@ -337,6 +344,9 @@ export function WorkspaceDialog({
               </a>
             </fieldset>
           )}
+          {dialog.type === 'dot' && dialog.dot && (
+            <ConnectionsSection dotId={dialog.dot.id} />
+          )}
           {dialog.type === 'schedule' && (
             <>
               <label className="field-label" htmlFor="schedule-interval">
@@ -360,12 +370,50 @@ export function WorkspaceDialog({
             </>
           )}
           {dialog.type === 'settings' && (
+            <fieldset className="appearance-fields">
+              <legend>Appearance</legend>
+              <div className="segmented" role="radiogroup">
+                {(['system', 'light', 'dark'] as ThemePreference[]).map(
+                  (option) => (
+                    <label key={option}>
+                      <input
+                        type="radio"
+                        name="theme"
+                        value={option}
+                        checked={theme === option}
+                        onChange={() => {
+                          setTheme(option);
+                          setThemePreference(option);
+                        }}
+                      />
+                      <span>{option[0].toUpperCase() + option.slice(1)}</span>
+                    </label>
+                  ),
+                )}
+              </div>
+              <p className="muted">
+                Saved in this browser. System follows your device.
+              </p>
+            </fieldset>
+          )}
+          {dialog.type === 'settings' && (
             <div className="config-note">
               <strong>Service setup</strong>
               <p>
-                {workspace.setup.missing.length
-                  ? `Add ${workspace.setup.missing.join(', ')} to the server environment, then restart.`
-                  : 'Text configuration is present. A successful conversation confirms connectivity.'}
+                {workspace.setup.missing.length ? (
+                  <>
+                    Add{' '}
+                    {workspace.setup.missing.map((name, index) => (
+                      <span key={name}>
+                        {index > 0 && ', '}
+                        <code>{name}</code>
+                      </span>
+                    ))}{' '}
+                    to the server environment, then restart.
+                  </>
+                ) : (
+                  'Text configuration is present. A successful conversation confirms connectivity.'
+                )}
               </p>
               <p>
                 Slack: {workspace.setup.slack.replaceAll('_', ' ')}. Voice:{' '}
@@ -373,6 +421,16 @@ export function WorkspaceDialog({
                   ? 'configuration present'
                   : 'needs VOICE_API_KEY and VOICE_MODEL'}
                 .
+              </p>
+              <p>
+                Setup and usage metadata is collected by default.{' '}
+                <a
+                  href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP-TELEMETRY.md"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Tracking and opt-out details
+                </a>
               </p>
               <a
                 href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP.md"

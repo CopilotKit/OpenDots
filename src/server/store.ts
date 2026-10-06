@@ -26,6 +26,7 @@ export class Store {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+      CREATE TABLE IF NOT EXISTS setup_telemetry (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, prompt TEXT NOT NULL, status TEXT NOT NULL, intervalSeconds INTEGER, nextRunAt INTEGER, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, error TEXT, lease TEXT, leaseUntil INTEGER);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, taskId TEXT NOT NULL, status TEXT NOT NULL, startedAt INTEGER NOT NULL, finishedAt INTEGER, result TEXT, error TEXT);
@@ -37,6 +38,20 @@ export class Store {
     this.db
       .prepare('INSERT OR IGNORE INTO settings VALUES (1, ?)')
       .run(JSON.stringify(defaults));
+  }
+  setupTelemetryState(): string | undefined {
+    return (
+      this.db.prepare('SELECT value FROM setup_telemetry WHERE id=1').get() as
+        { value: string } | undefined
+    )?.value;
+  }
+  saveSetupTelemetryState(value: string) {
+    this.db
+      .prepare('INSERT OR REPLACE INTO setup_telemetry VALUES (1, ?)')
+      .run(value);
+  }
+  clearSetupTelemetry() {
+    this.db.prepare('DELETE FROM setup_telemetry').run();
   }
   close() {
     this.db.close();
@@ -100,7 +115,7 @@ export class Store {
         "INSERT INTO tasks VALUES (?, ?, 'queued', ?, NULL, ?, ?, NULL, NULL, NULL)",
       )
       .run(id, prompt, intervalSeconds, now, now);
-    this.event(id, null, 'Task added to the research queue.');
+    this.event(id, null, 'Task added to the queue.');
     return this.task(id)!;
   }
   detail(id: string): Detail | undefined {
@@ -219,7 +234,7 @@ export class Store {
           "INSERT INTO runs VALUES (?, ?, 'running', ?, NULL, NULL, NULL)",
         )
         .run(lease, task.id, now);
-      this.event(task.id, lease, 'Research worker started.');
+      this.event(task.id, lease, 'Run started.');
       return { ...this.task(task.id)!, lease };
     });
   }
@@ -248,9 +263,7 @@ export class Store {
       this.event(
         claim.id,
         claim.lease,
-        result.sample
-          ? 'Fictional sample brief ready.'
-          : 'Research brief ready.',
+        result.sample ? 'Fictional sample brief ready.' : 'Run completed.',
       );
       return true;
     });

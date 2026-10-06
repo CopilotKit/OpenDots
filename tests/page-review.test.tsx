@@ -5,6 +5,7 @@ import { api } from '../src/client/api';
 import {
   decidePageReview,
   fetchReviewTarget,
+  isDeletedReview,
 } from '../src/client/page-review-decision';
 import { approveLabel, PageReviewCard } from '../src/client/PageReviewCard';
 
@@ -26,6 +27,42 @@ it('recovers an already committed save instead of emitting a decline', async () 
   vi.mocked(api).mockResolvedValue(page);
   expect(await decidePageReview('thread', 'call', {}, false)).toBe(page);
   expect(api).toHaveBeenCalledTimes(1);
+});
+
+it('recognizes a saved review whose page was deleted without saving again', async () => {
+  const draft = { title: 'Brief', content: 'Evidence', spaceId: 'space' };
+  const deleted = {
+    deleted: true,
+    pageId: 'gone',
+    spaceId: 'space',
+    reviewDraft: draft,
+  };
+  vi.mocked(api).mockResolvedValue(deleted);
+  const result = await decidePageReview('thread', 'call', draft, true);
+  expect(isDeletedReview(result)).toBe(true);
+  expect(result).toBe(deleted);
+  expect(
+    vi.mocked(api).mock.calls.filter((call) => call[1] === 'POST'),
+  ).toHaveLength(0);
+  expect(isDeletedReview({ id: 'page' })).toBe(false);
+  expect(isDeletedReview(null)).toBe(false);
+});
+
+it('rejects a changed draft for a review whose page was deleted', async () => {
+  vi.mocked(api).mockResolvedValue({
+    deleted: true,
+    pageId: 'gone',
+    spaceId: 'space',
+    reviewDraft: { title: 'Brief', content: 'Evidence', spaceId: 'space' },
+  });
+  await expect(
+    decidePageReview(
+      'thread',
+      'call',
+      { title: 'Brief', content: 'Changed', spaceId: 'space' },
+      true,
+    ),
+  ).rejects.toThrow('different draft');
 });
 
 it('does not decide or save when receipt recovery fails', async () => {
@@ -201,7 +238,10 @@ it('flags update drafts on the card and stays silent for creates', () => {
       onSaved={() => {}}
     />,
   );
-  expect(update).toContain('Updates an existing page.');
+  // Until the target lookup resolves the card can only say it is
+  // identifying the target; the unidentified fallback is gone.
+  expect(update).toContain('Identifying the page this would update');
+  expect(update).not.toContain('Updates an existing page.');
   const create = renderToStaticMarkup(
     <PageReviewCard
       args={{ title: 'Brief', content: 'Evidence', spaceId: 'space' }}
@@ -213,4 +253,5 @@ it('flags update drafts on the card and stays silent for creates', () => {
     />,
   );
   expect(create).not.toContain('Updates an existing page');
+  expect(create).not.toContain('Identifying the page');
 });
