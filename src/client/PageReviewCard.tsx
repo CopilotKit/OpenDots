@@ -5,13 +5,19 @@ import remarkGfm from 'remark-gfm';
 import { pageReviewSchema } from '../shared/page-review';
 import {
   decidePageReview,
+  fetchReviewTarget,
   isDeletedReview,
   matchesReviewedDraft,
   restorePageReview,
   type DeletedReview,
 } from './page-review-decision';
+import type { ReviewTarget } from './page-review-decision';
 import { openPageLink } from './page-navigation';
 import type { ReviewedPage } from '../server/pages';
+export function approveLabel(isUpdate: boolean) {
+  return isUpdate ? 'Approve & update page' : 'Approve & create page';
+}
+
 export function PageReviewCard({
   args,
   status,
@@ -35,6 +41,11 @@ export function PageReviewCard({
   const [busy, setBusy] = useState(false);
   const [receiptReady, setReceiptReady] = useState(false);
   const [restoreAttempt, setRestoreAttempt] = useState(0);
+  const [target, setTarget] = useState<ReviewTarget | null>(null);
+  const [targetStatus, setTargetStatus] = useState<
+    'idle' | 'pending' | 'identified' | 'failed'
+  >('idle');
+  const [targetLookupAttempt, setTargetLookupAttempt] = useState(0);
   const pending = useRef(false);
   const finished = status === 'complete';
   const reviewed = savedPage ?? deletedReview;
@@ -43,6 +54,36 @@ export function PageReviewCard({
   const saved = (!!savedPage || removed) && !conflict;
   const pageId = savedPage?.id ?? '';
   const spaceId = savedPage?.spaceId ?? '';
+  const targetPageId = draft.success ? (draft.data.pageId ?? null) : null;
+  const targetSpaceId = draft.success ? draft.data.spaceId : null;
+  // An update approval is only allowed once the page it would overwrite has
+  // been identified; a pending or failed lookup must not leave an enabled
+  // approve button behind an unidentified "Updates an existing page." card.
+  const targetGated = !!targetPageId && targetStatus !== 'identified';
+  useEffect(() => {
+    if (!targetPageId || !targetSpaceId) {
+      setTarget(null);
+      setTargetStatus('idle');
+      return;
+    }
+    let active = true;
+    setTarget(null);
+    setTargetStatus('pending');
+    void fetchReviewTarget(targetSpaceId, targetPageId)
+      .then((found) => {
+        if (!active) return;
+        setTarget(found);
+        setTargetStatus(found ? 'identified' : 'failed');
+      })
+      .catch(() => {
+        if (!active) return;
+        setTarget(null);
+        setTargetStatus('failed');
+      });
+    return () => {
+      active = false;
+    };
+  }, [targetPageId, targetSpaceId, targetLookupAttempt]);
   useEffect(() => {
     let active = true;
     setReceiptReady(false);
@@ -70,6 +111,9 @@ export function PageReviewCard({
   }, [threadId, toolCallId, restoreAttempt]);
   const decide = async (approved: boolean) => {
     if (!respond || !receiptReady || conflict || pending.current) return;
+    // Continuing an already-saved review stays independent of the target
+    // lookup; only a new update approval is gated on identification.
+    if (approved && !saved && targetGated) return;
     pending.current = true;
     setBusy(true);
     setError('');
@@ -145,6 +189,17 @@ export function PageReviewCard({
         </span>
       </header>
       <div className="page-review-body">
+        {targetPageId && (
+          <p className="page-review-target">
+            {targetStatus === 'identified' && target
+              ? `Updates existing page "${target.title}"${
+                  target.spaceName ? ` in ${target.spaceName}` : ''
+                }.`
+              : targetStatus === 'failed'
+                ? 'Could not identify the page this would update.'
+                : 'Identifying the page this would update…'}
+          </p>
+        )}
         <h3>{draft.success ? draft.data.title : 'Preparing your draft…'}</h3>
         {draft.success && (
           <ReactMarkdown
@@ -169,6 +224,14 @@ export function PageReviewCard({
         </p>
       )}
       {error && <p role="alert">{error}</p>}
+      {targetPageId && targetStatus === 'failed' && !saved && (
+        <button
+          type="button"
+          onClick={() => setTargetLookupAttempt((attempt) => attempt + 1)}
+        >
+          Retry target lookup
+        </button>
+      )}
       {!receiptReady && error && (
         <button
           type="button"
@@ -196,7 +259,7 @@ export function PageReviewCard({
           <>
             <button
               type="button"
-              disabled={busy || (!saved && !draft.success)}
+              disabled={busy || (!saved && (!draft.success || targetGated))}
               className="review-primary"
               onClick={() => void decide(true)}
             >
@@ -205,7 +268,7 @@ export function PageReviewCard({
                 ? 'Saving…'
                 : saved
                   ? 'Continue conversation'
-                  : 'Approve & save'}
+                  : approveLabel(!!targetPageId)}
             </button>
             {!saved && (
               <button
