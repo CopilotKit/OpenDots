@@ -1,4 +1,5 @@
 import type { WebConfig } from './parallel.js';
+import type { DotModelSettings } from './dot-model.js';
 import type { SetupStatus } from '../shared/types.js';
 
 // `copilotkit project select` writes the CLI name and deletes the template name.
@@ -34,7 +35,7 @@ function firstNonEmptyEnvValue(
   return undefined;
 }
 
-export interface PlatformConfig extends WebConfig {
+export interface PlatformConfig extends WebConfig, DotModelSettings {
   intelligenceKey?: string;
   intelligenceApiUrl?: string;
   intelligenceWsUrl?: string;
