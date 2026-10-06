@@ -7,6 +7,8 @@ const INTELLIGENCE_API_KEY_ENV_NAMES = [
   'INTELLIGENCE_API_KEY',
 ] as const;
 export const INTELLIGENCE_KEY_MISSING_LABEL = `${INTELLIGENCE_API_KEY_ENV_NAMES[1]} (or ${INTELLIGENCE_API_KEY_ENV_NAMES[0]})`;
+export const DEFAULT_AGENT_RUN_TIMEOUT_MS = 90_000;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 export function intelligenceApiKeyFromEnv(
   env: Record<string, string | undefined>,
@@ -21,6 +23,19 @@ export function intelligenceWsUrlFromEnv(
     'INTELLIGENCE_GATEWAY_WS_URL',
     'INTELLIGENCE_WS_URL',
   ]);
+}
+
+export function agentRunTimeoutMsFromEnv(
+  env: Record<string, string | undefined>,
+): number {
+  const raw = env.AGENT_RUN_TIMEOUT_MS?.trim();
+  if (!raw) return DEFAULT_AGENT_RUN_TIMEOUT_MS;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > MAX_TIMER_DELAY_MS)
+    throw new Error(
+      `AGENT_RUN_TIMEOUT_MS must be an integer between 1 and ${MAX_TIMER_DELAY_MS}.`,
+    );
+  return value;
 }
 
 function firstNonEmptyEnvValue(
@@ -41,6 +56,7 @@ export interface PlatformConfig extends WebConfig {
   model?: string;
   apiKey?: string;
   baseUrl: string;
+  agentRunTimeoutMs?: number;
   computerSupervisorUrl?: string;
   computerSupervisorToken?: string;
   computerToken?: string;
