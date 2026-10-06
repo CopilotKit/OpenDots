@@ -73,6 +73,12 @@ export class Pages {
     if (!this.spaceExists(spaceId))
       throw new PageError('Space not found.', 404);
   }
+  exists(spaceId: string, id: string): boolean {
+    this.requireSpace(spaceId);
+    return !!this.db
+      .prepare('SELECT 1 FROM pages WHERE id=? AND spaceId=?')
+      .get(id, spaceId);
+  }
   list(spaceId: string): Page[] {
     this.requireSpace(spaceId);
     return this.db
@@ -275,5 +281,34 @@ export class Pages {
     return row
       ? this.get(spaceId ?? String(row.spaceId), String(row.pageId))
       : undefined;
+  }
+  delete(spaceId: string, id: string): boolean {
+    this.requireSpace(spaceId);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const page = this.db
+        .prepare('SELECT parentId FROM pages WHERE id=? AND spaceId=?')
+        .get(id, spaceId) as { parentId: string | null } | undefined;
+      if (!page) {
+        this.db.exec('COMMIT');
+        return false;
+      }
+      const now = Date.now();
+      this.db
+        .prepare(
+          'UPDATE pages SET parentId=?, revision=revision+1, updatedAt=? WHERE spaceId=? AND parentId=?',
+        )
+        .run(page.parentId, now, spaceId, id);
+      // page_reviews rows stay: a retried approval must not recreate this page.
+      this.db.prepare('DELETE FROM page_threads WHERE pageId=?').run(id);
+      this.db
+        .prepare('DELETE FROM pages WHERE id=? AND spaceId=?')
+        .run(id, spaceId);
+      this.db.exec('COMMIT');
+      return true;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 }
