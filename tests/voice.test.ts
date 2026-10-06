@@ -50,6 +50,7 @@ function fixture() {
         model: true,
         browser: false,
         slack: 'not_configured',
+        sendblue: 'not_configured',
         missing: [],
       }),
     },

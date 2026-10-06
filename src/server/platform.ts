@@ -8,6 +8,7 @@ import {
   type CopilotHonoApp,
 } from '@copilotkit/runtime/v2';
 import { createSlackChannel } from './slack-channel.js';
+import { SendblueBridge } from './sendblue.js';
 export { slackIdentity } from './slack-channel.js';
 import { Store } from './store.js';
 import { WorkspaceStore } from './workspace.js';
@@ -26,6 +27,7 @@ export class Platform {
   readonly setupTelemetry: SetupTelemetry;
   readonly pages: PageService;
   readonly computers: ComputerService;
+  readonly sendblue?: SendblueBridge;
   readonly intelligence?: CopilotKitIntelligence;
   readonly handler?: CopilotHonoApp;
   constructor(
@@ -43,6 +45,8 @@ export class Platform {
       this.requireReady();
       return this.intelligence!;
     });
+    if (config.sendblue)
+      this.sendblue = new SendblueBridge(this, config.sendblue);
     if (!config.intelligenceKey) return;
     this.intelligence = new CopilotKitIntelligence({
       apiKey: config.intelligenceKey,
@@ -114,6 +118,7 @@ export class Platform {
       this.handler?.channels?.status().overall ??
         (this.config.slackChannel ? 'setup_required' : 'not_configured'),
       this.channelStartupFailed,
+      this.sendblue?.status,
     );
   }
   requireReady() {
@@ -125,6 +130,7 @@ export class Platform {
   }
   async start() {
     this.setupTelemetry.start();
+    await this.sendblue?.start();
     if (this.handler?.channels) {
       try {
         await this.handler.channels.ready({ timeoutMs: 15000 });
@@ -141,6 +147,7 @@ export class Platform {
     }
   }
   async stop() {
+    await this.sendblue?.stop();
     await this.setupTelemetry.stop();
     await this.handler?.channels?.stop();
   }

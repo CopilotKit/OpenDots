@@ -372,7 +372,7 @@ export function WorkspaceDialog({
                 {workspace.setup.voice
                   ? 'configuration present'
                   : 'needs VOICE_API_KEY and VOICE_MODEL'}
-                .
+                . Sendblue: {workspace.setup.sendblue.replaceAll('_', ' ')}.
               </p>
               <p>
                 Setup and usage metadata is collected by default.{' '}

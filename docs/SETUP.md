@@ -156,6 +156,116 @@ From an allowed user, mention the bot and verify a response in the same Slack th
 
 Local tests exercise channel behavior with fixtures. A live Slack mention/reply remains unverified until you provision the managed connection and model credentials. [Channels SDK documentation](https://github.com/CopilotKit/channels-sdk) describes extending the adapter and channel behavior.
 
+## Text messages (Sendblue)
+
+Text a Dot over iMessage or SMS through a [Sendblue](https://www.sendblue.com) line. Sendblue posts each received text to a webhook listener in OpenDots. The reply runs as a server-side turn in that phone number's own conversation with the selected Dot, the same path scheduled tasks use, and goes back through Sendblue's send-message API. The conversation also appears in the web app. No Intelligence channel declaration is involved.
+
+Start with working conversations: send a message in the web app and get a reply before adding a phone.
+
+### Create a Sendblue line
+
+```sh
+npx --yes @sendblue/cli@0.10.0 setup --phone +15551234567
+```
+
+Use your own phone number. The CLI shows a verification text; send it from that phone. If the command exits before verification completes, run `npx --yes @sendblue/cli@0.10.0 setup --check` until it finishes (exit code 3 means still waiting). The CLI stores the API key, API secret, and assigned line in `~/.sendblue/credentials.json`. `npx --yes @sendblue/cli@0.10.0 show-keys` prints the key and secret, and `npx --yes @sendblue/cli@0.10.0 lines` lists the assigned line. Keep these values out of chat, logs, and Git.
+
+Your Sendblue plan decides which contacts the line can reach and whether receive webhooks and replies are available. Check your account before relying on this setup. Where Sendblue requires contact verification, add another phone with `npx --yes @sendblue/cli@0.10.0 add-contact +15557654321` and have it text the line once. Sendblue's contact verification and the OpenDots allowlist below are separate checks.
+
+### Configure OpenDots
+
+Add these to the server's `.env`:
+
+```dotenv
+SENDBLUE_API_KEY=REPLACE_WITH_API_KEY
+SENDBLUE_API_SECRET=REPLACE_WITH_API_SECRET
+SENDBLUE_FROM_NUMBER=+15550100000
+SENDBLUE_WEBHOOK_SECRET=REPLACE_WITH_OPENSSL_RAND_HEX_32
+SENDBLUE_ALLOWED_NUMBERS=+15551234567
+# SENDBLUE_DOT_ID=REPLACE_WITH_DOT_ID
+# SENDBLUE_WEBHOOK_PORT=4313
+```
+
+`SENDBLUE_FROM_NUMBER` is the assigned Sendblue line, not your phone. Generate `SENDBLUE_WEBHOOK_SECRET` with `openssl rand -hex 32`; it must be at least 24 characters. `SENDBLUE_ALLOWED_NUMBERS` is a comma-separated list of E.164 numbers that may talk to the Dot. It has no wildcard: every listed number acts as the OpenDots owner, with the selected Dot's Space access and tools. `SENDBLUE_DOT_ID` defaults to the initial Dot.
+
+Restart OpenDots. **Settings & setup** shows `Sendblue: listening` once the webhook listener is up. If it shows `setup required`, the server log names the missing or invalid settings without their values.
+
+### Route the webhook
+
+The listener binds to `HOST` on `SENDBLUE_WEBHOOK_PORT` (default 4313) and serves only `POST /sendblue/webhook`. Forward a public HTTPS address to that port, never to the app port. For local development, a tunnel works:
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:4313
+```
+
+`ngrok http 4313` is equivalent. For hosted deployments, route only `/sendblue/webhook` from your HTTPS reverse proxy to the listener. The Docker Compose file publishes the listener on `127.0.0.1:4313`.
+
+Register the webhook with your secret, limited to the assigned line. This reads `.env`, prints no credentials, and skips a URL that is already registered:
+
+```sh
+node --env-file=.env --input-type=module -e '
+const url = process.argv[1];
+const api = "https://api.sendblue.com/api/account/webhooks";
+const headers = {
+  "Content-Type": "application/json",
+  "sb-api-key-id": process.env.SENDBLUE_API_KEY,
+  "sb-api-secret-key": process.env.SENDBLUE_API_SECRET,
+};
+const { webhooks } = await (await fetch(api, { headers })).json();
+if (webhooks?.receive?.some((hook) => (hook.url ?? hook) === url)) {
+  console.log("Already registered:", url);
+} else {
+  const response = await fetch(api, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      type: "receive",
+      webhooks: [
+        {
+          url,
+          secret: process.env.SENDBLUE_WEBHOOK_SECRET,
+          sendblue_numbers: [process.env.SENDBLUE_FROM_NUMBER],
+        },
+      ],
+    }),
+  });
+  console.log(response.ok ? "Registered:" : `Failed with HTTP ${response.status}:`, url);
+}
+' https://YOUR_PUBLIC_HOST/sendblue/webhook
+```
+
+Sendblue adds registrations rather than replacing them, so other webhooks on the account are kept. To change the URL or secret, remove the old registration (see below), then register again.
+
+### Verify your deployment
+
+From an allowed phone, text the line `Remember the word cobalt` and wait for the reply. Then text `What word did I ask you to remember?` and confirm the answer uses the first message. Open the Dot in the web app: a conversation named `Text message ···` with the phone's last four digits shows both turns. Text `/new` to start a fresh conversation. Pause OpenDots and confirm a paused notice arrives. Confirm that a phone outside the allowlist gets no reply. If you rely on SMS, repeat the check from a phone without iMessage.
+
+Local tests exercise the webhook, routing, conversation storage, and send requests against a local stand-in for the Sendblue API. Delivery to a real handset remains unverified until you complete the checks above.
+
+### Behavior and limits
+
+- Only one-to-one texts received on the assigned line from an allowed number start a turn. Group messages, delivery receipts, and outbound echoes are ignored.
+- Several texts that arrive while the Dot is still answering are combined into one turn. Up to 32 texts can wait; beyond that the webhook answers 503 and Sendblue retries.
+- Replies are plain text with Markdown removed. Long replies are split into parts of at most 1,500 characters, which stays within the SMS length limit.
+- Attachments are not downloaded. The Dot sees a note that media was attached.
+- Scheduled tasks and other Dot conversations do not send texts. Reactions, typing indicators, and group chats are not supported.
+- Sendblue accepting a reply (`QUEUED`) does not mean the phone received it. Sendblue has no idempotency key, so OpenDots never resends a reply that Sendblue rejected or did not confirm; a request that timed out may still be delivered. Check Sendblue's message history before resending manually. Failures are logged without message content.
+- Sendblue can deliver a webhook more than once. OpenDots answers each message handle once and remembers handles for seven days in its SQLite database. Texts received while OpenDots stops may go unanswered; send them again.
+
+### Security notes
+
+- The listener checks Sendblue's `sb-signing-secret` header against `SENDBLUE_WEBHOOK_SECRET` with a constant-time comparison before it reads the body, and rejects bodies over 64 KiB. This header carries a shared secret, not a signature, so serve the webhook only over HTTPS.
+- The allowlist trusts the sender number that Sendblue reports. SMS sender numbers can be spoofed, so keep the list short and choose the Dot's tools and Space access accordingly.
+- Phone numbers, message text, and provider responses are kept out of logs.
+
+### Remove text messages
+
+1. Remove the webhook registration: `npx --yes @sendblue/cli@0.10.0 webhooks remove https://YOUR_PUBLIC_HOST/sendblue/webhook --type receive`.
+2. Delete the `SENDBLUE_*` lines from `.env` and restart OpenDots. Settings shows `Sendblue: not configured` and the listener no longer starts.
+3. Stop the tunnel or proxy route.
+
+Existing text conversations stay in the web app. The phone-to-conversation mapping and recent message handles stay in the `sendblue_threads` and `sendblue_inbound` SQLite tables, which are unused once the settings are removed.
+
 ## Calls
 
 The included speech adapter uses the Realtime API at `api.openai.com`. Set `VOICE_API_KEY` to a key with access to that API and `VOICE_MODEL` to a supported Realtime model (the local UI test used `gpt-realtime-2.1`); `VOICE_NAME` selects the voice. `OPENAI_BASE_URL` changes the compute model endpoint only, not speech. Calls use browser microphone access and WebRTC. Hosted deployments need HTTPS. The server mediates provider setup and delegates compute to the selected Dot's conversation.
