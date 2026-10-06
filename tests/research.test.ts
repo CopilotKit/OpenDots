@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { research, type Config } from '../src/server/research.js';
+import {
+  requestedUrls,
+  research,
+  type Config,
+} from '../src/server/research.js';
 const signal = new AbortController().signal;
 const config: Config = {
   mode: 'live',
+  webSearchProvider: 'browser',
   apiKey: 'secret',
   model: 'test-model',
   baseUrl: 'https://model.example/v1',
@@ -90,5 +95,34 @@ describe('research adapters', () => {
     await expect(
       research('Read https://example.com', [], config, signal, () => {}),
     ).rejects.toThrow('429');
+  });
+  it('keeps balanced brackets in requested URLs and trims wrapping ones', () => {
+    expect(
+      requestedUrls(
+        'Read https://en.wikipedia.org/wiki/Rust_(programming_language).',
+      ),
+    ).toEqual(['https://en.wikipedia.org/wiki/Rust_(programming_language)']);
+    expect(
+      requestedUrls(
+        'See (https://example.com/a) and [https://example.com/b], or [x](https://example.com/c).',
+      ),
+    ).toEqual([
+      'https://example.com/a',
+      'https://example.com/b',
+      'https://example.com/c',
+    ]);
+    expect(
+      requestedUrls('Read https://example.com twice https://example.com'),
+    ).toEqual(['https://example.com']);
+  });
+  it('parses Markdown links whose label is also a URL as separate occurrences', () => {
+    expect(
+      requestedUrls('Summarize [https://example.com](https://example.com).'),
+    ).toEqual(['https://example.com']);
+    expect(
+      requestedUrls(
+        'See [https://example.com/label](https://example.com/dest) for details.',
+      ),
+    ).toEqual(['https://example.com/label', 'https://example.com/dest']);
   });
 });

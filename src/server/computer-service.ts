@@ -85,6 +85,10 @@ export class ComputerService {
         redirect: 'error',
         signal: combined,
       });
+      if (response.status === 409)
+        throw new Error(
+          'Computer service returned HTTP 409: refresh the browser with computer_snapshot before retrying. If the owner has control, wait for them to release it; do not bypass takeover.',
+        );
       if (!response.ok)
         throw new Error(`Computer service returned HTTP ${response.status}.`);
       if (!response.body)

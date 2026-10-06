@@ -291,3 +291,17 @@ it('accepts an uppercase namespace while preserving exact container identity', a
   });
   expect(f.calls.at(-1)?.url).toBe(`http://mydots-computer-${f.id}:4100/read`);
 });
+
+it('gives agents a safe recovery instruction for stale browser or control conflicts', async () => {
+  const f = fixture();
+  f.handle(async () =>
+    Response.json({ error: f.config.computerToken }, { status: 409 }),
+  );
+  await expect(
+    f.service.action(f.id, 'navigate', { url: 'https://example.com' }, 'agent'),
+  ).rejects.toThrow('computer_snapshot');
+  await expect(
+    f.service.action(f.id, 'navigate', { url: 'https://example.com' }, 'agent'),
+  ).rejects.not.toThrow(f.config.computerToken);
+  expect(f.workspace.computers.audit(f.id)[0].outcome).toBe('failed');
+});

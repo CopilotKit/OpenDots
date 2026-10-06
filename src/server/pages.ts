@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
+import {
+  pageReviewSchema,
+  type PageReviewDraft,
+} from '../shared/page-review.js';
 export const pageInput = z
   .object({
     title: z.string().trim().min(1).max(160),
@@ -27,6 +31,9 @@ export interface Page {
   updatedAt: number;
   sourceThreadId: string | null;
 }
+export type ReviewedPage = Page & {
+  reviewDraft: PageReviewDraft | null;
+};
 export class PageError extends Error {
   constructor(
     message: string,
@@ -40,6 +47,16 @@ export class Pages {
     private db: DatabaseSync,
     private spaceExists: (id: string) => boolean,
   ) {
+    db.exec(
+      'CREATE TABLE IF NOT EXISTS page_reviews(threadId TEXT NOT NULL, toolCallId TEXT NOT NULL, pageId TEXT NOT NULL, spaceId TEXT NOT NULL, draft TEXT, PRIMARY KEY(threadId,toolCallId))',
+    );
+    if (
+      !db
+        .prepare('PRAGMA table_info(page_reviews)')
+        .all()
+        .some((row) => row.name === 'draft')
+    )
+      db.exec('ALTER TABLE page_reviews ADD COLUMN draft TEXT');
     db.exec(`CREATE TABLE IF NOT EXISTS pages(id TEXT PRIMARY KEY, spaceId TEXT NOT NULL, parentId TEXT, title TEXT NOT NULL, content TEXT NOT NULL, revision INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, sourceThreadId TEXT);
  CREATE TABLE IF NOT EXISTS page_threads(pageId TEXT NOT NULL,dotId TEXT NOT NULL,threadId TEXT NOT NULL UNIQUE,ready INTEGER NOT NULL DEFAULT 0, leaseUntil INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(pageId,dotId));`);
     if (
@@ -55,6 +72,12 @@ export class Pages {
   requireSpace(spaceId: string) {
     if (!this.spaceExists(spaceId))
       throw new PageError('Space not found.', 404);
+  }
+  exists(spaceId: string, id: string): boolean {
+    this.requireSpace(spaceId);
+    return !!this.db
+      .prepare('SELECT 1 FROM pages WHERE id=? AND spaceId=?')
+      .get(id, spaceId);
   }
   list(spaceId: string): Page[] {
     this.requireSpace(spaceId);
@@ -110,6 +133,71 @@ export class Pages {
         sourceThreadId,
       );
     return this.get(spaceId, id);
+  }
+  reviewReceipt(
+    threadId: string,
+    toolCallId: string,
+  ): { pageId: string; spaceId: string; draft: PageReviewDraft | null } | null {
+    const row = this.db
+      .prepare(
+        'SELECT pageId,spaceId,draft FROM page_reviews WHERE threadId=? AND toolCallId=?',
+      )
+      .get(threadId, toolCallId);
+    return row
+      ? {
+          pageId: String(row.pageId),
+          spaceId: String(row.spaceId),
+          draft: row.draft
+            ? pageReviewSchema.parse(JSON.parse(String(row.draft)))
+            : null,
+        }
+      : null;
+  }
+  createReviewed(
+    spaceId: string,
+    input: Pick<PageReviewDraft, 'title' | 'content'>,
+    threadId: string,
+    toolCallId: string,
+  ): ReviewedPage {
+    const draft = pageReviewSchema.parse({ ...input, spaceId });
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const previous = this.reviewReceipt(threadId, toolCallId);
+      if (previous) {
+        if (previous.spaceId !== spaceId)
+          throw new PageError(
+            'This review was already saved to another Space.',
+            409,
+          );
+        if (
+          previous.draft &&
+          (previous.draft.title !== draft.title ||
+            previous.draft.content !== draft.content)
+        )
+          throw new PageError(
+            'This review was already saved with a different draft. Start a new review for the changed draft.',
+            409,
+          );
+        const page = this.get(spaceId, previous.pageId);
+        this.db.exec('COMMIT');
+        return { ...page, reviewDraft: previous.draft };
+      }
+      const page = this.create(
+        spaceId,
+        { title: draft.title, content: draft.content },
+        threadId,
+      );
+      this.db
+        .prepare(
+          'INSERT INTO page_reviews (threadId,toolCallId,pageId,spaceId,draft) VALUES (?,?,?,?,?)',
+        )
+        .run(threadId, toolCallId, page.id, spaceId, JSON.stringify(draft));
+      this.db.exec('COMMIT');
+      return { ...page, reviewDraft: draft };
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
   update(spaceId: string, id: string, input: z.input<typeof pagePatch>): Page {
     const parsed = pagePatch.safeParse(input);
@@ -193,5 +281,34 @@ export class Pages {
     return row
       ? this.get(spaceId ?? String(row.spaceId), String(row.pageId))
       : undefined;
+  }
+  delete(spaceId: string, id: string): boolean {
+    this.requireSpace(spaceId);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const page = this.db
+        .prepare('SELECT parentId FROM pages WHERE id=? AND spaceId=?')
+        .get(id, spaceId) as { parentId: string | null } | undefined;
+      if (!page) {
+        this.db.exec('COMMIT');
+        return false;
+      }
+      const now = Date.now();
+      this.db
+        .prepare(
+          'UPDATE pages SET parentId=?, revision=revision+1, updatedAt=? WHERE spaceId=? AND parentId=?',
+        )
+        .run(page.parentId, now, spaceId, id);
+      // page_reviews rows stay: a retried approval must not recreate this page.
+      this.db.prepare('DELETE FROM page_threads WHERE pageId=?').run(id);
+      this.db
+        .prepare('DELETE FROM pages WHERE id=? AND spaceId=?')
+        .run(id, spaceId);
+      this.db.exec('COMMIT');
+      return true;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 }

@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -32,6 +33,7 @@ export function PageDocument({
   onDirty,
   onSaved,
   onRefresh,
+  onDeleted,
   onSchedule,
   onThread,
   onSettings,
@@ -47,6 +49,7 @@ export function PageDocument({
   onDirty: (value: boolean) => void;
   onSaved: (page: Page) => void;
   onRefresh: () => void;
+  onDeleted: (id: string) => void;
   onSchedule: (id: string) => void;
   onThread: (id: string) => void;
   onSettings: () => void;
@@ -57,6 +60,13 @@ export function PageDocument({
   const [source, setSource] = useState(false);
   const [move, setMove] = useState(false);
   const [notice, setNotice] = useState('');
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
   const [chatOpen, setChatOpen] = useState(false);
   const safety = useMemo(() => inspectMarkdown(draft.content), [draft.content]);
   const sourceMode = source || !safety.supported;
@@ -200,6 +210,39 @@ export function PageDocument({
                     },
                   ]
                 : []),
+              {
+                label: 'Delete page',
+                action: async () => {
+                  if (
+                    !window.confirm(
+                      `Delete "${draft.title || 'Untitled'}"? This can't be undone. Any subpages will move to this page's parent.`,
+                    )
+                  )
+                    return;
+                  try {
+                    await api(
+                      `/spaces/${page.spaceId}/pages/${page.id}`,
+                      'DELETE',
+                    );
+                    onDeleted(page.id);
+                    onRefresh();
+                    // A slow DELETE can finish after the user opened another
+                    // page: only leave, and drop the pending autosave, if this
+                    // document is still the one on screen.
+                    if (open.current) {
+                      controller.dispose();
+                      onDirty(false);
+                      onHome();
+                    }
+                  } catch (error) {
+                    setNotice(
+                      error instanceof Error
+                        ? error.message
+                        : 'Could not delete page.',
+                    );
+                  }
+                },
+              },
             ]}
           />
         </header>

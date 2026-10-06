@@ -1,5 +1,11 @@
 export type Status =
-  'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+  | 'queued'
+  | 'running'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'interrupted'
+  | 'cancelled';
 export interface Settings {
   name: string;
   paused: boolean;
@@ -79,6 +85,8 @@ export interface Dot {
   researchAllowed: boolean;
   memoryAllowed: boolean;
   createdAt: number;
+  learningContainerId?: string | null;
+  skillDeliveryEnabled?: boolean;
 }
 export interface Conversation {
   id: string;
@@ -86,6 +94,8 @@ export interface Conversation {
   ownerId: string;
   title: string;
   createdAt: number;
+  /** Frozen at creation; null means this conversation does not participate. */
+  learningContainerId?: string | null;
 }
 export interface CallReceipt {
   anchorMessageId?: string | null;

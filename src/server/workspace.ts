@@ -1,14 +1,17 @@
 import { ComputerStore } from './computer-store.js';
+import { ConnectionStore } from './connection-store.js';
 import { Pages } from './pages.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { validateLearningSettings } from '../shared/learning.js';
 import type { CallReceipt, Conversation, Dot, Space } from '../shared/types.js';
 export class WorkspaceStore {
   private db: DatabaseSync;
   readonly pages: Pages;
   readonly computers: ComputerStore;
+  readonly connections: ConnectionStore;
   constructor(
     path: string,
     readonly ownerId: string,
@@ -22,6 +25,19 @@ export class WorkspaceStore {
       CREATE TABLE IF NOT EXISTS task_threads(taskId TEXT PRIMARY KEY, threadId TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS calls(id TEXT PRIMARY KEY, threadId TEXT NOT NULL, startedAt INTEGER NOT NULL, endedAt INTEGER, status TEXT NOT NULL, transcript TEXT NOT NULL, error TEXT);
       CREATE TABLE IF NOT EXISTS captures(threadId TEXT PRIMARY KEY, value TEXT NOT NULL);`);
+    for (const [table, column, definition] of [
+      ['dots', 'learningContainerId', 'TEXT'],
+      ['dots', 'skillDeliveryEnabled', 'INTEGER NOT NULL DEFAULT 0'],
+      ['thread_bindings', 'learningContainerId', 'TEXT'],
+    ]) {
+      if (
+        !this.db
+          .prepare(`PRAGMA table_info(${table})`)
+          .all()
+          .some((field) => field.name === column)
+      )
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
     // Migrate only once: restarting must never restore a revoked grant.
     if (
       !this.db
@@ -36,6 +52,7 @@ export class WorkspaceStore {
         COMMIT;`);
     }
     this.computers = new ComputerStore(this.db);
+    this.connections = new ConnectionStore(this.db);
     this.pages = new Pages(this.db, (id) =>
       this.spaces().some((space) => space.id === id),
     );
@@ -94,6 +111,7 @@ export class WorkspaceStore {
           .map((grant) => String(grant.spaceId)),
         researchAllowed: !!row.researchAllowed,
         memoryAllowed: !!row.memoryAllowed,
+        skillDeliveryEnabled: !!row.skillDeliveryEnabled,
       })) as unknown as Dot[];
   }
   dot(id: string) {
@@ -106,8 +124,11 @@ export class WorkspaceStore {
     researchAllowed: boolean,
     memoryAllowed: boolean,
     spaceIds: string[] = [spaceId],
+    learningContainerId: string | null = null,
+    skillDeliveryEnabled = false,
   ): Dot {
     this.validateSpaceAccess(spaceId, spaceIds);
+    validateLearningSettings(learningContainerId, skillDeliveryEnabled);
     const dot: Dot = {
       id: randomUUID(),
       spaceId,
@@ -116,12 +137,16 @@ export class WorkspaceStore {
       instructions,
       researchAllowed,
       memoryAllowed,
+      learningContainerId,
+      skillDeliveryEnabled,
       createdAt: Date.now(),
     };
     this.db.exec('BEGIN');
     try {
       this.db
-        .prepare('INSERT INTO dots VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .prepare(
+          'INSERT INTO dots (id, spaceId, name, instructions, researchAllowed, memoryAllowed, createdAt, learningContainerId, skillDeliveryEnabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        )
         .run(
           dot.id,
           spaceId,
@@ -130,6 +155,8 @@ export class WorkspaceStore {
           +researchAllowed,
           +memoryAllowed,
           dot.createdAt,
+          learningContainerId,
+          +skillDeliveryEnabled,
         );
       for (const id of dot.spaceIds)
         this.db.prepare('INSERT INTO dot_spaces VALUES (?, ?)').run(dot.id, id);
@@ -157,24 +184,38 @@ export class WorkspaceStore {
     patch: Pick<
       Dot,
       'name' | 'instructions' | 'researchAllowed' | 'memoryAllowed'
-    > & { spaceId?: string; spaceIds?: string[] },
+    > & {
+      spaceId?: string;
+      spaceIds?: string[];
+      learningContainerId?: string | null;
+      skillDeliveryEnabled?: boolean;
+    },
   ): Dot {
     const current = this.dot(id);
     if (!current) throw new Error('Dot not found.');
     const defaultSpace = patch.spaceId ?? current.spaceId;
     const spaceIds = patch.spaceIds ?? current.spaceIds;
     this.validateSpaceAccess(defaultSpace, spaceIds);
+    const learningContainerId =
+      patch.learningContainerId === undefined
+        ? (current.learningContainerId ?? null)
+        : patch.learningContainerId;
+    const skillDeliveryEnabled =
+      patch.skillDeliveryEnabled ?? current.skillDeliveryEnabled ?? false;
+    validateLearningSettings(learningContainerId, skillDeliveryEnabled);
     this.db.exec('BEGIN');
     try {
       this.db
         .prepare(
-          'UPDATE dots SET name=?, instructions=?, researchAllowed=?, memoryAllowed=? WHERE id=?',
+          'UPDATE dots SET name=?, instructions=?, researchAllowed=?, memoryAllowed=?, learningContainerId=?, skillDeliveryEnabled=? WHERE id=?',
         )
         .run(
           patch.name,
           patch.instructions,
           +patch.researchAllowed,
           +patch.memoryAllowed,
+          learningContainerId,
+          +skillDeliveryEnabled,
           id,
         );
       this.db
@@ -198,17 +239,28 @@ export class WorkspaceStore {
       .all(this.ownerId) as unknown as Conversation[];
   }
   bindThread(id: string, dotId: string, title: string): Conversation {
-    if (!this.dot(dotId)) throw new Error('Dot not found.');
+    const dot = this.dot(dotId);
+    if (!dot) throw new Error('Dot not found.');
     const value: Conversation = {
       id,
       dotId,
       ownerId: this.ownerId,
       title,
       createdAt: Date.now(),
+      learningContainerId: dot.learningContainerId ?? null,
     };
     this.db
-      .prepare('INSERT INTO thread_bindings VALUES (?, ?, ?, ?, ?)')
-      .run(id, dotId, this.ownerId, title, value.createdAt);
+      .prepare(
+        'INSERT INTO thread_bindings (id, dotId, ownerId, title, createdAt, learningContainerId) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        id,
+        dotId,
+        this.ownerId,
+        title,
+        value.createdAt,
+        value.learningContainerId ?? null,
+      );
     return value;
   }
   requireThread(id: string, dotId?: string): Conversation {

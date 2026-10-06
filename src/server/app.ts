@@ -1,4 +1,5 @@
 import { computerRoutes } from './computer-routes.js';
+import { connectionRoutes } from './connection-routes.js';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { timingSafeEqual } from 'node:crypto';
@@ -15,7 +16,7 @@ export interface AppOptions {
   runner: Runner;
   config: Config;
   ownerToken?: string;
-  origin?: string;
+  origin?: string | string[];
   platform?: Platform;
 }
 export function createApp({
@@ -38,17 +39,33 @@ export function createApp({
     c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
     const requestUrl = new URL(c.req.url);
+    const origins = origin
+      ? Array.isArray(origin)
+        ? origin
+        : [origin]
+      : undefined;
+    const originHostnames = origins
+      ? origins
+          .map((o) => {
+            try {
+              return new URL(o).hostname;
+            } catch {
+              return '';
+            }
+          })
+          .filter(Boolean)
+      : [];
     const allowedHosts = new Set([
       'localhost',
       '127.0.0.1',
       '[::1]',
-      ...(origin ? [new URL(origin).hostname] : []),
+      ...originHostnames,
     ]);
     if (!ownerToken && !allowedHosts.has(requestUrl.hostname))
       return c.json({ error: 'Unrecognized host.' }, 403);
     const requestOrigin = c.req.header('origin');
-    const expectedOrigin = origin ?? new URL(c.req.url).origin;
-    if (requestOrigin && requestOrigin !== expectedOrigin)
+    const allowedOrigins = new Set(origins ?? [new URL(c.req.url).origin]);
+    if (requestOrigin && !allowedOrigins.has(requestOrigin))
       return c.json({ error: 'Cross-origin requests are not allowed.' }, 403);
     if (c.req.header('sec-fetch-site') === 'cross-site')
       return c.json({ error: 'Cross-site requests are not allowed.' }, 403);
@@ -74,6 +91,11 @@ export function createApp({
     await next();
   });
   if (platform) app.route('/api', computerRoutes(platform.computers));
+  if (platform)
+    app.route(
+      '/api',
+      connectionRoutes(platform.workspace, platform.connections),
+    );
   const voice = platform ? new VoiceService(platform) : undefined;
   if (platform && voice) app.route('/api', workspaceRoutes(platform, voice));
   app.get('/api/state', (c) =>

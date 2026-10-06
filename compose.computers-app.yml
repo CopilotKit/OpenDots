@@ -11,8 +11,12 @@ services:
       - computer-control
       - computers
   computer-supervisor:
+    # Container-run apps use service DNS; no host supervisor port is needed.
+    ports: !reset []
     environment:
       COMPUTER_NETWORK: ${COMPUTER_NAMESPACE:-opendots}-computers
 networks:
+  computer-control:
+    internal: true
   computers:
     name: ${COMPUTER_NAMESPACE:-opendots}-computers

@@ -1,9 +1,54 @@
+import { pageReviewSchema } from '../shared/page-review.js';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { PageError, pageInput, pagePatch } from './pages.js';
 import type { Platform } from './platform.js';
 export function pageRoutes(platform: Platform) {
   const app = new Hono();
+  app.get('/conversations/:id/reviewed-page/:toolCallId', (c) => {
+    const thread = platform.workspace.requireThread(c.req.param('id'));
+    const receipt = platform.workspace.pages.reviewReceipt(
+      thread.id,
+      c.req.param('toolCallId'),
+    );
+    if (!receipt) return c.json(null);
+    if (!platform.workspace.canAccessSpace(thread.dotId, receipt.spaceId))
+      return c.json(
+        { error: 'This Dot no longer has access to the selected Space.' },
+        403,
+      );
+    const { pageId, spaceId, draft: reviewDraft } = receipt;
+    // The receipt outlives its page so a retried approval cannot recreate it.
+    if (!platform.workspace.pages.exists(spaceId, pageId))
+      return c.json({ deleted: true, pageId, spaceId, reviewDraft });
+    return c.json({
+      ...platform.workspace.pages.get(spaceId, pageId),
+      reviewDraft,
+    });
+  });
+  app.post('/conversations/:id/reviewed-page', async (c) => {
+    const data = pageReviewSchema
+      .extend({ toolCallId: z.string().min(1).max(200) })
+      .safeParse(await c.req.json());
+    if (!data.success)
+      return c.json({ error: 'Enter a valid page draft.' }, 400);
+    const thread = platform.workspace.requireThread(c.req.param('id'));
+    if (!platform.workspace.canAccessSpace(thread.dotId, data.data.spaceId))
+      return c.json(
+        { error: 'This Dot no longer has access to the selected Space.' },
+        403,
+      );
+    const { spaceId, toolCallId, ...draft } = data.data;
+    return c.json(
+      platform.workspace.pages.createReviewed(
+        spaceId,
+        draft,
+        thread.id,
+        toolCallId,
+      ),
+      201,
+    );
+  });
   app.get('/conversations/:id/page-context', (c) => {
     const thread = platform.workspace.requireThread(c.req.param('id'));
     const dot = platform.workspace.dot(thread.dotId)!;
@@ -52,6 +97,15 @@ export function pageRoutes(platform: Platform) {
       ),
     );
   });
+  app.delete('/spaces/:spaceId/pages/:id', (c) => {
+    const deleted = platform.workspace.pages.delete(
+      c.req.param('spaceId'),
+      c.req.param('id'),
+    );
+    if (!deleted)
+      return c.json({ error: 'Page not found in this Space.' }, 404);
+    return c.json({ ok: true });
+  });
   app.post('/spaces/:spaceId/pages/:id/conversation', async (c) => {
     const data = z
       .object({ dotId: z.string().min(1) })
@@ -90,13 +144,16 @@ export function pageRoutes(platform: Platform) {
       ? c.json({ error: 'Invalid JSON request.' }, 400)
       : error instanceof PageError
         ? c.json({ error: error.message }, error.status)
-        : c.json(
-            {
-              error:
-                'Page operation could not complete. Check Intelligence setup or retry; your draft has not been discarded.',
-            },
-            503,
-          ),
+        : error.message ===
+            'Conversation does not belong to this Dot and owner.'
+          ? c.json({ error: error.message }, 404)
+          : c.json(
+              {
+                error:
+                  'Page operation could not complete. Check Intelligence setup or retry; your draft has not been discarded.',
+              },
+              503,
+            ),
   );
   return app;
 }

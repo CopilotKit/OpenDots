@@ -1,9 +1,23 @@
 import { openPageLink } from './page-navigation';
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { PhoneOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import type { Message } from '@ag-ui/core';
+import type { AssistantMessage, Message } from '@ag-ui/core';
 import type { CallReceipt } from '../shared/types';
+import { voiceReceiptMessagePrefix } from '../shared/voice-receipt';
+import { isScheduledTaskMessage } from '../shared/scheduled-message';
+// These markers only control rendering; they do not confer trust or permissions.
+export function isInternalVoiceReceipt(message: Message): boolean {
+  const metadata = message.metadata;
+  return (
+    message.role === 'user' &&
+    (message.id.startsWith(voiceReceiptMessagePrefix) ||
+      (!!metadata &&
+        typeof metadata === 'object' &&
+        'opendotsSource' in metadata &&
+        metadata.opendotsSource === 'voice_receipt'))
+  );
+}
 function Receipt({ call }: { call: CallReceipt }) {
   return (
     <div className="call-receipt">
@@ -22,9 +36,11 @@ function Receipt({ call }: { call: CallReceipt }) {
 export function ChatTranscript({
   messages,
   calls,
+  renderTools,
 }: {
   messages: Message[];
   calls: CallReceipt[];
+  renderTools?: (message: AssistantMessage) => ReactNode;
 }) {
   const ids = new Set(messages.map((message) => message.id));
   return (
@@ -38,32 +54,40 @@ export function ChatTranscript({
         ))}
       {messages.map((message) => (
         <Fragment key={message.id}>
-          <div className={`chat-bubble ${message.role}`}>
-            <ReactMarkdown
-              components={{
-                img: ({ alt }) => <span>{alt}</span>,
-                a: ({ href, children }) => (
-                  <a
-                    onClick={(event) => {
-                      if (href?.startsWith('/#/spaces/')) {
-                        event.preventDefault();
-                        openPageLink(href);
-                      }
-                    }}
-                    href={href}
-                    target={
-                      href?.startsWith('/#/spaces/') ? undefined : '_blank'
-                    }
-                    rel="noreferrer"
-                  >
-                    {children}
-                  </a>
-                ),
-              }}
+          {typeof message.content === 'string' && message.content.trim() && (
+            <div
+              className={`chat-bubble ${message.role}${isScheduledTaskMessage(message) ? ' scheduled' : ''}`}
             >
-              {String(message.content)}
-            </ReactMarkdown>
-          </div>
+              {isScheduledTaskMessage(message) && (
+                <span className="scheduled-message-label">Scheduled</span>
+              )}
+              <ReactMarkdown
+                components={{
+                  img: ({ alt }) => <span>{alt}</span>,
+                  a: ({ href, children }) => (
+                    <a
+                      onClick={(event) => {
+                        if (href?.startsWith('/#/spaces/')) {
+                          event.preventDefault();
+                          openPageLink(href);
+                        }
+                      }}
+                      href={href}
+                      target={
+                        href?.startsWith('/#/spaces/') ? undefined : '_blank'
+                      }
+                      rel="noreferrer"
+                    >
+                      {children}
+                    </a>
+                  ),
+                }}
+              >
+                {String(message.content)}
+              </ReactMarkdown>
+            </div>
+          )}
+          {message.role === 'assistant' && renderTools?.(message)}
           {calls
             .filter((call) => call.anchorMessageId === message.id)
             .map((call) => (

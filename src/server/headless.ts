@@ -1,9 +1,10 @@
-import {
-  CopilotKitCore,
-  CopilotKitCoreRuntimeConnectionStatus,
-} from '@copilotkit/core';
+import { IntelligenceAgent } from '@copilotkit/core';
 import type { Message } from '@ag-ui/core';
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
+import { voiceReceiptMessagePrefix } from '../shared/voice-receipt.js';
+import { scheduledTaskMessagePrefix } from '../shared/scheduled-message.js';
+
 export function currentTurnText(messages: Message[], error?: Error): string {
   if (error) throw error;
   const content = messages
@@ -13,6 +14,13 @@ export function currentTurnText(messages: Message[], error?: Error): string {
     throw new Error('The current compute turn returned no assistant response.');
   return content;
 }
+
+const runtimeInfoSchema = z.object({
+  mode: z.literal('intelligence'),
+  intelligence: z.object({ wsUrl: z.url() }),
+  agents: z.record(z.string(), z.unknown()),
+});
+
 export async function runThreadTurn(
   runtimeUrl: string,
   headers: Record<string, string>,
@@ -20,73 +28,57 @@ export async function runThreadTurn(
   threadId: string,
   prompt: string,
   signal: AbortSignal,
+  metadata?: Record<string, unknown>,
 ): Promise<string> {
   signal.throwIfAborted();
-  const core = new CopilotKitCore({
+  const response = await fetch(`${runtimeUrl}/info`, { headers, signal });
+  if (!response.ok)
+    throw new Error(`Intelligence runtime returned HTTP ${response.status}.`);
+  const info = runtimeInfoSchema.parse(await response.json());
+  if (!Object.hasOwn(info.agents, dotId))
+    throw new Error('The selected Dot is unavailable in the runtime.');
+  // Core's runtime discovery is browser-only. Use the SDK's Node-compatible
+  // Intelligence agent for voice compute and scheduled server turns.
+  const agent = new IntelligenceAgent({
+    url: info.intelligence.wsUrl,
     runtimeUrl,
+    agentId: dotId,
     headers,
-    deferInitialConnection: true,
-  });
-  const { agent, unregister } = core.registerProxiedAgent({
-    agentId: `worker-${randomUUID()}`,
-    runtimeAgentId: dotId,
+    fetch: (input, init) =>
+      fetch(input, {
+        ...init,
+        signal: init?.signal ? AbortSignal.any([signal, init.signal]) : signal,
+      }),
   });
   agent.threadId = threadId;
   let runError: Error | undefined;
-  const errorSubscription = core.subscribe({
-    onError: ({ error }) => {
-      runError = error;
-    },
-  });
-  const agentSubscription = agent.subscribe({
+  const subscription = agent.subscribe({
     onRunErrorEvent: ({ event }) => {
       runError = new Error(event.message);
     },
   });
-  const stop = () => core.stopAgent({ agent });
+  const stop = () => agent.abortRun();
   signal.addEventListener('abort', stop, { once: true });
   try {
-    await new Promise<void>((resolve, reject) => {
-      const cleanup = () => {
-        clearTimeout(timer);
-        subscription.unsubscribe();
-        signal.removeEventListener('abort', aborted);
-      };
-      const aborted = () => {
-        cleanup();
-        reject(signal.reason ?? new Error('Run cancelled.'));
-      };
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error('Intelligence runtime connection timed out.'));
-      }, 15_000);
-      const subscription = core.subscribe({
-        onRuntimeConnectionStatusChanged: ({ status }) => {
-          if (status === CopilotKitCoreRuntimeConnectionStatus.Connected) {
-            cleanup();
-            resolve();
-          } else if (status === CopilotKitCoreRuntimeConnectionStatus.Error) {
-            cleanup();
-            reject(new Error('Intelligence runtime connection failed.'));
-          }
-        },
-      });
-      signal.addEventListener('abort', aborted, { once: true });
-      core.connect();
+    signal.throwIfAborted();
+    const idPrefix =
+      metadata?.opendotsSource === 'voice_receipt'
+        ? voiceReceiptMessagePrefix
+        : metadata?.opendotsSource === 'scheduled_task'
+          ? scheduledTaskMessagePrefix
+          : '';
+    agent.addMessage({
+      id: `${idPrefix}${randomUUID()}`,
+      role: 'user',
+      content: prompt,
+      ...(metadata ? { metadata } : {}),
     });
-    signal.throwIfAborted();
-    await core.connectAgent({ agent });
-    signal.throwIfAborted();
-    if (runError) throw runError;
-    agent.addMessage({ id: randomUUID(), role: 'user', content: prompt });
-    const result = await core.runAgent({ agent });
+    const result = await agent.runAgent();
     signal.throwIfAborted();
     return currentTurnText(result.newMessages, runError);
   } finally {
     signal.removeEventListener('abort', stop);
-    errorSubscription.unsubscribe();
-    agentSubscription.unsubscribe();
-    unregister();
-    core.setRuntimeUrl(undefined);
+    subscription.unsubscribe();
+    await agent.detachActiveRun();
   }
 }

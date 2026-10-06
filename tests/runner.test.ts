@@ -11,6 +11,35 @@ const config: Config = {
   baseUrl: 'https://model.example/v1',
 };
 afterEach(() => vi.unstubAllGlobals());
+it('records generic scheduled runs without research wording', async () => {
+  const store = new Store(':memory:');
+  const prompt = 'Draft a welcome email.';
+  const result = {
+    text: 'A concise welcome email.',
+    sources: [],
+    sample: false,
+  };
+  const execute = vi.fn(async () => result);
+  const runner = new Runner(store, config, execute);
+  const task = store.createTask(prompt);
+
+  try {
+    await runner.tick();
+
+    const detail = store.detail(task.id)!;
+    expect(detail.task.prompt).toBe(prompt);
+    expect(detail.runs[0].result).toEqual(result);
+    expect(detail.events.map((event) => event.text)).toEqual([
+      'Task added to the queue.',
+      'Run started.',
+      'Run completed.',
+    ]);
+    expect(execute).toHaveBeenCalledOnce();
+  } finally {
+    runner.stop();
+    store.close();
+  }
+});
 it('aborts research when permissions are revoked outside the runner instance', async () => {
   const store = new Store(':memory:');
   const runner = new Runner(store, config);
@@ -34,7 +63,7 @@ it('aborts research when permissions are revoked outside the runner instance', a
   await tick;
   expect(requestSignal?.aborted).toBe(true);
   expect(request).toHaveBeenCalledOnce();
-  expect(store.tasks()[0].status).toBe('queued');
+  expect(store.tasks()[0].status).toBe('interrupted');
   runner.stop();
   store.close();
 });
@@ -67,13 +96,21 @@ it('omits stored memories from research when memory permission is disabled', asy
   store.updateSettings({ memoryAllowed: false });
   const task = store.createTask('Read this sample');
   const runner = new Runner(store, { mode: 'sample', baseUrl: '' });
-  await runner.tick();
-  expect(store.detail(task.id)?.runs[0].result?.text).not.toContain(
-    'Sensitive preference',
-  );
-  store.close();
+  try {
+    await runner.tick();
+    expect(store.detail(task.id)?.runs[0].result?.text).not.toContain(
+      'Sensitive preference',
+    );
+    expect(store.detail(task.id)?.runs[0].result?.sample).toBe(true);
+    expect(store.detail(task.id)?.events.at(-1)?.text).toBe(
+      'Fictional sample brief ready.',
+    );
+  } finally {
+    runner.stop();
+    store.close();
+  }
 });
-it('requeues active work on graceful shutdown instead of losing it', async () => {
+it('holds active work for review on graceful shutdown', async () => {
   const store = new Store(':memory:');
   const runner = new Runner(store, config);
   const fetch = vi.fn(
@@ -92,7 +129,75 @@ it('requeues active work on graceful shutdown instead of losing it', async () =>
   await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
   runner.stop();
   await pending;
-  expect(store.tasks()[0].status).toBe('queued');
+  expect(store.tasks()[0].status).toBe('interrupted');
+  expect(store.claim()).toBeNull();
+  store.action(store.tasks()[0].id, 'run');
   expect(store.claim()).toBeTruthy();
   store.close();
+});
+it('survives a claim failure and runs work on the next tick', async () => {
+  const store = new Store(':memory:');
+  const runner = new Runner(store, { mode: 'sample', baseUrl: '' });
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const claim = vi.spyOn(store, 'claim').mockImplementationOnce(() => {
+    throw new Error('SQLITE_BUSY');
+  });
+  const task = store.createTask('Read this sample');
+  try {
+    await expect(runner.tick()).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledOnce();
+    await runner.tick();
+    expect(claim).toHaveBeenCalledTimes(2);
+    expect(store.detail(task.id)?.runs[0].result).toBeTruthy();
+  } finally {
+    log.mockRestore();
+    store.close();
+  }
+});
+it('survives failure persistence errors and clears active work', async () => {
+  const store = new Store(':memory:');
+  const execute = vi
+    .fn()
+    .mockRejectedValueOnce(new Error('Provider failure'))
+    .mockResolvedValueOnce({ text: 'Recovered', sources: [], memories: [] });
+  const runner = new Runner(store, config, execute);
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const fail = vi.spyOn(store, 'fail').mockImplementationOnce(() => {
+    throw new Error('SQLITE_BUSY');
+  });
+  store.createTask('First');
+  try {
+    await expect(runner.tick()).resolves.toBeUndefined();
+    expect(fail).toHaveBeenCalledOnce();
+    store.createTask('Second');
+    await runner.tick();
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(log).toHaveBeenCalledOnce();
+  } finally {
+    log.mockRestore();
+    store.close();
+  }
+});
+it('aborts work instead of throwing from an ownership timer', async () => {
+  const store = new Store(':memory:');
+  store.createTask('First');
+  const runner = new Runner(
+    store,
+    config,
+    (_claim, _memories, signal) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), {
+          once: true,
+        });
+      }),
+  );
+  vi.spyOn(store, 'owns').mockImplementationOnce(() => {
+    throw new Error('Database unavailable');
+  });
+  try {
+    await expect(runner.tick()).resolves.toBeUndefined();
+    expect(store.tasks()[0].status).toBe('failed');
+  } finally {
+    store.close();
+  }
 });

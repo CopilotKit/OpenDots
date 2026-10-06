@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../src/server/store.js';
+import { WorkspaceStore } from '../src/server/workspace.js';
+import { pageAccess } from '../src/server/page-tools.js';
 
 const resources: { store: Store; dir: string }[] = [];
 function fixture() {
@@ -71,21 +73,82 @@ describe('durable task lifecycle', () => {
       store.finish(claim, { text: 'Late result', sources: [], sample: true }),
     ).toBe(false);
     store.updateSettings({ paused: false });
+    expect(store.claim(Date.now())).toBeNull();
+    expect(store.task(task.id)?.status).toBe('interrupted');
+    store.action(task.id, 'run');
     expect(store.claim(Date.now())?.id).toBe(task.id);
   });
-  it('recovers expired work after restart without duplicate completion', () => {
-    const { store } = fixture();
+  it('holds expired work until the owner retries it', () => {
+    const { store, path } = fixture();
     store.createTask('Recover me');
     const now = Date.now();
     const old = store.claim(now)!;
-    const recovered = store.claim(now + 180_001)!;
-    expect(recovered.id).toBe(old.id);
-    expect(recovered.lease).not.toBe(old.lease);
-    expect(store.finish(old, { text: 'Old', sources: [], sample: true })).toBe(
+    const restarted = new Store(path);
+    try {
+      expect(restarted.claim(now + 180_001)).toBeNull();
+      expect(restarted.task(old.id)?.status).toBe('interrupted');
+      expect(restarted.detail(old.id)?.runs[0].status).toBe('interrupted');
+      restarted.action(old.id, 'run');
+      const recovered = restarted.claim(now + 180_001)!;
+      expect(recovered.id).toBe(old.id);
+      expect(recovered.lease).not.toBe(old.lease);
+      expect(
+        store.finish(old, { text: 'Old', sources: [], sample: true }),
+      ).toBe(false);
+      expect(
+        restarted.finish(recovered, {
+          text: 'New',
+          sources: [],
+          sample: true,
+        }),
+      ).toBe(true);
+    } finally {
+      restarted.close();
+    }
+  });
+  it('claims other queued work while an expired run waits for review', () => {
+    const { store } = fixture();
+    const interrupted = store.createTask('Create the first page');
+    const now = Date.now();
+    const old = store.claim(now)!;
+    const next = store.createTask('Research another topic');
+
+    expect(store.claim(now + 180_001)?.id).toBe(next.id);
+    expect(store.task(interrupted.id)?.status).toBe('interrupted');
+    expect(store.detail(interrupted.id)?.runs[0].status).toBe('interrupted');
+    expect(store.finish(old, { text: 'Late', sources: [], sample: true })).toBe(
       false,
     );
-    expect(
-      store.finish(recovered, { text: 'New', sources: [], sample: true }),
-    ).toBe(true);
+  });
+  it('holds an expired run for review after a local page effect', () => {
+    const { store, path } = fixture();
+    const workspace = new WorkspaceStore(path, 'synthetic-owner');
+    try {
+      const dot = workspace.dots()[0];
+      const thread = workspace.bindThread(
+        'scheduled-thread',
+        dot.id,
+        'Scheduled work',
+      );
+      const task = store.createTask('Create the sample page once');
+      workspace.bindTask(task.id, thread.id);
+      const now = Date.now();
+      const old = store.claim(now)!;
+      const pages = pageAccess(workspace, dot.spaceId, thread.id, () => {});
+      pages.create({ title: 'Sample', content: 'Synthetic fixture body' });
+
+      expect(store.claim(now + 180_001)).toBeNull();
+      expect(store.task(task.id)?.status).toBe('interrupted');
+      expect(store.detail(task.id)?.runs[0].status).toBe('interrupted');
+      expect(workspace.pages.list(dot.spaceId)).toHaveLength(1);
+      expect(
+        store.finish(old, { text: 'Late', sources: [], sample: true }),
+      ).toBe(false);
+
+      store.action(task.id, 'run');
+      expect(store.claim(now + 180_002)?.id).toBe(task.id);
+    } finally {
+      workspace.close();
+    }
   });
 });

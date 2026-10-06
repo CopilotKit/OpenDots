@@ -32,6 +32,14 @@ import type {
   WorkspaceState,
 } from '../shared/types';
 import { api, ApiError, authHeaders, setToken } from './api';
+import { trackSetupStep } from './setup-telemetry';
+import {
+  applyCaptureResult,
+  applyRefreshResult,
+  dismissNotice,
+  visibleNotice,
+  type Notices,
+} from './poll-notice';
 import { Mascot } from './Mascot';
 import { Chat } from './Chat';
 import { ThreadList } from './ThreadList';
@@ -39,6 +47,15 @@ import { ResultPane } from './ResultPane';
 import { TaskRow } from './TaskPresentation';
 import { TaskActions } from './TaskActions';
 import { WorkspaceDialog, type Dialog } from './WorkspaceDialog';
+import { submitComposerOnEnter } from './chat-composer';
+
+function describeFailure(error: unknown, fallback: string) {
+  return {
+    ok: false as const,
+    status: error instanceof ApiError ? error.status : undefined,
+    message: error instanceof Error ? error.message : fallback,
+  };
+}
 
 export function App() {
   const [state, setState] = useState<State>();
@@ -92,7 +109,16 @@ export function App() {
     openPageLink(`#/spaces/${space}${page ? `/pages/${page}` : ''}`);
   };
 
-  const [error, setError] = useState('');
+  const [notices, setNotices] = useState<Notices>({
+    refresh: '',
+    capture: '',
+    action: '',
+  });
+  const error = visibleNotice(notices);
+  const setError = (action: string) =>
+    setNotices((current) =>
+      current.action === action ? current : { ...current, action },
+    );
   const [auth, setAuth] = useState('');
   const [needsAuth, setNeedsAuth] = useState(false);
   const [dialog, setDialog] = useState<Dialog>();
@@ -115,12 +141,15 @@ export function App() {
       setWorkspace(w);
       setNeedsAuth(false);
       setSelectedDot((previous) => previous || w.dots[0]?.id || '');
+      setNotices((current) => applyRefreshResult(current, { ok: true }));
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setNeedsAuth(true);
-      else
-        setError(
-          e instanceof Error ? e.message : 'Could not connect to the server.',
-        );
+      setNotices((current) =>
+        applyRefreshResult(
+          current,
+          describeFailure(e, 'Could not connect to the server.'),
+        ),
+      );
     }
   }, []);
   useEffect(() => {
@@ -135,10 +164,18 @@ export function App() {
     const load = () =>
       void api<Result | null>(`/conversations/${selectedThread}/capture`)
         .then((result) => {
-          if (active) setCapture(result ?? undefined);
+          if (!active) return;
+          setCapture(result ?? undefined);
+          setNotices((current) => applyCaptureResult(current, { ok: true }));
         })
         .catch((e) => {
-          if (active) setError(e.message);
+          if (!active) return;
+          setNotices((current) =>
+            applyCaptureResult(
+              current,
+              describeFailure(e, 'Could not connect to the server.'),
+            ),
+          );
         });
     load();
     const timer = setInterval(load, 3000);
@@ -167,6 +204,17 @@ export function App() {
     (item) => item.id === selectedThread && item.dotId === dot?.id,
   );
   const configured = !!workspace && workspace.setup.missing.length === 0;
+  const setupStep = workspace
+    ? dialog?.type === 'settings'
+      ? 'settings'
+      : configured
+        ? 'ready'
+        : 'setup_required'
+    : undefined;
+  useEffect(() => {
+    if (!setupStep) return;
+    return trackSetupStep(setupStep);
+  }, [setupStep]);
   const chooseDot = (next: Dot) => {
     setSelectedDot(next.id);
     setSelectedThread(
@@ -433,7 +481,7 @@ export function App() {
           >
             <Clock3 size={17} />
             <span>Scheduled & activity</span>
-            <small>{state.tasks.length}</small>
+            {state.tasks.length > 0 && <small>{state.tasks.length}</small>}
           </button>
           <button
             className={`nav-item ${view === 'memories' ? 'active' : ''}`}
@@ -444,7 +492,9 @@ export function App() {
           >
             <BookOpen size={17} />
             <span>Memories</span>
-            <small>{state.memories.length}</small>
+            {state.memories.length > 0 && (
+              <small>{state.memories.length}</small>
+            )}
           </button>
           <button
             className="nav-item"
@@ -528,7 +578,7 @@ export function App() {
             <button
               className="icon-button"
               aria-label="Dismiss error"
-              onClick={() => setError('')}
+              onClick={() => setNotices((current) => dismissNotice(current))}
             >
               <X size={16} />
             </button>
@@ -580,6 +630,7 @@ export function App() {
                   )}
                   paused={state.settings.paused}
                   onSaved={refresh}
+                  onComputer={() => setPane(true)}
                   onSchedule={() =>
                     setDialog({ type: 'schedule', threadId: thread.id })
                   }
@@ -615,6 +666,16 @@ export function App() {
                           Settings to start chatting. Your Spaces and Dot
                           preferences are ready to use.
                         </p>
+                        <p>
+                          Setup and usage metadata is collected by default.{' '}
+                          <a
+                            href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP-TELEMETRY.md"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Tracking and opt-out details
+                          </a>
+                        </p>
                         <a
                           href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP.md"
                           target="_blank"
@@ -642,6 +703,12 @@ export function App() {
                       value={prompt}
                       maxLength={4000}
                       onChange={(e) => setPrompt(e.target.value)}
+                      onKeyDown={(e) =>
+                        submitComposerOnEnter(
+                          e,
+                          configured && !busy && !!prompt.trim(),
+                        )
+                      }
                       disabled={!configured}
                     />
                     <div className="composer-bottom">

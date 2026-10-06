@@ -50,4 +50,5 @@ services:
       retries: 3
 networks:
   computer-control:
-    internal: true
+    # Host-run apps reach the supervisor through its loopback-only published port.
+    driver: bridge

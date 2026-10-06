@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { WorkspaceStore } from '../src/server/workspace.js';
 it('persists nested page content and revision across restart', () => {
   const dir = mkdtempSync(join(tmpdir(), 'dots-pages-'));
@@ -49,5 +50,130 @@ it('rejects cross-space parents, cycles and stale writes without losing content'
   ).toThrow(/changed/);
   expect(store.pages.get(a, root.id).content).toBe('New');
   expect(() => store.pages.get(b, root.id)).toThrow();
+  store.close();
+});
+it('migrates review receipts and retains their original draft after restart', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dots-reviews-'));
+  const path = join(dir, 'db');
+  const legacy = new DatabaseSync(path);
+  legacy.exec(
+    'CREATE TABLE page_reviews(threadId TEXT NOT NULL, toolCallId TEXT NOT NULL, pageId TEXT NOT NULL, spaceId TEXT NOT NULL, PRIMARY KEY(threadId,toolCallId))',
+  );
+  legacy.close();
+  let store = new WorkspaceStore(path, 'owner');
+  const space = store.spaces()[0].id;
+  store.pages.createReviewed(
+    space,
+    { title: 'Original', content: 'Reviewed content' },
+    'thread',
+    'call',
+  );
+  const olderPage = store.pages.create(space, {
+    title: 'Earlier approval',
+    content: 'Earlier draft',
+  });
+  store.close();
+  const oldReceipt = new DatabaseSync(path);
+  oldReceipt
+    .prepare(
+      'INSERT INTO page_reviews (threadId,toolCallId,pageId,spaceId) VALUES (?,?,?,?)',
+    )
+    .run('earlier-thread', 'earlier-call', olderPage.id, space);
+  oldReceipt.close();
+  store = new WorkspaceStore(path, 'owner');
+  expect(store.pages.reviewReceipt('thread', 'call')?.draft).toMatchObject({
+    title: 'Original',
+    content: 'Reviewed content',
+    spaceId: space,
+  });
+  expect(() =>
+    store.pages.createReviewed(
+      space,
+      { title: 'Changed', content: 'Reviewed content' },
+      'thread',
+      'call',
+    ),
+  ).toThrow('different draft');
+  expect(
+    store.pages.reviewReceipt('earlier-thread', 'earlier-call')?.draft,
+  ).toBeNull();
+  expect(
+    store.pages.createReviewed(
+      space,
+      { title: 'Earlier approval', content: 'Earlier draft' },
+      'earlier-thread',
+      'earlier-call',
+    ).id,
+  ).toBe(olderPage.id);
+  store.close();
+  rmSync(dir, { recursive: true });
+});
+
+it('deletes a page and reparents descendants safely', () => {
+  const store = new WorkspaceStore(':memory:', 'owner');
+  const space = store.spaces()[0].id;
+  const root = store.pages.create(space, { title: 'Root' });
+  const child = store.pages.create(space, {
+    title: 'Child',
+    parentId: root.id,
+  });
+  const grandChild = store.pages.create(space, {
+    title: 'Grandchild',
+    parentId: child.id,
+  });
+
+  // Verify deletion of child: grandChild should be reparented to root
+  expect(store.pages.delete(space, child.id)).toBe(true);
+  expect(store.pages.delete(space, child.id)).toBe(false);
+  expect(() => store.pages.get(space, child.id)).toThrow();
+  expect(store.pages.get(space, grandChild.id).parentId).toBe(root.id);
+  // Reparenting bumps the revision so clients holding the old parent resync.
+  expect(store.pages.get(space, grandChild.id).revision).toBe(
+    grandChild.revision + 1,
+  );
+
+  // Verify deletion of root: grandChild should be reparented to null (root level)
+  expect(store.pages.delete(space, root.id)).toBe(true);
+  expect(store.pages.get(space, grandChild.id).parentId).toBeNull();
+  expect(store.pages.list(space)).toHaveLength(1);
+  expect(store.pages.list(space)[0].id).toBe(grandChild.id);
+
+  // Missing space throws
+  expect(() => store.pages.delete('non-existent-space', grandChild.id)).toThrow(
+    /Space not found/,
+  );
+  store.close();
+});
+
+it('drops page thread bindings on delete and never recreates a page from a retried review', () => {
+  const store = new WorkspaceStore(':memory:', 'owner');
+  const space = store.spaces()[0].id;
+  const page = store.pages.create(space, { title: 'Draft' });
+  store.pages.reserveThread(page.id, 'dot', 'thread-1');
+  store.pages.finishThread(page.id, 'dot');
+  expect(store.pages.thread(page.id, 'dot')).toBeDefined();
+  expect(store.pages.delete(space, page.id)).toBe(true);
+  expect(store.pages.thread(page.id, 'dot')).toBeUndefined();
+
+  const reviewed = store.pages.createReviewed(
+    space,
+    { title: 'Reviewed', content: 'Reviewed content' },
+    'review-thread',
+    'call-1',
+  );
+  expect(store.pages.delete(space, reviewed.id)).toBe(true);
+  expect(store.pages.reviewReceipt('review-thread', 'call-1')).toMatchObject({
+    pageId: reviewed.id,
+    spaceId: space,
+  });
+  expect(() =>
+    store.pages.createReviewed(
+      space,
+      { title: 'Reviewed', content: 'Reviewed content' },
+      'review-thread',
+      'call-1',
+    ),
+  ).toThrow(/Page not found/);
+  expect(store.pages.list(space)).toHaveLength(0);
   store.close();
 });

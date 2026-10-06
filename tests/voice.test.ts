@@ -83,6 +83,12 @@ it('binds voice history and compute to the existing thread, deduplicates tools a
     ),
   ).toBe(true);
   expect(f.workspace.call(call.id).status).toBe('ended');
+  expect(f.turn).toHaveBeenLastCalledWith(
+    'thread',
+    expect.stringContaining('Record a short call receipt'),
+    expect.any(AbortSignal),
+    { opendotsSource: 'voice_receipt' },
+  );
   await expect(f.voice.compute(call.id, 'late', 'Research')).rejects.toThrow(
     'ended',
   );
@@ -181,4 +187,144 @@ it('defers paused transcript synchronization and resumes it once without a dupli
   await f.voice.resumePending();
   expect(f.turn).toHaveBeenCalledTimes(1);
   expect(f.workspace.call(call.id).status).toBe('failed');
+});
+
+it('reports rejected provider hangup status without exposing its response body', async () => {
+  const f = fixture();
+  const call = await f.voice.begin(
+    'thread',
+    offer,
+    new AbortController().signal,
+  );
+  f.transport.mockResolvedValueOnce(
+    new Response('sensitive provider details', { status: 409 }),
+  );
+  const ended = await f.voice.end(call.id, 'Confirmed discussion');
+  expect(ended.status).toBe('ended');
+  expect(ended.error).toContain('HTTP 409');
+  expect(ended.error).not.toContain('sensitive provider details');
+});
+it('reports transport hangup failures without exposing transport errors', async () => {
+  const f = fixture();
+  const call = await f.voice.begin(
+    'thread',
+    offer,
+    new AbortController().signal,
+  );
+  f.transport.mockRejectedValueOnce(new Error('sensitive transport details'));
+  const ended = await f.voice.end(call.id, 'Confirmed discussion');
+  expect(ended.error).toBe(
+    'The local call stopped, but provider hangup failed (Error).',
+  );
+});
+
+it('distinguishes provider hangup timeout from transport failure', async () => {
+  const f = fixture();
+  const call = await f.voice.begin(
+    'thread',
+    offer,
+    new AbortController().signal,
+  );
+  f.transport.mockRejectedValueOnce(
+    new DOMException('sensitive timeout details', 'TimeoutError'),
+  );
+  const ended = await f.voice.end(call.id, 'Confirmed discussion');
+  expect(ended.error).toBe(
+    'The local call stopped, but provider hangup timed out.',
+  );
+});
+it('sanitizes custom provider transport error names', async () => {
+  const f = fixture();
+  const call = await f.voice.begin(
+    'thread',
+    offer,
+    new AbortController().signal,
+  );
+  const error = new Error('sensitive transport details');
+  error.name = 'sensitive provider identifier';
+  f.transport.mockRejectedValueOnce(error);
+  const ended = await f.voice.end(call.id, 'Confirmed discussion');
+  expect(ended.error).toBe(
+    'The local call stopped, but provider hangup failed (transport error).',
+  );
+});
+it('allows a rejected compute call to be retried with the same tool ID', async () => {
+  const f = fixture();
+  const call = await f.voice.begin(
+    'thread',
+    offer,
+    new AbortController().signal,
+  );
+  f.voice.activate(call.id);
+  f.turn.mockRejectedValueOnce(new Error('Provider unavailable'));
+  await expect(f.voice.compute(call.id, 'retry', 'Research')).rejects.toThrow(
+    'Provider unavailable',
+  );
+  await expect(f.voice.compute(call.id, 'retry', 'Research')).resolves.toBe(
+    'Current answer',
+  );
+  expect(f.turn).toHaveBeenCalledTimes(2);
+  await f.voice.end(call.id, '');
+});
+it('counts failed compute attempts toward the six-turn limit', async () => {
+  const f = fixture();
+  const call = await f.voice.begin(
+    'thread',
+    offer,
+    new AbortController().signal,
+  );
+  f.voice.activate(call.id);
+  for (let i = 0; i < 6; i++) {
+    f.turn.mockRejectedValueOnce(new Error('Provider unavailable'));
+    await expect(
+      f.voice.compute(call.id, `failed-${i}`, 'Research'),
+    ).rejects.toThrow('Provider unavailable');
+  }
+  await expect(f.voice.compute(call.id, 'success', 'Research')).rejects.toThrow(
+    'six compute-turn limit',
+  );
+  expect(f.turn).toHaveBeenCalledTimes(6);
+  await f.voice.end(call.id, '');
+});
+it('counts a retry of the same tool ID as another attempt', async () => {
+  const f = fixture();
+  const call = await f.voice.begin(
+    'thread',
+    offer,
+    new AbortController().signal,
+  );
+  f.voice.activate(call.id);
+  for (let i = 0; i < 6; i++) {
+    f.turn.mockRejectedValueOnce(new Error('Provider unavailable'));
+    await expect(f.voice.compute(call.id, 'same', 'Research')).rejects.toThrow(
+      'Provider unavailable',
+    );
+  }
+  await expect(f.voice.compute(call.id, 'same', 'Research')).rejects.toThrow(
+    'six compute-turn limit',
+  );
+  expect(f.turn).toHaveBeenCalledTimes(6);
+  await f.voice.end(call.id, '');
+});
+it('keeps successful compute turns cached and enforces the six-turn cap', async () => {
+  const f = fixture();
+  const call = await f.voice.begin(
+    'thread',
+    offer,
+    new AbortController().signal,
+  );
+  f.voice.activate(call.id);
+  for (let i = 0; i < 6; i++) {
+    await expect(f.voice.compute(call.id, String(i), 'Research')).resolves.toBe(
+      'Current answer',
+    );
+  }
+  await expect(f.voice.compute(call.id, '0', 'Research')).resolves.toBe(
+    'Current answer',
+  );
+  expect(f.turn).toHaveBeenCalledTimes(6);
+  await expect(f.voice.compute(call.id, 'extra', 'Research')).rejects.toThrow(
+    'six compute-turn limit',
+  );
+  await f.voice.end(call.id, '');
 });

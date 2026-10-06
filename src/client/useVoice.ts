@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, authHeaders } from './api';
+// A single failed control poll is usually a network flap, not a dead call.
+// Only treat the control connection as lost after this many consecutive
+// poll failures, mirroring the grace period #26 gives the peer connection.
+const CONTROL_POLL_FAILURE_LIMIT = 3;
 export function useVoice(
   threadId: string,
   onSaved: () => void,
@@ -9,7 +13,17 @@ export function useVoice(
     'idle' | 'connecting' | 'active' | 'ending'
   >('idle');
   const generation = useRef(0);
+  const connecting = useRef(false);
+  const ending = useRef(false);
   const [error, setError] = useState('');
+  const [muted, setMuted] = useState(false);
+  const [speakerMuted, setSpeakerMuted] = useState(false);
+  const [startedAt, setStartedAt] = useState<number>();
+  const [phase, setPhase] = useState<'listening' | 'speaking' | 'thinking'>(
+    'listening',
+  );
+  const [caption, setCaption] = useState('');
+  const [userCaption, setUserCaption] = useState('');
   const session = useRef<
     | {
         pc: RTCPeerConnection;
@@ -19,6 +33,8 @@ export function useVoice(
         channel: RTCDataChannel;
         transcript: string[];
         timer?: ReturnType<typeof setTimeout>;
+        controlPollFailures: number;
+        disconnectTimer?: ReturnType<typeof setTimeout>;
         cancelled: boolean;
       }
     | undefined
@@ -35,16 +51,27 @@ export function useVoice(
     current.audio.pause();
     current.audio.srcObject = null;
     clearTimeout(current.timer);
+    clearTimeout(current.disconnectTimer);
   }, []);
   const end = useCallback(async () => {
+    if (ending.current) return;
     generation.current++;
+    connecting.current = false;
     const current = session.current;
     if (!current) {
       setStatus('idle');
       return;
     }
-    closeMedia();
-    session.current = undefined;
+    // Silence the call immediately, while keeping the peer alive until the
+    // provider confirms hangup through the server.
+    current.cancelled = true;
+    current.stream.getTracks().forEach((track) => {
+      track.enabled = false;
+    });
+    current.audio.pause();
+    clearTimeout(current.timer);
+    clearTimeout(current.disconnectTimer);
+    ending.current = true;
     setStatus('ending');
     try {
       if (current.id)
@@ -60,6 +87,9 @@ export function useVoice(
           : 'Call ended, but its receipt could not be saved.',
       );
     } finally {
+      closeMedia();
+      session.current = undefined;
+      ending.current = false;
       setStatus('idle');
     }
   }, [closeMedia, onSaved]);
@@ -68,7 +98,7 @@ export function useVoice(
       generation.current++;
       const current = session.current;
       closeMedia();
-      if (current?.id)
+      if (current?.id && !ending.current)
         void fetch(`/api/voice/calls/${current.id}/end`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -84,26 +114,41 @@ export function useVoice(
   useEffect(() => {
     if (status !== 'active' && status !== 'connecting') return;
     const timer = setInterval(() => {
-      const id = session.current?.id;
+      const current = session.current;
+      const id = current?.id;
       if (id)
         void api<{ endedAt: number | null }>(`/voice/calls/${id}`)
           .then((call) => {
-            if (call.endedAt) void end();
+            if (session.current !== current) return;
+            if (call.endedAt) {
+              void end();
+              return;
+            }
+            current.controlPollFailures = 0;
           })
           .catch(() => {
-            closeMedia();
-            session.current = undefined;
-            setStatus('idle');
+            if (session.current !== current) return;
+            current.controlPollFailures += 1;
+            if (current.controlPollFailures < CONTROL_POLL_FAILURE_LIMIT)
+              return;
             setError('Call control connection was lost.');
+            void end();
           });
     }, 2000);
     return () => clearInterval(timer);
   }, [status, closeMedia, onSaved, end]);
   const start = async () => {
-    if (session.current) return;
+    if (session.current || connecting.current || ending.current) return;
+    connecting.current = true;
     const attempt = ++generation.current;
     setStatus('connecting');
     setError('');
+    setMuted(false);
+    setSpeakerMuted(false);
+    setStartedAt(undefined);
+    setPhase('listening');
+    setCaption('');
+    setUserCaption('');
     let stream: MediaStream | undefined;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -124,34 +169,51 @@ export function useVoice(
         cancelled: false,
         id: undefined as string | undefined,
         timer: undefined as ReturnType<typeof setTimeout> | undefined,
+        controlPollFailures: 0,
+        disconnectTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       };
       session.current = current;
       stream.getTracks().forEach((track) => pc.addTrack(track, stream!));
       pc.ontrack = (event) => {
+        if (current.cancelled) return;
         audio.srcObject = event.streams[0] ?? new MediaStream([event.track]);
-        void audio
-          .play()
-          .catch(() =>
+        void audio.play().catch(() => {
+          if (!current.cancelled)
             setError(
               'Audio playback was blocked. Check your browser audio permissions.',
-            ),
-          );
+            );
+        });
       };
       pc.onconnectionstatechange = () => {
         if (current.cancelled) return;
         if (pc.connectionState === 'connected') {
+          clearTimeout(current.disconnectTimer);
+          current.disconnectTimer = undefined;
           setStatus('active');
+          setStartedAt((value) => value ?? Date.now());
           if (current.id)
             void api(`/voice/calls/${current.id}/active`, 'POST', {}).catch(
-              (e) => setError(e.message),
+              (e) => {
+                if (!current.cancelled) setError(e.message);
+              },
             );
         }
-        if (['failed', 'disconnected'].includes(pc.connectionState)) {
+        if (pc.connectionState === 'disconnected' && !current.disconnectTimer) {
+          current.disconnectTimer = setTimeout(() => {
+            current.disconnectTimer = undefined;
+            if (current.cancelled || pc.connectionState !== 'disconnected')
+              return;
+            setError('The voice connection dropped.');
+            void end();
+          }, 5000);
+        }
+        if (pc.connectionState === 'failed') {
           setError('The voice connection dropped.');
           void end();
         }
       };
       channel.onmessage = async (event) => {
+        if (current.cancelled) return;
         let data: Record<string, unknown>;
         try {
           const parsed: unknown = JSON.parse(String(event.data));
@@ -160,12 +222,30 @@ export function useVoice(
         } catch {
           return;
         }
+        if (data.type === 'input_audio_buffer.speech_started') {
+          setPhase('listening');
+          setCaption('');
+        }
+        if (
+          data.type === 'response.output_audio_transcript.delta' &&
+          typeof data.delta === 'string'
+        ) {
+          setPhase('speaking');
+          setCaption((text) => text + data.delta);
+        }
+        if (data.type === 'output_audio_buffer.stopped') setPhase('listening');
+        if (data.type === 'response.created') {
+          setCaption('');
+          setPhase('thinking');
+        }
         if (typeof data.transcript === 'string') {
           if (
             data.type ===
             'conversation.item.input_audio_transcription.completed'
-          )
+          ) {
             current.transcript.push(`You: ${data.transcript}`);
+            setUserCaption(data.transcript);
+          }
           if (data.type === 'response.output_audio_transcript.done')
             current.transcript.push(`Dot: ${data.transcript}`);
         }
@@ -181,6 +261,7 @@ export function useVoice(
         )
           return;
         let output: string;
+        setPhase('thinking');
         try {
           const args: unknown = JSON.parse(String(data.arguments));
           if (
@@ -232,9 +313,15 @@ export function useVoice(
         return;
       }
       await pc.setRemoteDescription({ type: 'answer', sdp: response.sdp });
+      if (current.cancelled) return;
       current.timer = setTimeout(() => void end(), 15 * 60_000);
     } catch (e) {
-      const id = session.current?.id;
+      if (attempt !== generation.current) {
+        stream?.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      const current = session.current;
+      const id = current?.id;
       if (id)
         void api(`/voice/calls/${id}/end`, 'POST', {
           transcript: '',
@@ -245,7 +332,34 @@ export function useVoice(
       session.current = undefined;
       setStatus('idle');
       setError(e instanceof Error ? e.message : 'Could not connect the call.');
+    } finally {
+      if (attempt === generation.current) connecting.current = false;
     }
   };
-  return { status, error, start, end };
+  const toggleMute = () => {
+    const next = !muted;
+    session.current?.stream.getAudioTracks().forEach((track) => {
+      track.enabled = !next;
+    });
+    setMuted(next);
+  };
+  const toggleSpeaker = () => {
+    const next = !speakerMuted;
+    if (session.current) session.current.audio.muted = next;
+    setSpeakerMuted(next);
+  };
+  return {
+    status,
+    error,
+    start,
+    end,
+    muted,
+    speakerMuted,
+    startedAt,
+    phase,
+    caption,
+    userCaption,
+    toggleMute,
+    toggleSpeaker,
+  };
 }

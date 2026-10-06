@@ -1,8 +1,21 @@
+import { PageReviewCard } from './PageReviewCard';
+import { pageReviewSchema, pageReviewTool } from '../shared/page-review';
+import {
+  connectionActionSchema,
+  connectionActionTool,
+} from '../shared/connection-types';
+import { ConnectionActionCard } from './ConnectionActionCard';
 import { contextualMessage, type PageContext } from './page-context';
 import { api } from './api';
 import type { Page } from '../server/pages';
 import { useEffect, useRef, useState } from 'react';
-import { useAgent, useCopilotKit } from '@copilotkit/react-core/v2';
+import {
+  CopilotChatToolCallsView,
+  useRenderTool,
+  useHumanInTheLoop,
+  useAgent,
+  useCopilotKit,
+} from '@copilotkit/react-core/v2';
 import {
   FilePlus,
   ArrowUp,
@@ -13,10 +26,17 @@ import {
   Square,
   X,
 } from 'lucide-react';
-import { ChatTranscript } from './ChatTranscript';
+import {
+  ComputerToolCard,
+  type ComputerToolRenderProps,
+} from './ComputerToolCard';
+import { ChatTranscript, isInternalVoiceReceipt } from './ChatTranscript';
 import type { CallReceipt, Conversation, Dot } from '../shared/types';
 import { Mascot } from './Mascot';
 import { useVoice } from './useVoice';
+import { CallView } from './CallView';
+import { shouldSubmitComposerOnKeyDown } from './chat-composer';
+
 export function Chat({
   thread,
   dot,
@@ -27,6 +47,7 @@ export function Chat({
   paused,
   onSaved,
   onSchedule,
+  onComputer,
 }: {
   thread: Conversation;
   dot: Dot;
@@ -37,6 +58,7 @@ export function Chat({
   paused: boolean;
   onSaved: () => void;
   onSchedule: () => void;
+  onComputer?: () => void;
 }) {
   const { agent, isReady } = useAgent({
     agentId: `chat-${thread.id}`,
@@ -152,11 +174,72 @@ export function Chat({
   useEffect(() => {
     if (paused && voice.status !== 'idle') void voice.end();
   }, [paused]);
+  useHumanInTheLoop(
+    {
+      name: pageReviewTool.name,
+      description: pageReviewTool.description,
+      parameters: pageReviewSchema,
+      render: (props) => (
+        <PageReviewCard {...props} threadId={thread.id} onSaved={onSaved} />
+      ),
+    },
+    [thread.id, onSaved],
+  );
+  useHumanInTheLoop(
+    {
+      name: connectionActionTool.name,
+      description: connectionActionTool.description,
+      parameters: connectionActionSchema,
+      render: (props) => (
+        <ConnectionActionCard {...props} threadId={thread.id} />
+      ),
+    },
+    [thread.id],
+  );
+  const computerCalls = agent.messages.flatMap((message) =>
+    message.role === 'assistant' ? (message.toolCalls ?? []) : [],
+  );
+  const latestBrowserCall = computerCalls.findLast((call) =>
+    [
+      'navigate',
+      'snapshot',
+      'read',
+      'screenshot',
+      'click',
+      'type',
+      'key',
+      'scroll',
+    ].some((action) => call.function.name === `computer_${action}`),
+  );
+  useRenderTool(
+    {
+      name: '*',
+      render: (props: ComputerToolRenderProps) =>
+        props.name.startsWith('computer_') ? (
+          <ComputerToolCard
+            {...props}
+            dotId={dot.id}
+            dotName={dot.name}
+            running={running}
+            showScreen={props.toolCallId === latestBrowserCall?.id}
+            onExpand={onComputer}
+          />
+        ) : null,
+    },
+    [dot.id, dot.name, running, latestBrowserCall?.id, onComputer],
+  );
   const visible = agent.messages.filter(
     (message) =>
+      !isInternalVoiceReceipt(message) &&
       ['user', 'assistant'].includes(message.role) &&
-      typeof message.content === 'string' &&
-      message.content.trim(),
+      ((typeof message.content === 'string' && message.content.trim()) ||
+        (message.role === 'assistant' &&
+          message.toolCalls?.some(
+            (call) =>
+              call.function.name.startsWith('computer_') ||
+              call.function.name === pageReviewTool.name ||
+              call.function.name === connectionActionTool.name,
+          ))),
   );
   return (
     <div className="live-chat">
@@ -254,7 +337,16 @@ export function Chat({
             </p>
           </div>
         )}
-        <ChatTranscript messages={visible} calls={calls} />
+        <ChatTranscript
+          messages={visible}
+          calls={calls}
+          renderTools={(message) => (
+            <CopilotChatToolCallsView
+              message={message}
+              messages={agent.messages}
+            />
+          )}
+        />
         {running && (
           <div className="thinking">
             <span />
@@ -291,22 +383,11 @@ export function Chat({
           )}
         </div>
       )}
-      {voice.status !== 'idle' && (
-        <div className="voice-strip">
-          <span className="voice-pulse" />
-          {voice.status === 'active'
-            ? 'On a call · compute uses this conversation'
-            : voice.status === 'connecting'
-              ? 'Connecting your microphone…'
-              : 'Saving call receipt…'}
-          <button
-            onClick={() => void voice.end()}
-            disabled={voice.status === 'ending'}
-          >
-            End call
-          </button>
-        </div>
-      )}
+      <CallView
+        key={voice.status === 'idle' ? 'idle' : 'call'}
+        dot={dot}
+        voice={voice}
+      />
       <form
         className="chat-composer"
         onSubmit={(e) => {
@@ -354,7 +435,7 @@ export function Chat({
             maxLength={4000}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (shouldSubmitComposerOnKeyDown(e)) {
                 e.preventDefault();
                 e.currentTarget.form?.requestSubmit();
               }
@@ -382,8 +463,7 @@ export function Chat({
         <div className="chat-compose-note">
           {voiceReady
             ? 'Text and voice, one conversation.'
-            : 'Text is ready. Voice needs separate server configuration.'}{' '}
-          · Public pages only
+            : 'Text is ready. Voice needs separate server configuration.'}
         </div>
       </form>
     </div>
