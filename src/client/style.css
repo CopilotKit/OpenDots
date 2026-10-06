@@ -2196,6 +2196,17 @@ h3 {
   border-radius: 17px 17px 5px 17px;
   box-shadow: 0 2px 4px #478b8710;
 }
+.chat-bubble.scheduled {
+  border: 1px solid #8ab8b2;
+}
+.scheduled-message-label {
+  display: block;
+  margin-bottom: 3px;
+  color: #d4efeb;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+}
 .chat-bubble.assistant {
   align-self: flex-start;
   max-width: 100%;
