@@ -22,7 +22,10 @@ const modelResponse = z.object({
 });
 const closers: Record<string, string> = { ')': '(', ']': '[' };
 export function requestedUrls(prompt: string): string[] {
-  const urls = (prompt.match(/https?:\/\/[^\s<>"']+/gi) ?? []).map((raw) => {
+  // Split Markdown link boundaries so a URL used as a link label does not
+  // swallow the destination: [https://a](https://b) holds two URLs.
+  const text = prompt.replace(/\]\(/g, '] (');
+  const urls = (text.match(/https?:\/\/[^\s<>"']+/gi) ?? []).map((raw) => {
     let url = raw;
     for (;;) {
       const last = url.at(-1)!;

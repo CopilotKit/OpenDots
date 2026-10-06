@@ -115,4 +115,14 @@ describe('research adapters', () => {
       requestedUrls('Read https://example.com twice https://example.com'),
     ).toEqual(['https://example.com']);
   });
+  it('parses Markdown links whose label is also a URL as separate occurrences', () => {
+    expect(
+      requestedUrls('Summarize [https://example.com](https://example.com).'),
+    ).toEqual(['https://example.com']);
+    expect(
+      requestedUrls(
+        'See [https://example.com/label](https://example.com/dest) for details.',
+      ),
+    ).toEqual(['https://example.com/label', 'https://example.com/dest']);
+  });
 });
