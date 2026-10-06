@@ -248,3 +248,83 @@ it('sanitizes custom provider transport error names', async () => {
     'The local call stopped, but provider hangup failed (transport error).',
   );
 });
+it('allows a rejected compute call to be retried with the same tool ID', async () => {
+  const f = fixture();
+  const call = await f.voice.begin(
+    'thread',
+    offer,
+    new AbortController().signal,
+  );
+  f.voice.activate(call.id);
+  f.turn.mockRejectedValueOnce(new Error('Provider unavailable'));
+  await expect(f.voice.compute(call.id, 'retry', 'Research')).rejects.toThrow(
+    'Provider unavailable',
+  );
+  await expect(f.voice.compute(call.id, 'retry', 'Research')).resolves.toBe(
+    'Current answer',
+  );
+  expect(f.turn).toHaveBeenCalledTimes(2);
+  await f.voice.end(call.id, '');
+});
+it('counts failed compute attempts toward the six-turn limit', async () => {
+  const f = fixture();
+  const call = await f.voice.begin(
+    'thread',
+    offer,
+    new AbortController().signal,
+  );
+  f.voice.activate(call.id);
+  for (let i = 0; i < 6; i++) {
+    f.turn.mockRejectedValueOnce(new Error('Provider unavailable'));
+    await expect(
+      f.voice.compute(call.id, `failed-${i}`, 'Research'),
+    ).rejects.toThrow('Provider unavailable');
+  }
+  await expect(f.voice.compute(call.id, 'success', 'Research')).rejects.toThrow(
+    'six compute-turn limit',
+  );
+  expect(f.turn).toHaveBeenCalledTimes(6);
+  await f.voice.end(call.id, '');
+});
+it('counts a retry of the same tool ID as another attempt', async () => {
+  const f = fixture();
+  const call = await f.voice.begin(
+    'thread',
+    offer,
+    new AbortController().signal,
+  );
+  f.voice.activate(call.id);
+  for (let i = 0; i < 6; i++) {
+    f.turn.mockRejectedValueOnce(new Error('Provider unavailable'));
+    await expect(f.voice.compute(call.id, 'same', 'Research')).rejects.toThrow(
+      'Provider unavailable',
+    );
+  }
+  await expect(f.voice.compute(call.id, 'same', 'Research')).rejects.toThrow(
+    'six compute-turn limit',
+  );
+  expect(f.turn).toHaveBeenCalledTimes(6);
+  await f.voice.end(call.id, '');
+});
+it('keeps successful compute turns cached and enforces the six-turn cap', async () => {
+  const f = fixture();
+  const call = await f.voice.begin(
+    'thread',
+    offer,
+    new AbortController().signal,
+  );
+  f.voice.activate(call.id);
+  for (let i = 0; i < 6; i++) {
+    await expect(f.voice.compute(call.id, String(i), 'Research')).resolves.toBe(
+      'Current answer',
+    );
+  }
+  await expect(f.voice.compute(call.id, '0', 'Research')).resolves.toBe(
+    'Current answer',
+  );
+  expect(f.turn).toHaveBeenCalledTimes(6);
+  await expect(f.voice.compute(call.id, 'extra', 'Research')).rejects.toThrow(
+    'six compute-turn limit',
+  );
+  await f.voice.end(call.id, '');
+});

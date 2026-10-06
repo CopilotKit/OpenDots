@@ -26,6 +26,7 @@ export class Store {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+      CREATE TABLE IF NOT EXISTS setup_telemetry (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, prompt TEXT NOT NULL, status TEXT NOT NULL, intervalSeconds INTEGER, nextRunAt INTEGER, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, error TEXT, lease TEXT, leaseUntil INTEGER);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, taskId TEXT NOT NULL, status TEXT NOT NULL, startedAt INTEGER NOT NULL, finishedAt INTEGER, result TEXT, error TEXT);
@@ -37,6 +38,20 @@ export class Store {
     this.db
       .prepare('INSERT OR IGNORE INTO settings VALUES (1, ?)')
       .run(JSON.stringify(defaults));
+  }
+  setupTelemetryState(): string | undefined {
+    return (
+      this.db.prepare('SELECT value FROM setup_telemetry WHERE id=1').get() as
+        { value: string } | undefined
+    )?.value;
+  }
+  saveSetupTelemetryState(value: string) {
+    this.db
+      .prepare('INSERT OR REPLACE INTO setup_telemetry VALUES (1, ?)')
+      .run(value);
+  }
+  clearSetupTelemetry() {
+    this.db.prepare('DELETE FROM setup_telemetry').run();
   }
   close() {
     this.db.close();
@@ -74,8 +89,8 @@ export class Store {
         for (const task of running) {
           this.invalidate(
             task,
-            'queued',
-            'Run stopped because settings changed.',
+            'interrupted',
+            'Run interrupted because settings changed. Review completed effects before retrying.',
           );
         }
       }
@@ -141,9 +156,9 @@ export class Store {
         .run(now, reason, task.lease);
     this.db
       .prepare(
-        'UPDATE tasks SET status=?, lease=NULL, leaseUntil=NULL, updatedAt=? WHERE id=?',
+        'UPDATE tasks SET status=?, lease=NULL, leaseUntil=NULL, updatedAt=?, error=? WHERE id=?',
       )
-      .run(status, now, task.id);
+      .run(status, now, status === 'interrupted' ? reason : null, task.id);
     this.event(task.id, task.lease, reason);
   }
   action(id: string, action: Action): Task | undefined {
@@ -199,8 +214,8 @@ export class Store {
       for (const task of expired)
         this.invalidate(
           task,
-          'queued',
-          'Previous worker lease expired; safely retrying.',
+          'interrupted',
+          'Worker lease expired. Review completed effects before retrying.',
         );
       const task = this.db
         .prepare(
@@ -255,9 +270,9 @@ export class Store {
       return true;
     });
   }
-  release(claim: Claim, reason: string) {
+  interrupt(claim: Claim, reason: string) {
     this.transaction(() => {
-      if (this.owns(claim)) this.invalidate(claim, 'queued', reason);
+      if (this.owns(claim)) this.invalidate(claim, 'interrupted', reason);
     });
   }
   fail(claim: Claim, error: string) {

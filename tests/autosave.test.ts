@@ -154,3 +154,38 @@ it('keeps navigation guarded when typing reverts to the old content during a sav
   expect(autosave.getSnapshot().status).toBe('saved');
   autosave.dispose();
 });
+it('preserves a reverted draft when polling finds a save whose response was lost', async () => {
+  vi.useFakeTimers();
+  const pending = deferred<Page>();
+  const save = vi.fn<SavePage>(() => pending.promise);
+  const autosave = new PageAutosave(save);
+  autosave.receive(page);
+  autosave.edit({ content: 'Temporary' });
+  await vi.advanceTimersByTimeAsync(800);
+  autosave.edit({ content: 'Original' });
+  pending.reject(new Error('Connection lost after the server committed'));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(autosave.getSnapshot()).toMatchObject({
+    status: 'error',
+    draft: { content: 'Original' },
+  });
+
+  autosave.receive({ ...page, content: 'Temporary', revision: 2 });
+  expect(autosave.getSnapshot()).toMatchObject({
+    status: 'conflict',
+    draft: { content: 'Original' },
+    remote: { content: 'Temporary', revision: 2 },
+  });
+  expect(autosave.dirty).toBe(true);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(save).toHaveBeenCalledTimes(1);
+
+  autosave.useLatest();
+  expect(autosave.getSnapshot()).toMatchObject({
+    status: 'saved',
+    draft: { content: 'Temporary' },
+    page: { revision: 2 },
+  });
+  expect(autosave.dirty).toBe(false);
+  autosave.dispose();
+});
