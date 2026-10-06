@@ -5,8 +5,10 @@ import remarkGfm from 'remark-gfm';
 import { pageReviewSchema } from '../shared/page-review';
 import {
   decidePageReview,
+  isDeletedReview,
   matchesReviewedDraft,
   restorePageReview,
+  type DeletedReview,
 } from './page-review-decision';
 import { openPageLink } from './page-navigation';
 import type { ReviewedPage } from '../server/pages';
@@ -28,25 +30,30 @@ export function PageReviewCard({
 }) {
   const draft = pageReviewSchema.safeParse(args);
   const [savedPage, setSavedPage] = useState<ReviewedPage>();
+  const [deletedReview, setDeletedReview] = useState<DeletedReview>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [receiptReady, setReceiptReady] = useState(false);
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const pending = useRef(false);
   const finished = status === 'complete';
-  const conflict = !!savedPage && !matchesReviewedDraft(savedPage, args);
-  const saved = !!savedPage && !conflict;
+  const reviewed = savedPage ?? deletedReview;
+  const conflict = !!reviewed && !matchesReviewedDraft(reviewed, args);
+  const removed = !!deletedReview && !conflict;
+  const saved = (!!savedPage || removed) && !conflict;
   const pageId = savedPage?.id ?? '';
   const spaceId = savedPage?.spaceId ?? '';
   useEffect(() => {
     let active = true;
     setReceiptReady(false);
     setSavedPage(undefined);
+    setDeletedReview(undefined);
     setError('');
     void restorePageReview(threadId, toolCallId)
       .then((page) => {
         if (!active) return;
-        setSavedPage(page ?? undefined);
+        if (isDeletedReview(page)) setDeletedReview(page);
+        else setSavedPage(page ?? undefined);
         setReceiptReady(true);
       })
       .catch((cause) => {
@@ -72,6 +79,19 @@ export function PageReviewCard({
         await respond({
           approved: false,
           message: 'The owner declined this draft. Do not save it.',
+        });
+        return;
+      }
+      if (isDeletedReview(page)) {
+        setSavedPage(undefined);
+        setDeletedReview(page);
+        await respond({
+          approved: true,
+          pageId: page.pageId,
+          spaceId: page.spaceId,
+          deleted: true,
+          message:
+            'The draft was saved, then the owner deleted the page. Do not link it.',
         });
         return;
       }
@@ -102,13 +122,15 @@ export function PageReviewCard({
         <strong>
           {conflict
             ? 'Review changed'
-            : saved
-              ? 'Saved to your Space'
-              : !receiptReady
-                ? 'Checking saved review…'
-                : finished
-                  ? 'Review ended'
-                  : 'Ready for your review'}
+            : removed
+              ? 'Saved, then deleted'
+              : saved
+                ? 'Saved to your Space'
+                : !receiptReady
+                  ? 'Checking saved review…'
+                  : finished
+                    ? 'Review ended'
+                    : 'Ready for your review'}
         </strong>
         <span>
           {conflict
