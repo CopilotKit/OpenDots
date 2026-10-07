@@ -1,6 +1,14 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import {
+  auth,
+  type OAuthClientProvider,
+} from '@modelcontextprotocol/sdk/client/auth.js';
+import {
+  OAUTH_CALLBACK_PATH,
+  StoredOAuthProvider,
+} from './connection-oauth.js';
 import { z } from 'zod';
 import type {
   Connection,
@@ -34,10 +42,17 @@ export type ConnectionInput = z.infer<typeof connectionInput>;
 export type McpTransportFactory = (target: {
   url: string;
   token?: string;
+  authProvider?: OAuthClientProvider;
   signal: AbortSignal;
 }) => Transport;
-export const httpTransport: McpTransportFactory = ({ url, token, signal }) =>
+export const httpTransport: McpTransportFactory = ({
+  url,
+  token,
+  authProvider,
+  signal,
+}) =>
   new StreamableHTTPClientTransport(new URL(url), {
+    authProvider,
     requestInit: token
       ? { headers: { Authorization: `Bearer ${token}` } }
       : undefined,
@@ -81,17 +96,25 @@ export interface ExposedTool {
 // bind to a stored connection, tool, and arguments.
 export function exposedTools(connections: Connection[]): ExposedTool[] {
   const used = new Set<string>();
-  return connections
-    .flatMap((connection) =>
-      connection.tools.map((tool) => {
-        const base = `${slug(connection.name, 20)}__${slug(tool.name, 40)}`;
-        let name = base;
-        for (let n = 2; used.has(name); n++) name = `${base.slice(0, 60)}_${n}`;
-        used.add(name);
-        return { name, connection, tool };
-      }),
-    )
-    .filter(({ tool }) => tool.enabled);
+  return (
+    connections
+      .flatMap((connection) =>
+        connection.tools.map((tool) => {
+          const base = `${slug(connection.name, 20)}__${slug(tool.name, 40)}`;
+          let name = base;
+          for (let n = 2; used.has(name); n++)
+            name = `${base.slice(0, 60)}_${n}`;
+          used.add(name);
+          return { name, connection, tool };
+        }),
+      )
+      // A signed-out connection offers nothing until the owner signs in again.
+      .filter(
+        ({ connection, tool }) =>
+          tool.enabled &&
+          (connection.authMode !== 'oauth' || connection.signedIn),
+      )
+  );
 }
 export function normalizeResult(result: unknown): ConnectionActionResult {
   const envelope = z
@@ -127,20 +150,26 @@ export function normalizeResult(result: unknown): ConnectionActionResult {
         : text,
   };
 }
-const failure = (error: unknown) => {
-  if (!(error instanceof Error))
-    return 'Could not reach the connected service.';
-  if (error.name === 'AbortError' || error.name === 'TimeoutError')
-    return 'The connected service did not respond in time.';
+// OAuth-protected servers surface UnauthorizedError or HTTP 401/403.
+const unauthorized = (error: unknown) => {
+  if (!(error instanceof Error)) return false;
   const status = (error as { code?: unknown }).code;
-  // OAuth-only servers surface UnauthorizedError when no token is supplied.
-  if (
+  return (
     status === 401 ||
     status === 403 ||
     error.name === 'UnauthorizedError' ||
     error.constructor.name === 'UnauthorizedError'
-  )
-    return 'The connected service rejected the credentials. Check the bearer token.';
+  );
+};
+const failure = (error: unknown, authMode: 'token' | 'oauth' = 'token') => {
+  if (!(error instanceof Error))
+    return 'Could not reach the connected service.';
+  if (error.name === 'AbortError' || error.name === 'TimeoutError')
+    return 'The connected service did not respond in time.';
+  if (unauthorized(error))
+    return authMode === 'oauth'
+      ? 'Sign in to this service again.'
+      : 'The connected service rejected the credentials. Check the bearer token.';
   return `Could not reach the connected service${error.message ? `: ${error.message.slice(0, 200)}` : '.'}`;
 };
 export class ConnectionService {
@@ -149,8 +178,18 @@ export class ConnectionService {
     private transport: McpTransportFactory = httpTransport,
     private timeoutMs = 60_000,
   ) {}
+  private target(id: string) {
+    const connection = this.store.get(id);
+    if (!connection) throw new Error('Connection not found.');
+    return {
+      ...this.store.credentials(id),
+      ...(connection.authMode === 'oauth'
+        ? { authProvider: new StoredOAuthProvider(this.store, id) }
+        : {}),
+    };
+  }
   private async session<T>(
-    target: { url: string; token?: string },
+    target: { url: string; token?: string; authProvider?: OAuthClientProvider },
     signal: AbortSignal | undefined,
     use: (client: Client, signal: AbortSignal) => Promise<T>,
   ) {
@@ -169,7 +208,7 @@ export class ConnectionService {
     }
   }
   private async discover(
-    target: { url: string; token?: string },
+    target: { url: string; token?: string; authProvider?: OAuthClientProvider },
     previous: ConnectionTool[] = [],
   ) {
     return this.session(target, undefined, async (client, signal) => {
@@ -209,15 +248,68 @@ export class ConnectionService {
     try {
       tools = await this.discover({ url: value.url, token: value.token });
     } catch (error) {
+      // No token and the server wants one: save it for the owner to sign in.
+      if (!value.token && unauthorized(error))
+        return this.store.create(dotId, value, [], 'oauth');
       throw new Error(failure(error), { cause: error });
     }
     return this.store.create(dotId, value, tools);
+  }
+  // Starts an owner sign-in. Returns the provider's authorization URL for
+  // the owner's browser, or the refreshed connection if already authorized.
+  async signIn(id: string, appOrigin: string) {
+    const connection = this.store.get(id);
+    if (connection?.authMode !== 'oauth')
+      throw new Error('This connection does not use sign-in.');
+    this.store.saveOAuth(id, {
+      redirectUrl: `${appOrigin.replace(/\/+$/, '')}${OAUTH_CALLBACK_PATH}`,
+    });
+    const provider = new StoredOAuthProvider(this.store, id, true);
+    let result: Awaited<ReturnType<typeof auth>>;
+    try {
+      result = await auth(provider, { serverUrl: connection.url });
+    } catch (error) {
+      throw new Error(
+        `Could not start sign-in: ${error instanceof Error ? error.message.slice(0, 200) : 'the service did not respond.'}`,
+        { cause: error },
+      );
+    }
+    if (result === 'AUTHORIZED') return { connection: await this.refresh(id) };
+    const url = provider.authorizationUrl;
+    // The URL comes from the remote server's metadata; only open web pages.
+    if (!url || !['https:', 'http:'].includes(url.protocol))
+      throw new Error('The service returned an invalid sign-in address.');
+    return { authorizationUrl: url.toString() };
+  }
+  async completeSignIn(state: string, code: string) {
+    const id = this.store.takeState(state);
+    if (!id) throw new Error('This sign-in link expired. Start sign-in again.');
+    const connection = this.store.get(id)!;
+    try {
+      await auth(new StoredOAuthProvider(this.store, id), {
+        serverUrl: connection.url,
+        authorizationCode: code,
+      });
+    } catch (error) {
+      throw new Error(
+        `The service did not accept the sign-in: ${error instanceof Error ? error.message.slice(0, 200) : 'unknown error.'}`,
+        { cause: error },
+      );
+    }
+    return this.refresh(id);
+  }
+  signOut(id: string) {
+    const connection = this.store.get(id);
+    if (connection?.authMode !== 'oauth')
+      throw new Error('This connection does not use sign-in.');
+    this.store.saveOAuth(id, { tokens: undefined, verifier: null });
+    return this.store.get(id)!;
   }
   async refresh(id: string) {
     const connection = this.store.get(id);
     if (!connection) throw new Error('Connection not found.');
     try {
-      const discovered = await this.discover(this.store.credentials(id));
+      const discovered = await this.discover(this.target(id));
       // Owner changes made while discovery ran win: merge against the
       // settings as they are now, not as they were when it started.
       const current = this.store.get(id);
@@ -236,7 +328,7 @@ export class ConnectionService {
         }),
       );
     } catch (error) {
-      return this.store.setError(id, failure(error));
+      return this.store.setError(id, failure(error, connection.authMode));
     }
   }
   setTool(
@@ -285,7 +377,7 @@ export class ConnectionService {
   ): Promise<ConnectionActionResult> {
     try {
       return await this.session(
-        this.store.credentials(exposed.connection.id),
+        this.target(exposed.connection.id),
         signal,
         async (client, bounded) =>
           normalizeResult(
@@ -297,7 +389,10 @@ export class ConnectionService {
           ),
       );
     } catch (error) {
-      return { isError: true, text: failure(error) };
+      return {
+        isError: true,
+        text: failure(error, exposed.connection.authMode),
+      };
     }
   }
 }

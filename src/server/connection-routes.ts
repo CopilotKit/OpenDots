@@ -10,6 +10,7 @@ import { connectionInput, type ConnectionService } from './connections.js';
 export function connectionRoutes(
   workspace: WorkspaceStore,
   connections: ConnectionService,
+  publicUrl?: string,
 ) {
   const app = new Hono();
   app.onError((error, c) =>
@@ -46,6 +47,18 @@ export function connectionRoutes(
   );
   app.post('/connections/:id/refresh', async (c) =>
     c.json(await connections.refresh(owned(c.req.param('id')).id)),
+  );
+  // The callback must return to the address the owner's browser is using.
+  app.post('/connections/:id/sign-in', async (c) =>
+    c.json(
+      await connections.signIn(
+        owned(c.req.param('id')).id,
+        publicUrl ?? new URL(c.req.url).origin,
+      ),
+    ),
+  );
+  app.post('/connections/:id/sign-out', (c) =>
+    c.json(connections.signOut(owned(c.req.param('id')).id)),
   );
   app.patch('/connections/:id/tools/:name', async (c) => {
     const patch = z
@@ -146,6 +159,58 @@ export function connectionRoutes(
     const result = await connections.call(exposed, approval.arguments);
     connections.store.finishAction(thread.id, body.toolCallId, result);
     return c.json(result);
+  });
+  return app;
+}
+const escape = (value: string) =>
+  value.replace(
+    /[&<>"']/g,
+    (char) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        char
+      ]!,
+  );
+const page = (title: string, body: string) =>
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)}</title><style>body{font-family:-apple-system,system-ui,sans-serif;max-width:420px;margin:15vh auto;padding:0 16px;color:#242424;background:#fff}h1{font-size:20px}p{color:#6b6b6b;line-height:1.6}a{color:#242424}@media (prefers-color-scheme:dark){body{color:#eee;background:#1b1b1b}p{color:#a6a6a6}a{color:#eee}}</style></head><body><h1>${escape(title)}</h1><p>${escape(body)}</p><p><a href="/">Back to OpenDots</a></p></body></html>`;
+// Where the service sends the owner's browser after sign-in. It sits outside
+// /api because a redirect cannot carry the owner token; the single-use,
+// expiring state ties it to a sign-in the owner started.
+export function oauthCallbackRoute(connections: ConnectionService) {
+  const app = new Hono();
+  app.get('/', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    const { code, state, error } = c.req.query();
+    if (error || !code || !state)
+      return c.html(
+        page(
+          'Sign-in was not completed',
+          error === 'access_denied'
+            ? 'Access was denied. You can try again from the Dot settings.'
+            : 'The service did not return a sign-in code. Try again from the Dot settings.',
+        ),
+        400,
+      );
+    try {
+      const connection = await connections.completeSignIn(state, code);
+      return c.html(
+        connection.error
+          ? page(`Signed in to ${connection.name}`, connection.error)
+          : page(
+              `Signed in to ${connection.name}`,
+              'You can close this tab and return to OpenDots. Your Dot can use its tools now.',
+            ),
+      );
+    } catch (cause) {
+      return c.html(
+        page(
+          'Sign-in failed',
+          cause instanceof Error
+            ? cause.message
+            : 'Try again from the Dot settings.',
+        ),
+        400,
+      );
+    }
   });
   return app;
 }

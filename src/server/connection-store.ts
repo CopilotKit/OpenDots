@@ -5,15 +5,34 @@ import type {
   ConnectionActionResult,
   ConnectionTool,
 } from '../shared/connection-types.js';
-type Row = Omit<Connection, 'hasToken' | 'tools'> & {
+type Row = Omit<Connection, 'hasToken' | 'signedIn' | 'tools'> & {
   token: string | null;
   tools: string;
 };
+// OAuth client state for one connection, kept server-side only.
+export interface OAuthState {
+  redirectUrl: string | null;
+  client: unknown;
+  tokens: unknown;
+  verifier: string | null;
+  discovery: unknown;
+}
+const oauthJson = ['client', 'tokens', 'discovery'] as const;
 export class ConnectionStore {
   constructor(private db: DatabaseSync) {
     db.exec(`CREATE TABLE IF NOT EXISTS mcp_connections(id TEXT PRIMARY KEY, dotId TEXT NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL, token TEXT, tools TEXT NOT NULL, error TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS mcp_oauth(connectionId TEXT PRIMARY KEY, redirectUrl TEXT, client TEXT, tokens TEXT, verifier TEXT, discovery TEXT, state TEXT, stateExpires INTEGER);
       CREATE TABLE IF NOT EXISTS mcp_approvals(id TEXT PRIMARY KEY, threadId TEXT NOT NULL, dotId TEXT NOT NULL, connectionId TEXT NOT NULL, tool TEXT NOT NULL, arguments TEXT NOT NULL, createdAt INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS mcp_actions(threadId TEXT NOT NULL, toolCallId TEXT NOT NULL, connectionId TEXT NOT NULL, tool TEXT NOT NULL, status TEXT NOT NULL, result TEXT, createdAt INTEGER NOT NULL, PRIMARY KEY(threadId, toolCallId));`);
+    if (
+      !db
+        .prepare('PRAGMA table_info(mcp_connections)')
+        .all()
+        .some((column) => column.name === 'authMode')
+    )
+      db.exec(
+        "ALTER TABLE mcp_connections ADD COLUMN authMode TEXT NOT NULL DEFAULT 'token'",
+      );
     // A receipt belongs to the approval that produced it.
     if (
       !db
@@ -31,7 +50,12 @@ export class ConnectionStore {
       .all(...(dotId ? [dotId] : [])) as unknown as Row[];
   }
   private view({ token, tools, ...row }: Row): Connection {
-    return { ...row, hasToken: !!token, tools: JSON.parse(tools) };
+    return {
+      ...row,
+      hasToken: !!token,
+      signedIn: row.authMode === 'oauth' && !!this.oauth(row.id).tokens,
+      tools: JSON.parse(tools),
+    };
   }
   list(dotId: string): Connection[] {
     return this.rows(dotId).map((row) => this.view(row));
@@ -50,12 +74,13 @@ export class ConnectionStore {
     dotId: string,
     value: { name: string; url: string; token?: string },
     tools: ConnectionTool[],
+    authMode: Connection['authMode'] = 'token',
   ): Connection {
     const id = randomUUID();
     const now = Date.now();
     this.db
       .prepare(
-        'INSERT INTO mcp_connections VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)',
+        'INSERT INTO mcp_connections (id, dotId, name, url, token, tools, error, createdAt, updatedAt, authMode) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)',
       )
       .run(
         id,
@@ -66,6 +91,7 @@ export class ConnectionStore {
         JSON.stringify(tools),
         now,
         now,
+        authMode,
       );
     return this.get(id)!;
   }
@@ -84,10 +110,76 @@ export class ConnectionStore {
     return this.get(id)!;
   }
   remove(id: string) {
+    this.db.prepare('DELETE FROM mcp_oauth WHERE connectionId=?').run(id);
     return (
       this.db.prepare('DELETE FROM mcp_connections WHERE id=?').run(id)
         .changes > 0
     );
+  }
+  oauth(id: string): OAuthState {
+    const row = this.db
+      .prepare('SELECT * FROM mcp_oauth WHERE connectionId=?')
+      .get(id);
+    const parse = (value: unknown) =>
+      typeof value === 'string' ? JSON.parse(value) : undefined;
+    return {
+      redirectUrl:
+        typeof row?.redirectUrl === 'string' ? row.redirectUrl : null,
+      client: parse(row?.client),
+      tokens: parse(row?.tokens),
+      verifier: typeof row?.verifier === 'string' ? row.verifier : null,
+      discovery: parse(row?.discovery),
+    };
+  }
+  saveOAuth(id: string, patch: Partial<OAuthState>) {
+    const next = { ...this.oauth(id), ...patch };
+    const json = Object.fromEntries(
+      oauthJson.map((key) => [
+        key,
+        next[key] === undefined ? null : JSON.stringify(next[key]),
+      ]),
+    );
+    this.db
+      .prepare(
+        `INSERT INTO mcp_oauth (connectionId, redirectUrl, client, tokens, verifier, discovery) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(connectionId) DO UPDATE SET redirectUrl=excluded.redirectUrl, client=excluded.client, tokens=excluded.tokens, verifier=excluded.verifier, discovery=excluded.discovery`,
+      )
+      .run(
+        id,
+        next.redirectUrl,
+        json.client,
+        json.tokens,
+        next.verifier,
+        json.discovery,
+      );
+    // Signing in or out changes what the Dot can do: stop active turns.
+    if ('tokens' in patch)
+      this.db
+        .prepare('UPDATE mcp_connections SET updatedAt=? WHERE id=?')
+        .run(this.tick(id), id);
+  }
+  // One pending sign-in per connection; the state is single-use.
+  setState(id: string, state: string, expires: number) {
+    this.saveOAuth(id, {});
+    this.db
+      .prepare(
+        'UPDATE mcp_oauth SET state=?, stateExpires=? WHERE connectionId=?',
+      )
+      .run(state, expires, id);
+  }
+  takeState(state: string) {
+    const row = this.db
+      .prepare('SELECT connectionId, stateExpires FROM mcp_oauth WHERE state=?')
+      .get(state);
+    if (!row) return undefined;
+    this.db
+      .prepare(
+        'UPDATE mcp_oauth SET state=NULL, stateExpires=NULL WHERE connectionId=?',
+      )
+      .run(row.connectionId);
+    return Number(row.stateExpires) > Date.now()
+      ? String(row.connectionId)
+      : undefined;
   }
   // Running turns compare this to stop as soon as the owner changes access.
   fingerprint(dotId: string) {
