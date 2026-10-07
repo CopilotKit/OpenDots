@@ -6,6 +6,7 @@ import { completion } from './fixtures/model-stream.js';
 import { Store } from '../src/server/store.js';
 import { WorkspaceStore } from '../src/server/workspace.js';
 import { pageReviewTool } from '../src/shared/page-review.js';
+import { connectionActionTool } from '../src/shared/connection-types.js';
 
 const databases: Array<{ close(): void }> = [];
 afterEach(() => {
@@ -248,6 +249,59 @@ it('aborts the TanStack provider request when the owner pauses work', async () =
   f.store.updateSettings({ paused: true });
   await finished;
   expect(signal.aborted).toBe(true);
+});
+
+it('offers connected tools to the model and the approval tool only when the web client can show it', async () => {
+  const f = fixture();
+  f.workspace.connections.create(
+    f.dot.id,
+    { name: 'Mail', url: 'https://mail.example.com/mcp' },
+    [
+      {
+        name: 'send_mail',
+        title: 'Send mail',
+        description: 'Send an email.',
+        inputSchema: {
+          type: 'object',
+          properties: { to: { type: 'string' } },
+        },
+        readOnly: false,
+        enabled: true,
+        requiresApproval: true,
+      },
+    ],
+  );
+  const toolNames = async (clientTools: RunAgentInput['tools']) => {
+    const network = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        completion({ role: 'assistant', content: 'Ready.' }),
+      );
+    await lastValueFrom(
+      f.agent
+        .clone()
+        .run({ ...f.input, tools: clientTools })
+        .pipe(toArray()),
+    );
+    const body = JSON.parse(String(network.mock.calls[0][1]?.body)) as {
+      tools: { function: { name: string } }[];
+    };
+    network.mockRestore();
+    return body.tools.map((tool) => tool.function.name);
+  };
+  const web = await toolNames([
+    {
+      name: connectionActionTool.name,
+      description: 'client copy',
+      parameters: {},
+    },
+  ]);
+  expect(web).toEqual(
+    expect.arrayContaining(['mail__send_mail', connectionActionTool.name]),
+  );
+  const headless = await toolNames([]);
+  expect(headless).toContain('mail__send_mail');
+  expect(headless).not.toContain(connectionActionTool.name);
 });
 
 it('tells the model the current time so scheduled runs do not invent one', async () => {

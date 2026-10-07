@@ -3807,6 +3807,7 @@ h3 {
   color: #a33e35;
 }
 
+/* theme: fixed .call-view */
 /* A focused voice surface, with chat one click away. */
 .call-view {
   position: fixed;
@@ -4013,6 +4014,61 @@ h3 {
   color: #c9e8dd;
 }
 
+/* theme: end */
+
+/* Dark theme: colors are derived at build time (src/build/dark-theme.ts);
+   this only tells the browser to draw native controls dark too. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+.appearance-fields {
+  border: 0;
+  margin: 18px 0 0;
+  padding: 0;
+}
+.appearance-fields legend {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f4f4f4;
+}
+.segmented label {
+  position: relative;
+}
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.segmented span {
+  display: block;
+  padding: 6px 14px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: #6b6b6b;
+}
+.segmented input:checked + span {
+  background: #fff;
+  color: #242424;
+  box-shadow: 0 1px 2px #0000001a;
+}
+.segmented input:focus-visible + span {
+  outline: 2px solid #242424;
+  outline-offset: 1px;
+}
+.appearance-fields .muted {
+  margin: 6px 0 0;
+  font-size: 11px;
+}
+
 /* Polish: one ink accent everywhere, readable secondary text (WCAG AA), and
    disabled controls that look disabled. Later compact-chrome layers moved
    the app to ink; these older lavender surfaces now follow it. */
@@ -4086,4 +4142,141 @@ h3 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Connected MCP services: Dot settings and in-chat approvals. */
+.connection {
+  border-top: 1px solid var(--line);
+  padding: 12px 0 4px;
+}
+.connection-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.connection-head > span {
+  flex: 1;
+  min-width: 0;
+}
+.connection-head strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+}
+.connection-head small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.connection-tools {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.connection-tools li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.connection-tools .permission-row {
+  flex: 1;
+  min-width: 0;
+  margin: 10px 0;
+}
+.connection-tools .permission-row small {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.connection-tools em {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--lavender);
+  color: var(--muted);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 500;
+}
+.connection-approval {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 11px;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.connection-approval input {
+  accent-color: #8799d4;
+}
+.connection-add {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  margin-top: 8px;
+}
+.connection-add .field-label {
+  margin: 0;
+}
+.connection-connect {
+  justify-self: start;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.connection-connect:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.connection-action-card .page-review-body h3 {
+  font-size: 15px;
+  letter-spacing: -0.2px;
+}
+.connection-action-args {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.connection-action-args div {
+  display: grid;
+  grid-template-columns: minmax(70px, 120px) 1fr;
+  gap: 12px;
+}
+.connection-action-args dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.connection-action-args dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.connection-action-result {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f4f7f4;
+  font-size: 11px;
+}
+.connection-action-result.failed {
+  background: #fbf1f0;
+  color: #a33e35;
+}
+.connection-action-result pre {
+  margin: 6px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
 }

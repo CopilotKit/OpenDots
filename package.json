@@ -65,6 +65,7 @@
     "cross-env": "^10.1.0",
     "eslint": "^10.11.0",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "postcss": "^8.5.28",
     "prettier": "^3.9.9",
     "react-test-renderer": "^19.3.0",
     "tsx": "^4.23.15",
