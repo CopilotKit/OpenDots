@@ -4,6 +4,7 @@ import { contextualMessage, type PageContext } from './page-context';
 import { api } from './api';
 import type { Page } from '../server/pages';
 import { useEffect, useRef, useState } from 'react';
+import { CopilotKitCoreErrorCode } from '@copilotkit/core';
 import {
   CopilotChatToolCallsView,
   useRenderTool,
@@ -92,6 +93,8 @@ export function Chat({
   const [source, setSource] = useState('');
   const [sourceOpen, setSourceOpen] = useState(false);
   const [error, setError] = useState('');
+  const [runError, setRunError] = useState('');
+  const chatError = error || runError;
   const [loaded, setLoaded] = useState(false);
   const [running, setRunning] = useState(false);
   const voice = useVoice(thread.id, onSaved, agent.messages.at(-1)?.id);
@@ -99,12 +102,21 @@ export function Chat({
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const subscription = copilotkit.subscribe({
-      onError: ({ error }) => setError(error.message),
+      onError: ({ error, code }) => {
+        if (
+          code === CopilotKitCoreErrorCode.AGENT_RUN_ERROR_EVENT ||
+          code === CopilotKitCoreErrorCode.AGENT_RUN_FAILED_EVENT ||
+          code === CopilotKitCoreErrorCode.AGENT_RUN_FAILED ||
+          code === CopilotKitCoreErrorCode.AGENT_THREAD_LOCKED
+        )
+          setRunError(error.message);
+        else setError(error.message);
+      },
     });
     const events = agent.subscribe({
-      onRunErrorEvent: ({ event }) => setError(event.message),
+      onRunErrorEvent: ({ event }) => setRunError(event.message),
       onRunFinishedEvent: ({ outcome }) => {
-        if (outcome === 'success') setError('');
+        if (outcome === 'success') setRunError('');
       },
     });
     return () => {
@@ -133,6 +145,7 @@ export function Chat({
   const send = async (text: string) => {
     if (!text.trim() || running || !loaded || !contextReady || paused) return;
     setError('');
+    setRunError('');
     setRunning(true);
     agent.addMessage({
       id: crypto.randomUUID(),
@@ -150,7 +163,7 @@ export function Chat({
         );
       onSaved();
     } catch (e) {
-      setError(
+      setRunError(
         e instanceof Error
           ? e.message
           : 'The turn failed. Your conversation remains saved.',
@@ -351,13 +364,14 @@ export function Chat({
           </button>
         </div>
       )}
-      {(error || voice.error) && (
+      {(chatError || voice.error) && (
         <div className="chat-error" role="alert">
-          {error || voice.error}
-          {error && (
+          {chatError || voice.error}
+          {chatError && (
             <button
               onClick={() => {
                 setError('');
+                setRunError('');
                 void copilotkit
                   .connectAgent({ agent })
                   .then(() => setLoaded(true))
