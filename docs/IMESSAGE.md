@@ -29,6 +29,7 @@ The bridge works only while OpenDots runs natively on that Mac and the Mac is si
 - Several quick messages are combined into one turn. Replies are sent as plain text, with Markdown removed.
 - Message history is never answered. On first start the bridge begins at the newest message. After a restart, messages older than an hour are skipped.
 - When OpenDots is paused, the Dot replies that it is paused.
+- Connection tools that need approval (see [Connections](CONNECTIONS.md)) cannot be approved over iMessage, so the Dot asks you to continue in the web app.
 
 ## Security notes
 
