@@ -113,6 +113,7 @@ export interface SetupStatus {
   browser: boolean;
   voice: boolean;
   slack: string;
+  sendblue: string;
   missing: string[];
 }
 export interface WorkspaceState {
