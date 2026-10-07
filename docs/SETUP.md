@@ -246,9 +246,11 @@ Local tests exercise the webhook, routing, conversation storage, and send reques
 
 - Only one-to-one texts received on the assigned line from an allowed number start a turn. Group messages, delivery receipts, and outbound echoes are ignored.
 - Several texts that arrive while the Dot is still answering are combined into one turn. Up to 32 texts can wait; beyond that the webhook answers 503 and Sendblue retries.
+- Each reply, including creating the sender's conversation, has a two-minute deadline. Past it, the sender gets a short error reply and the next text in line proceeds.
 - Replies are plain text with Markdown removed. Long replies are split into parts of at most 1,500 characters, which stays within the SMS length limit.
 - Attachments are not downloaded. The Dot sees a note that media was attached.
 - Scheduled tasks and other Dot conversations do not send texts. Reactions, typing indicators, and group chats are not supported.
+- Texted turns run on the server like scheduled tasks, without the web app's approval cards. Review-before-save and connection actions that need owner approval are not available from a text.
 - Sendblue accepting a reply (`QUEUED`) does not mean the phone received it. Sendblue has no idempotency key, so OpenDots never resends a reply that Sendblue rejected or did not confirm; a request that timed out may still be delivered. Check Sendblue's message history before resending manually. Failures are logged without message content.
 - Sendblue can deliver a webhook more than once. OpenDots answers each message handle once and remembers handles for seven days in its SQLite database. Texts received while OpenDots stops may go unanswered; send them again.
 
