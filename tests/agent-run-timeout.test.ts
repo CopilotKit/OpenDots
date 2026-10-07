@@ -1,4 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { EventType, type RunAgentInput } from '@ag-ui/core';
 import { lastValueFrom, toArray } from 'rxjs';
 import { DotAgent } from '../src/server/dot-agent.js';
@@ -11,6 +14,16 @@ import { Store } from '../src/server/store.js';
 import { WorkspaceStore } from '../src/server/workspace.js';
 
 const resources: Array<{ close(): void }> = [];
+function sharedStores() {
+  const dir = mkdtempSync(join(tmpdir(), 'opendots-timeout-'));
+  const path = join(dir, 'test.sqlite');
+  const first = new Store(path);
+  const second = new Store(path);
+  resources.push(first, second, {
+    close: () => rmSync(dir, { recursive: true, force: true }),
+  });
+  return { first, second };
+}
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -108,4 +121,103 @@ it('uses the configured timeout for scheduled/background runs', async () => {
   await pending;
   expect(signal?.aborted).toBe(true);
   expect(store.tasks()[0].status).toBe('failed');
+});
+
+it('completes a longer background run after another worker checks the old lease deadline', async () => {
+  vi.useFakeTimers();
+  const { first, second } = sharedStores();
+  const result = {
+    text: 'Finished after 200 seconds',
+    sources: [],
+    sample: true,
+  };
+  let signal: AbortSignal | undefined;
+  const runner = new Runner(
+    first,
+    { mode: 'sample', baseUrl: '' },
+    (_claim, _memories, runSignal) =>
+      new Promise((resolve, reject) => {
+        signal = runSignal;
+        const timer = setTimeout(() => resolve(result), 200_000);
+        runSignal.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            reject(runSignal.reason);
+          },
+          { once: true },
+        );
+      }),
+    240_000,
+  );
+  const competingExecute = vi.fn().mockResolvedValue(result);
+  const competing = new Runner(
+    second,
+    { mode: 'sample', baseUrl: '' },
+    competingExecute,
+  );
+  const task = first.createTask('Long-running task');
+  const pending = runner.tick();
+  const lease = first.task(task.id)?.lease;
+  try {
+    await vi.advanceTimersByTimeAsync(180_001);
+    await competing.tick();
+    expect(second.task(task.id)?.status).toBe('running');
+    expect(second.task(task.id)?.lease).toBe(lease);
+    expect(signal?.aborted).toBe(false);
+    expect(competingExecute).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    await pending;
+    expect(second.task(task.id)?.status).toBe('completed');
+    expect(second.detail(task.id)?.runs).toEqual([
+      expect.objectContaining({ status: 'completed', result }),
+    ]);
+  } finally {
+    runner.stop();
+    competing.stop();
+    await pending;
+  }
+});
+
+it('still times out a longer background run after another worker checks its lease', async () => {
+  vi.useFakeTimers();
+  const { first, second } = sharedStores();
+  let signal: AbortSignal | undefined;
+  const runner = new Runner(
+    first,
+    { mode: 'sample', baseUrl: '' },
+    (_claim, _memories, runSignal) =>
+      new Promise((_resolve, reject) => {
+        signal = runSignal;
+        runSignal.addEventListener('abort', () => reject(runSignal.reason), {
+          once: true,
+        });
+      }),
+    240_000,
+  );
+  const competing = new Runner(second, { mode: 'sample', baseUrl: '' });
+  const task = first.createTask('Long-running task');
+  const pending = runner.tick();
+  try {
+    await vi.advanceTimersByTimeAsync(180_001);
+    await competing.tick();
+    expect(second.task(task.id)?.status).toBe('running');
+    expect(signal?.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await pending;
+    expect(signal?.aborted).toBe(true);
+    expect(second.task(task.id)?.status).toBe('failed');
+    expect(second.detail(task.id)?.runs).toEqual([
+      expect.objectContaining({
+        status: 'failed',
+        error: 'Research exceeded the 240 second time limit.',
+      }),
+    ]);
+  } finally {
+    runner.stop();
+    competing.stop();
+    await pending;
+  }
 });

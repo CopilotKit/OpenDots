@@ -1,4 +1,4 @@
-import { Store } from './store.js';
+import { DEFAULT_WORKER_LEASE_MS, Store } from './store.js';
 import type { Result, Memory } from '../shared/types.js';
 import type { Claim } from './store.js';
 import { research, type Config } from './research.js';
@@ -55,7 +55,11 @@ export class Runner {
   }
   private async runTick() {
     if (this.active.size) return;
-    const claim = this.store.claim();
+    // Leave time to persist the outcome after the configured run timeout.
+    const claim = this.store.claim(
+      Date.now(),
+      Math.max(DEFAULT_WORKER_LEASE_MS, this.runTimeoutMs * 2),
+    );
     if (!claim) return;
     const controller = new AbortController();
     this.active.set(claim.id, controller);
