@@ -3,7 +3,7 @@ import { createApp } from '../src/server/app.js';
 import { Store } from '../src/server/store.js';
 import { Runner } from '../src/server/runner.js';
 import type { Config } from '../src/server/research.js';
-import { resolveAppOrigins } from '../src/server/app-origin.js';
+import { resolveAppOrigins } from '../src/config/env.js';
 const stores: Store[] = [];
 const config: Config = { mode: 'sample', baseUrl: 'https://api.openai.com/v1' };
 function fixture(token?: string, origin?: string | string[]) {

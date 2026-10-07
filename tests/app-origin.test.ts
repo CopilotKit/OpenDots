@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAppOrigins } from '../src/server/app-origin.js';
+import { resolveAppOrigins } from '../src/config/env.js';
 
 describe('application origin configuration', () => {
   it('allows both loopback browser origins by default in development', () => {

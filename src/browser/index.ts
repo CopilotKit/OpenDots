@@ -6,10 +6,10 @@ import { chromium } from 'playwright';
 import { z } from 'zod';
 import { validateUrl } from './security.js';
 import { readResource } from './transport.js';
+import { parseBrowserEnv } from '../config/env.js';
 
-const secret = process.env.BROWSER_SECRET;
-if (!secret || secret.length < 24)
-  throw new Error('BROWSER_SECRET must be at least 24 characters.');
+const browserEnv = parseBrowserEnv();
+const secret = browserEnv.BROWSER_SECRET;
 const app = new Hono<{ Bindings: HttpBindings }>();
 app.use('*', bodyLimit({ maxSize: 16_384 }));
 app.use('*', async (c, next) => {
@@ -130,6 +130,6 @@ app.post('/browse', async (c) => {
 app.get('/health', (c) => c.json({ ok: true }));
 serve({
   fetch: app.fetch,
-  hostname: process.env.BROWSER_HOST ?? '127.0.0.1',
-  port: Number(process.env.BROWSER_PORT ?? 4311),
+  hostname: browserEnv.BROWSER_HOST,
+  port: browserEnv.BROWSER_PORT,
 });
