@@ -1,4 +1,5 @@
 import { pageReviewSchema } from '../shared/page-review.js';
+import { pageImportInput, pageVersionRestoreInput } from './pages.js';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { PageError, pageInput, pagePatch } from './pages.js';
@@ -95,6 +96,66 @@ export function pageRoutes(platform: Platform) {
         c.req.param('id'),
         data.data,
       ),
+    );
+  });
+  app.get('/spaces/:spaceId/pages/:id/versions', (c) =>
+    c.json(
+      platform.workspace.pages.versions(
+        c.req.param('spaceId'),
+        c.req.param('id'),
+      ),
+    ),
+  );
+  app.post('/spaces/:spaceId/pages/:id/restore', async (c) => {
+    const data = pageVersionRestoreInput.safeParse(await c.req.json());
+    if (!data.success)
+      return c.json(
+        { error: 'A valid version and expectedRevision are required.' },
+        400,
+      );
+    return c.json(
+      platform.workspace.pages.restoreVersion(
+        c.req.param('spaceId'),
+        c.req.param('id'),
+        data.data,
+      ),
+    );
+  });
+  app.get('/spaces/:spaceId/trash', (c) =>
+    c.json(platform.workspace.pages.trash(c.req.param('spaceId'))),
+  );
+  app.post('/spaces/:spaceId/trash/:id/restore', (c) =>
+    c.json(
+      platform.workspace.pages.restoreDeleted(
+        c.req.param('spaceId'),
+        c.req.param('id'),
+      ),
+    ),
+  );
+  app.delete('/spaces/:spaceId/trash/:id', (c) => {
+    const purged = platform.workspace.pages.purge(
+      c.req.param('spaceId'),
+      c.req.param('id'),
+    );
+    if (!purged) return c.json({ error: 'Page not found in this Space.' }, 404);
+    return c.json({ ok: true });
+  });
+  app.get('/spaces/:spaceId/export', (c) =>
+    c.json(platform.workspace.pages.exportSpace(c.req.param('spaceId'))),
+  );
+  app.post('/spaces/:spaceId/import', async (c) => {
+    const data = pageImportInput.safeParse(await c.req.json());
+    if (!data.success)
+      return c.json(
+        {
+          error:
+            'Import requires 1 to 200 pages with a title up to 160 characters and content up to 100,000 characters.',
+        },
+        400,
+      );
+    return c.json(
+      platform.workspace.pages.importSpace(c.req.param('spaceId'), data.data),
+      201,
     );
   });
   app.delete('/spaces/:spaceId/pages/:id', (c) => {
