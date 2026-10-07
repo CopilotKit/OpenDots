@@ -9,6 +9,7 @@ import { createApp } from './app.js';
 import { resolveAppOrigins } from './app-origin.js';
 import { WorkspaceStore } from './workspace.js';
 import { Platform } from './platform.js';
+import { IMessageBridge, macMessages } from './imessage.js';
 import {
   intelligenceApiKeyFromEnv,
   intelligenceWsUrlFromEnv,
@@ -55,6 +56,12 @@ const config: PlatformConfig = {
     .map((value) => value.trim())
     .filter(Boolean),
   slackDotId: process.env.SLACK_DOT_ID || undefined,
+  imessageHandles: (process.env.IMESSAGE_HANDLES ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+  imessageDotId: process.env.IMESSAGE_DOT_ID || undefined,
+  imessageDbPath: process.env.IMESSAGE_DB_PATH || undefined,
   runtimeUrl: `http://${host === '::1' ? '[::1]' : '127.0.0.1'}:${port}/api/copilotkit`,
   ownerToken,
 };
@@ -108,9 +115,39 @@ app.use('*', async (c, next) => {
 app.get('/api/*', (c) => c.json({ error: 'Not found.' }, 404));
 app.use('/*', serveStatic({ root: './dist/client' }));
 app.get('*', serveStatic({ path: './dist/client/index.html' }));
+// iMessage runs only where Messages does: OpenDots on the signed-in Mac.
+const imessage = config.imessageHandles?.length
+  ? new IMessageBridge({
+      source: () => macMessages(config.imessageDbPath),
+      state: workspace.imessage,
+      handles: config.imessageHandles,
+      dotId: () => {
+        const id = config.imessageDotId ?? workspace.dots()[0].id;
+        if (!workspace.dot(id))
+          throw new Error('IMESSAGE_DOT_ID does not identify an existing Dot.');
+        return id;
+      },
+      createThread: async (dotId, title) =>
+        (await platform.createConversation(dotId, title)).id,
+      turn: (threadId, prompt, signal) =>
+        platform.turn(threadId, prompt, signal, { opendotsSource: 'imessage' }),
+      paused: () => store.settings().paused,
+    })
+  : undefined;
+if (imessage) platform.imessageStatus = () => imessage.status;
 const server = serve({ fetch: app.fetch, hostname: host, port }, (info) => {
   console.log(`OpenDots template listening on http://${host}:${info.port}`);
   runner.start();
+  if (imessage && process.platform !== 'darwin') {
+    imessage.status = 'unsupported';
+    console.error(
+      'iMessage needs OpenDots running on a Mac signed in to Messages.',
+    );
+  } else if (imessage && platform.setup().missing.length)
+    console.error(
+      'iMessage is waiting for setup: configure conversations first.',
+    );
+  else imessage?.start();
   void platform
     .start()
     .catch((error) =>
@@ -121,7 +158,10 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, (info) => {
     );
 });
 const shutdown = createShutdown({
-  stopRunner: () => runner.stop(),
+  stopRunner: () => {
+    imessage?.stop();
+    runner.stop();
+  },
   stopPlatform: () => platform.stop(),
   closeServer: () =>
     new Promise<void>((resolve, reject) =>

@@ -122,6 +122,10 @@ https://github.com/user-attachments/assets/27d03a6c-a9e0-4c29-8d96-fafe0fbae20f
 
 Bring your agents into Slack with [Channels SDK](https://github.com/CopilotKit/channels-sdk). See the [managed Channels documentation](https://docs.copilotkit.ai/intelligence/channels) to connect them through CopilotKit Intelligence.
 
+### iMessage
+
+Text your Dot from your phone. When OpenDots runs on a Mac signed in to Messages, it answers allowlisted numbers and Apple ID emails. Each sender gets their own persistent conversation, and `/new` starts a fresh one. See [iMessage setup](docs/IMESSAGE.md).
+
 ## Architecture
 
 ### AG-UI connects the agent to the interface
@@ -197,6 +201,7 @@ CopilotKit SDK telemetry collects usage metadata separately from conversation pe
 | Pages                      | Searchable library, visual editor, slash commands, autosave, and revision checks                                                        |
 | Conversations              | React SDK chat and Threads integration, page-specific conversations, and source links                                                   |
 | Slack                      | Managed Channels SDK declaration with workspace and user allowlists                                                                     |
+| iMessage                   | Local macOS bridge with a sender allowlist, per-sender conversations, and plain-text replies                                            |
 | Calls                      | WebRTC speech, delegated compute, bounded sessions, hangup, and timeline receipts                                                       |
 | Background work            | Scheduled server-side turns in their original conversation, with pause and retry controls                                               |
 | Browser                    | Separate read-only public-page service with page capture and navigation limits                                                          |
