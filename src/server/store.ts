@@ -14,6 +14,7 @@ import type {
 } from '../shared/types.js';
 
 export type Claim = Task & { lease: string };
+export const DEFAULT_WORKER_LEASE_MS = 180_000;
 const defaults: Settings = {
   name: 'Dot',
   paused: false,
@@ -204,7 +205,10 @@ export class Store {
     );
     return this.task(id);
   }
-  claim(now = Date.now()): Claim | null {
+  claim(
+    now = Date.now(),
+    leaseDurationMs = DEFAULT_WORKER_LEASE_MS,
+  ): Claim | null {
     return this.transaction(() => {
       const settings = this.settings();
       if (settings.paused || !settings.researchAllowed) return null;
@@ -228,7 +232,7 @@ export class Store {
         .prepare(
           "UPDATE tasks SET status='running', lease=?, leaseUntil=?, nextRunAt=NULL, error=NULL, updatedAt=? WHERE id=?",
         )
-        .run(lease, now + 180_000, now, task.id);
+        .run(lease, now + leaseDurationMs, now, task.id);
       this.db
         .prepare(
           "INSERT INTO runs VALUES (?, ?, 'running', ?, NULL, NULL, NULL)",

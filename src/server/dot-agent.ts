@@ -21,7 +21,10 @@ import { Observable } from 'rxjs';
 import { z } from 'zod';
 import { Store } from './store.js';
 import { WorkspaceStore } from './workspace.js';
-import type { PlatformConfig } from './platform-config.js';
+import {
+  DEFAULT_AGENT_RUN_TIMEOUT_MS,
+  type PlatformConfig,
+} from './platform-config.js';
 import { browserResponse } from './research.js';
 import { answerObserver, type SetupTelemetry } from './setup-telemetry.js';
 const channelError = () => ({
@@ -29,7 +32,6 @@ const channelError = () => ({
   message:
     'OpenDots could not complete this request. Please check the app and try again.',
 });
-const TURN_TIME_LIMIT_MS = 90_000;
 export class DotAgent extends AbstractAgent {
   private inner?: BuiltInAgent;
   private controller?: AbortController;
@@ -66,6 +68,8 @@ export class DotAgent extends AbstractAgent {
       let timedOut = false;
       let finished = false;
       let configurationFailure = false;
+      const turnTimeLimitMs =
+        this.config.agentRunTimeoutMs ?? DEFAULT_AGENT_RUN_TIMEOUT_MS;
       const observe = answerObserver((event) =>
         this.setupTelemetry?.capture(event),
       );
@@ -73,10 +77,10 @@ export class DotAgent extends AbstractAgent {
         timedOut = true;
         observe({ type: EventType.RUN_ERROR });
         this.abortRun();
-      }, TURN_TIME_LIMIT_MS);
+      }, turnTimeLimitMs);
       const timeLimitError = () => ({
         type: EventType.RUN_ERROR,
-        message: `This turn reached the ${TURN_TIME_LIMIT_MS / 1000} second time limit and was stopped. Try a smaller request.`,
+        message: `This turn reached the ${turnTimeLimitMs / 1000} second time limit and was stopped. Try a smaller request.`,
       });
       try {
         const dot = this.workspace.dot(this.dotId);
