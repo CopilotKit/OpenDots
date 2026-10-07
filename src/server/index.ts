@@ -1,4 +1,3 @@
-import { webSearchProvider } from './parallel.js';
 import { createShutdown } from './shutdown.js';
 import { reportChannelFailure, safeFailure } from './slack-channel.js';
 import { serve } from '@hono/node-server';
@@ -6,58 +5,21 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Store } from './store.js';
 import { Runner } from './runner.js';
 import { createApp } from './app.js';
-import { resolveAppOrigins } from './app-origin.js';
 import { WorkspaceStore } from './workspace.js';
 import { Platform } from './platform.js';
-import {
-  intelligenceApiKeyFromEnv,
-  intelligenceWsUrlFromEnv,
-  type PlatformConfig,
-} from './platform-config.js';
-const host = process.env.HOST ?? '127.0.0.1';
-const port = Number(process.env.PORT ?? 4310);
-const ownerToken = process.env.OWNER_TOKEN;
-if (
-  !['127.0.0.1', '::1', 'localhost'].includes(host) &&
-  (!ownerToken || ownerToken.length < 24)
-)
-  throw new Error(
-    'External binding requires an OWNER_TOKEN of at least 24 characters.',
-  );
-const database = process.env.DATABASE_PATH ?? 'data/opendots.sqlite';
-const store = new Store(database);
-const workspace = new WorkspaceStore(
-  database,
-  process.env.OWNER_ID ?? 'opendots-owner',
-);
-const config: PlatformConfig = {
-  intelligenceKey: intelligenceApiKeyFromEnv(process.env),
-  intelligenceApiUrl: process.env.INTELLIGENCE_API_URL || undefined,
-  intelligenceWsUrl: intelligenceWsUrlFromEnv(process.env),
-  apiKey: process.env.OPENAI_API_KEY,
-  model: process.env.OPENAI_MODEL,
-  baseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
-  webSearchProvider: webSearchProvider(process.env.WEB_SEARCH_PROVIDER),
-  parallelApiKey: process.env.PARALLEL_API_KEY,
-  browserUrl: process.env.BROWSER_URL,
-  browserSecret: process.env.BROWSER_SECRET,
-  computerSupervisorUrl: process.env.COMPUTER_SUPERVISOR_URL,
-  computerSupervisorToken: process.env.COMPUTER_SUPERVISOR_TOKEN,
-  computerToken: process.env.COMPUTER_TOKEN,
-  computerNamespace: process.env.COMPUTER_NAMESPACE,
-  voiceKey: process.env.VOICE_API_KEY,
-  voiceModel: process.env.VOICE_MODEL,
-  voiceName: process.env.VOICE_NAME ?? 'marin',
-  slackChannel: process.env.SLACK_CHANNEL_NAME,
-  slackTeam: process.env.SLACK_TEAM_ID,
-  slackUsers: (process.env.SLACK_USER_IDS ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean),
-  slackDotId: process.env.SLACK_DOT_ID || undefined,
-  runtimeUrl: `http://${host === '::1' ? '[::1]' : '127.0.0.1'}:${port}/api/copilotkit`,
-  ownerToken,
-};
+import { platformConfigFromEnv } from './platform-config.js';
+import { parseServerEnv, resolveAppOrigins } from '../config/env.js';
+
+const env = parseServerEnv();
+const host = env.HOST;
+const port = env.PORT;
+const store = new Store(env.DATABASE_PATH);
+const workspace = new WorkspaceStore(env.DATABASE_PATH, env.OWNER_ID);
+const runtimeUrl = `http://${host === '::1' ? '[::1]' : '127.0.0.1'}:${port}/api/copilotkit`;
+const config = platformConfigFromEnv(env, process.env, {
+  runtimeUrl,
+  ownerToken: env.OWNER_TOKEN,
+});
 const platform = new Platform(store, workspace, config);
 const researchConfig = {
   mode: 'live' as const,
@@ -88,12 +50,13 @@ const runner = new Runner(
 const wsOrigin = new URL(
   config.intelligenceWsUrl ?? 'wss://realtime.intelligence.copilotkit.ai',
 ).origin;
+const origin = resolveAppOrigins(env.APP_ORIGIN, env.NODE_ENV);
 const app = createApp({
   store,
   runner,
   config: researchConfig,
-  ownerToken,
-  origin: resolveAppOrigins(process.env.APP_ORIGIN, process.env.NODE_ENV),
+  ownerToken: config.ownerToken,
+  origin,
   platform,
 });
 app.use('*', async (c, next) => {
