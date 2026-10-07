@@ -34,6 +34,22 @@ function firstNonEmptyEnvValue(
   return undefined;
 }
 
+// PUBLIC_URL must be an http(s) origin-like address without credentials;
+// a trailing slash is dropped so paths can be appended.
+export function publicUrlFromEnv(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const url = new URL(trimmed);
+  if (
+    !['http:', 'https:'].includes(url.protocol) ||
+    url.username ||
+    url.password
+  )
+    throw new Error(
+      'PUBLIC_URL must be an http(s) address without embedded credentials.',
+    );
+  return trimmed.replace(/\/+$/, '');
+}
 export interface PlatformConfig extends WebConfig {
   intelligenceKey?: string;
   intelligenceApiUrl?: string;
@@ -56,6 +72,8 @@ export interface PlatformConfig extends WebConfig {
   slackDotId?: string;
   runtimeUrl: string;
   ownerToken?: string;
+  // The address browsers and services use to reach this server.
+  publicUrl?: string;
 }
 export function setupStatus(
   config: PlatformConfig,

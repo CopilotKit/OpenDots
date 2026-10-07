@@ -13,6 +13,7 @@ import {
   intelligenceApiKeyFromEnv,
   intelligenceWsUrlFromEnv,
   type PlatformConfig,
+  publicUrlFromEnv,
 } from './platform-config.js';
 const host = process.env.HOST ?? '127.0.0.1';
 const port = Number(process.env.PORT ?? 4310);
@@ -57,6 +58,7 @@ const config: PlatformConfig = {
   slackDotId: process.env.SLACK_DOT_ID || undefined,
   runtimeUrl: `http://${host === '::1' ? '[::1]' : '127.0.0.1'}:${port}/api/copilotkit`,
   ownerToken,
+  publicUrl: publicUrlFromEnv(process.env.PUBLIC_URL),
 };
 const platform = new Platform(store, workspace, config);
 const researchConfig = {
