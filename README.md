@@ -195,6 +195,7 @@ CopilotKit SDK telemetry collects usage metadata separately from conversation pe
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Spaces and Specialist Dots | Saved names, role instructions, and per-Dot research and memory permissions                                                             |
 | Pages                      | Searchable library, visual editor, slash commands, autosave, and revision checks                                                        |
+| Navigation                 | Global command palette (Ctrl/⌘ K) with ranked cross-Space search over pages, Spaces, and Dots, plus keyboard-first commands             |
 | Conversations              | React SDK chat and Threads integration, page-specific conversations, and source links                                                   |
 | Slack                      | Managed Channels SDK declaration with workspace and user allowlists                                                                     |
 | Calls                      | WebRTC speech, delegated compute, bounded sessions, hangup, and timeline receipts                                                       |

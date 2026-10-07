@@ -1,5 +1,6 @@
 import { setupInputSchema } from './setup-telemetry.js';
 import { pageRoutes } from './page-routes.js';
+import { searchWorkspace } from './search.js';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { Platform } from './platform.js';
@@ -48,6 +49,22 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
       calls: platform.workspace.calls(),
     }),
   );
+  app.get('/search', (c) => {
+    const parsed = z
+      .object({
+        q: z.string().trim().min(2).max(200),
+        limit: z.coerce.number().int().min(1).max(50).default(20),
+      })
+      .safeParse({
+        q: c.req.query('q') ?? '',
+        limit: c.req.query('limit') ?? undefined,
+      });
+    if (!parsed.success)
+      return c.json({ error: 'Enter at least 2 characters to search.' }, 400);
+    return c.json(
+      searchWorkspace(platform.workspace, parsed.data.q, parsed.data.limit),
+    );
+  });
   app.post('/spaces', async (c) => {
     const data = z
       .object({
