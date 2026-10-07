@@ -11,6 +11,7 @@ import {
 } from '../src/server/platform-config.js';
 import {
   plainText,
+  SENDBLUE_REPLY_DEADLINE_MS,
   sendblueConfigFromEnv,
   sendblueProblems,
   splitReply,
@@ -22,6 +23,8 @@ import { WorkspaceStore } from '../src/server/workspace.js';
 const LINE = '+15550100000';
 const OWNER = '+15550100123';
 const SECRET = 'fixture-webhook-secret-0123456789';
+const FAILED_REPLY =
+  'I couldn’t complete that request. Please check OpenDots and text me again when you’re ready.';
 const cleanup: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   for (const done of cleanup.splice(0).reverse()) await done();
@@ -466,13 +469,88 @@ it('sends a generic reply and logs only a safe failure name when a turn fails', 
   );
   await f.post(received());
   await vi.waitFor(() => expect(f.api.sent).toHaveLength(1));
-  expect(f.api.sent[0].body.content).toBe(
-    'I couldn’t complete that request. Please check OpenDots and text me again when you’re ready.',
-  );
+  expect(f.api.sent[0].body.content).toBe(FAILED_REPLY);
   expect(log).toHaveBeenCalledWith(
     'Sendblue turn failed; error reply sent: Error',
   );
   expect(JSON.stringify(log.mock.calls)).not.toContain('sk-live');
+});
+
+it('keeps the queue moving when conversation creation or a turn outlasts the reply deadline', async () => {
+  const other = '+15550100124';
+  const f = await fixture({ sendblue: { allowedNumbers: [OWNER, other] } });
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  // Each reply deadline becomes a controller the test expires on demand.
+  const deadlines: AbortController[] = [];
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+    if (ms !== SENDBLUE_REPLY_DEADLINE_MS) return timeout(ms);
+    const deadline = new AbortController();
+    deadlines.push(deadline);
+    return deadline.signal;
+  });
+  const expire = (index: number) =>
+    deadlines[index].abort(
+      new DOMException('Reply deadline reached', 'TimeoutError'),
+    );
+  const timedOut = () =>
+    log.mock.calls.filter(
+      ([line]) =>
+        line === 'Sendblue turn failed; error reply sent: TimeoutError',
+    ).length;
+  await f.platform.start();
+
+  // Intelligence does not finish creating the first sender's conversation.
+  let finishCreation!: () => void;
+  const stalled = new Promise<void>((resolve) => (finishCreation = resolve));
+  const create = f.createConversation.getMockImplementation()!;
+  f.createConversation.mockImplementationOnce(async (dotId, title) => {
+    await stalled;
+    return create(dotId, title);
+  });
+  await f.post(received({ content: 'first' }));
+  await f.post(received({ from_number: other, content: 'from another phone' }));
+  await vi.waitFor(() => expect(f.createConversation).toHaveBeenCalledOnce());
+  expect(f.turn).not.toHaveBeenCalled();
+  expire(0);
+  await vi.waitFor(() => expect(f.api.sent).toHaveLength(2));
+  expect(f.api.sent.map(({ body }) => [body.number, body.content])).toEqual([
+    [OWNER, FAILED_REPLY],
+    [other, 'Noted: from another phone'],
+  ]);
+  expect(f.turn).toHaveBeenCalledOnce();
+  expect(timedOut()).toBe(1);
+
+  // A conversation created after the deadline is kept, but not answered.
+  finishCreation();
+  await vi.waitFor(() =>
+    expect(f.workspace.sendblue.thread(OWNER)).toBeDefined(),
+  );
+  const late = f.workspace.sendblue.thread(OWNER);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(f.turn).toHaveBeenCalledOnce();
+
+  // A turn that ignores the abort is abandoned at the deadline too.
+  f.turn.mockImplementationOnce(() => new Promise(() => {}));
+  await f.post(received({ from_number: other, content: 'stuck' }));
+  await vi.waitFor(() => expect(f.turn).toHaveBeenCalledTimes(2));
+  await f.post(received({ content: 'after the stall' }));
+  expire(2);
+  await vi.waitFor(() => expect(f.api.sent).toHaveLength(4));
+  expect(
+    f.api.sent.slice(2).map(({ body }) => [body.number, body.content]),
+  ).toEqual([
+    [other, FAILED_REPLY],
+    [OWNER, 'Noted: after the stall'],
+  ]);
+  expect(f.turn).toHaveBeenLastCalledWith(
+    late,
+    'after the stall',
+    expect.any(AbortSignal),
+    { opendotsSource: 'sendblue' },
+  );
+  expect(f.createConversation).toHaveBeenCalledTimes(2);
+  expect(timedOut()).toBe(2);
 });
 
 it('never resends a reply that Sendblue rejected or did not confirm', async () => {

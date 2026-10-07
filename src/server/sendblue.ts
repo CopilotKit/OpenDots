@@ -7,7 +7,7 @@ import type { Platform } from './platform.js';
 const PHONE = /^\+[1-9]\d{7,14}$/;
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_QUEUED = 32;
-const TURN_LIMIT_MS = 120_000;
+export const SENDBLUE_REPLY_DEADLINE_MS = 120_000;
 const SEND_LIMIT_MS = 30_000;
 // Stays under the 1,600-character limit for long messages sent as SMS.
 const PART_LENGTH = 1500;
@@ -168,6 +168,19 @@ function listenFailure(error: unknown) {
   return typeof code === 'string' && /^E[A-Z]+$/.test(code)
     ? code
     : safeFailure(error);
+}
+// Stops waiting at the deadline even for work that cannot be cancelled, such
+// as Intelligence conversation creation, so one stalled request never blocks
+// the shared queue.
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal) {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    if (signal.aborted) return abort();
+    signal.addEventListener('abort', abort, { once: true });
+    work
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', abort));
+  });
 }
 const empty = (status: number) => new Response(null, { status });
 const isNew = (text: string) => text.trim().toLowerCase() === '/new';
@@ -356,8 +369,11 @@ export class SendblueBridge {
       await this.thread(number, true);
       return 'Started a new conversation.';
     }
+    const threadId = await this.thread(number);
+    // A conversation created after the deadline is kept, but never answered.
+    signal.throwIfAborted();
     const reply = plainText(
-      await this.host.turn(await this.thread(number), text, signal, {
+      await this.host.turn(threadId, text, signal, {
         opendotsSource: 'sendblue',
       }),
     );
@@ -367,11 +383,11 @@ export class SendblueBridge {
   private async answer(number: string, text: string) {
     const signal = AbortSignal.any([
       this.controller.signal,
-      AbortSignal.timeout(TURN_LIMIT_MS),
+      AbortSignal.timeout(SENDBLUE_REPLY_DEADLINE_MS),
     ]);
     let reply: string;
     try {
-      reply = await this.compose(number, text, signal);
+      reply = await untilAborted(this.compose(number, text, signal), signal);
     } catch (error) {
       if (this.controller.signal.aborted) return;
       reportChannelFailure('Sendblue turn failed; error reply sent', [
