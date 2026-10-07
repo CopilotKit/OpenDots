@@ -84,6 +84,10 @@ _Ask Scout to open a website, summarize it, save notes, and verify the file. Eve
 
 Ask a Dot to show a draft before saving it. A CopilotKit human-in-the-loop card pauses the conversation for **Approve & save** or **Decline**. Approval creates the page in an authorized Space and returns a link; retries with the same draft recover that saved page. A changed draft needs a new review. The agent continues after your decision.
 
+### Connections
+
+Give a Dot tools from any MCP server, such as email, calendar, GitHub, or your own services. Read-only tools run on their own. Any other tool pauses for an **Approve & run** card in chat, and only your approval runs it. You can turn each tool on or off per Dot. See [Connections](docs/CONNECTIONS.md).
+
 ### Text and calls
 
 A continuous conversation keeps the Dot's avatar and status above the messages, with text and call controls close at hand. Work updates, source links, and call receipts appear in the timeline; a side panel shows results or the agent's computer.
@@ -202,6 +206,8 @@ CopilotKit SDK telemetry collects usage metadata separately from conversation pe
 | Background work            | Scheduled server-side turns in their original conversation, with pause and retry controls                                               |
 | Browser                    | Separate read-only public-page service with page capture and navigation limits                                                          |
 | Dot computers              | Per-Dot browser profiles, files, shell, takeover, permissions, and action records through OpenBot                                       |
+| Connections                | Per-Dot MCP servers, per-tool access, and owner approval for non-read-only actions                                                      |
+| Appearance                 | System, light, and dark themes; dark colors are derived at build time from the light styles                                             |
 | Memory                     | User-managed preferences that permitted Dots can use                                                                                    |
 | Automatic Learning         | Per-Dot Learning containers, conversation evidence routing, and published-skill delivery; see [setup](docs/SETUP.md#automatic-learning) |
 | Deployment                 | Local Node setup and separate application/browser containers                                                                            |

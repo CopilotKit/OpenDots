@@ -1,5 +1,6 @@
 import { ComputerStore } from './computer-store.js';
 import { SendblueStore } from './sendblue-store.js';
+import { ConnectionStore } from './connection-store.js';
 import { Pages } from './pages.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
@@ -12,6 +13,7 @@ export class WorkspaceStore {
   readonly pages: Pages;
   readonly computers: ComputerStore;
   readonly sendblue: SendblueStore;
+  readonly connections: ConnectionStore;
   constructor(
     path: string,
     readonly ownerId: string,
@@ -53,6 +55,7 @@ export class WorkspaceStore {
     }
     this.computers = new ComputerStore(this.db);
     this.sendblue = new SendblueStore(this.db);
+    this.connections = new ConnectionStore(this.db);
     this.pages = new Pages(this.db, (id) =>
       this.spaces().some((space) => space.id === id),
     );

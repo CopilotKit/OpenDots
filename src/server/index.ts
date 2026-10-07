@@ -81,7 +81,9 @@ const runner = new Runner(
         'This legacy task has no Intelligence conversation. Create a new scheduled task from a conversation.',
       );
     progress('Running this task in its Intelligence conversation.');
-    const text = await platform.turn(threadId, claim.prompt, signal);
+    const text = await platform.turn(threadId, claim.prompt, signal, {
+      opendotsSource: 'scheduled_task',
+    });
     return { text, sources: [], sample: false };
   },
 );

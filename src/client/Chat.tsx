@@ -1,5 +1,10 @@
 import { PageReviewCard } from './PageReviewCard';
 import { pageReviewSchema, pageReviewTool } from '../shared/page-review';
+import {
+  connectionActionSchema,
+  connectionActionTool,
+} from '../shared/connection-types';
+import { ConnectionActionCard } from './ConnectionActionCard';
 import { contextualMessage, type PageContext } from './page-context';
 import { api } from './api';
 import type { Page } from '../server/pages';
@@ -180,6 +185,17 @@ export function Chat({
     },
     [thread.id, onSaved],
   );
+  useHumanInTheLoop(
+    {
+      name: connectionActionTool.name,
+      description: connectionActionTool.description,
+      parameters: connectionActionSchema,
+      render: (props) => (
+        <ConnectionActionCard {...props} threadId={thread.id} />
+      ),
+    },
+    [thread.id],
+  );
   const computerCalls = agent.messages.flatMap((message) =>
     message.role === 'assistant' ? (message.toolCalls ?? []) : [],
   );
@@ -221,7 +237,8 @@ export function Chat({
           message.toolCalls?.some(
             (call) =>
               call.function.name.startsWith('computer_') ||
-              call.function.name === pageReviewTool.name,
+              call.function.name === pageReviewTool.name ||
+              call.function.name === connectionActionTool.name,
           ))),
   );
   return (
