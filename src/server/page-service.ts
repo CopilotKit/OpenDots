@@ -75,6 +75,9 @@ export class PageService {
             name: page.title,
           }),
         );
+        // The page may have been deleted while Intelligence created its thread.
+        // Recheck before binding a local conversation or marking it ready.
+        this.workspace.pages.get(spaceId, pageId);
         if (!this.workspace.canAccessSpace(dotId, spaceId))
           throw new PageError('Space access has been revoked.');
         const thread =
