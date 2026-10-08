@@ -11,6 +11,7 @@ import ReactMarkdown from 'react-markdown';
 import type { Dot, Result, Status } from '../shared/types';
 import { Mascot } from './Mascot';
 import { ComputerPanel } from './ComputerPanel';
+import { t } from './i18n';
 export function ResultPane({
   latest,
   status,
@@ -41,18 +42,19 @@ export function ResultPane({
             onClick={() => setResultTab('Brief')}
           >
             <BookOpen size={15} />
-            Brief
+            {t('result.brief')}
           </button>
           <button
             className={resultTab === 'Computer' ? 'selected' : ''}
             onClick={() => setResultTab('Computer')}
           >
-            <Monitor size={15} /> {computerDot?.name ?? 'Dot'}’s computer
+            <Monitor size={15} /> {t('result.computer')} de{' '}
+            {computerDot?.name ?? 'Dot'}
           </button>
         </div>
         <button
           className="icon-button"
-          aria-label="Close result panel"
+          aria-label={t('result.close')}
           onClick={() => onClose()}
         >
           <X size={16} />
@@ -61,11 +63,11 @@ export function ResultPane({
       {resultTab === 'Computer' ? (
         <>
           <label className="computer-dot-picker">
-            Computer for
+            {t('result.computerFor')}
             <select
               value={computerDot?.id ?? ''}
               onChange={(event) => setComputerDotId(event.target.value)}
-              aria-label="Select Dot computer"
+              aria-label={t('result.selectComputer')}
             >
               {dots.map((dot) => (
                 <option key={dot.id} value={dot.id}>
@@ -77,20 +79,20 @@ export function ResultPane({
           {computerDot ? (
             <ComputerPanel key={computerDot.id} dot={computerDot} />
           ) : (
-            <p className="computer-panel">
-              Create a Dot to give it a computer.
-            </p>
+            <p className="computer-panel">{t('result.createAgentComputer')}</p>
           )}
         </>
       ) : latest ? (
         <div className="result-content">
           <div className="result-meta">
             <span className="eyebrow">
-              {latest.sample ? 'FICTIONAL SAMPLE BRIEF' : 'RESEARCH BRIEF'}
+              {latest.sample
+                ? t('result.sampleBrief')
+                : t('result.researchBrief')}
             </span>
             <button
               className="icon-button"
-              aria-label="Download brief"
+              aria-label={t('result.downloadBrief')}
               onClick={() => {
                 const blob = new Blob(
                   [
@@ -114,16 +116,17 @@ export function ResultPane({
             </button>
           </div>
           {latest.sample && (
-            <div className="sample-note">
-              An example of what Dot can do. The findings and sources below are
-              invented.
-            </div>
+            <div className="sample-note">{t('result.sampleNote')}</div>
           )}
           <article className="brief">
             <ReactMarkdown
               components={{
                 img: ({ alt }) => (
-                  <span>{alt ? `[Image: ${alt}]` : '[Image omitted]'}</span>
+                  <span>
+                    {alt
+                      ? `[${t('result.image')}: ${alt}]`
+                      : `[${t('result.imageOmitted')}]`}
+                  </span>
                 ),
                 a: ({ children, href }) => (
                   <a href={href} target="_blank" rel="noreferrer">
@@ -137,7 +140,7 @@ export function ResultPane({
           </article>
           <section className="sources">
             <h3>
-              Source notes <span>{latest.sources.length}</span>
+              {t('result.sources')} <span>{latest.sources.length}</span>
             </h3>
             {latest.sources.map((source) =>
               latest.sample ? (
@@ -148,7 +151,7 @@ export function ResultPane({
                   <div>
                     <strong>{source.title}</strong>
                     <p>{source.excerpt}</p>
-                    <small>Fictional source · not a live link</small>
+                    <small>{t('result.fictionalSource')}</small>
                   </div>
                 </div>
               ) : (
@@ -180,11 +183,11 @@ export function ResultPane({
             name={dots.find((dot) => dot.id === defaultDotId)?.name}
             state={dotState}
           />
-          <h3>A little space for your findings.</h3>
+          <h3>{t('result.emptyTitle')}</h3>
           <p>
             {status === 'failed'
-              ? 'Resolve the error and retry to create a research brief.'
-              : 'Your brief and sources will appear here after a successful run.'}
+              ? t('result.resolveRetry')
+              : t('result.afterRun')}
           </p>
         </div>
       )}

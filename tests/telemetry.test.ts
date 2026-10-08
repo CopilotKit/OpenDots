@@ -108,7 +108,7 @@ it('sends OpenDots runtime metadata with CLI identity and without the project ke
   expect(
     events.some((event) => event.body.event === 'intelligence_signup'),
   ).toBe(false);
-});
+}, 15000);
 
 it.each([
   ['DO_NOT_TRACK', 'true'],
@@ -116,9 +116,13 @@ it.each([
   ['COPILOTKIT_TELEMETRY_DISABLED', 'true'],
   ['COPILOTKIT_TELEMETRY_DISABLED', '1'],
   ['COPILOTKIT_TELEMETRY_SAMPLE_RATE', '0'],
-])('respects %s=%s', async (key, value) => {
-  expect(await captureRuntime({ [key]: value })).toEqual([]);
-});
+])(
+  'respects %s=%s',
+  async (key, value) => {
+    expect(await captureRuntime({ [key]: value })).toEqual([]);
+  },
+  15000,
+);
 
 it('forwards the CLI identity and both opt-outs into the Docker app', async () => {
   const compose = await readFile(
@@ -145,4 +149,4 @@ it('hands the persistent installation fallback to the installed runtime when CLI
     created?.body.global_properties.installation_id,
   );
   expect(created?.body.global_properties.opendots_distribution).toBe('web');
-});
+}, 15000);

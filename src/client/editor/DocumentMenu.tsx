@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MoreHorizontal } from 'lucide-react';
+import { t } from '../i18n';
 export function DocumentMenu({
   items,
 }: {
@@ -62,7 +63,7 @@ export function DocumentMenu({
       <button
         ref={trigger}
         className="document-icon"
-        aria-label="Page actions"
+        aria-label={t('editor.pageActions')}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
@@ -73,7 +74,7 @@ export function DocumentMenu({
         <div
           className="document-dropdown"
           role="menu"
-          aria-label="Page actions"
+          aria-label={t('editor.pageActions')}
         >
           {items.map((item) => (
             <button

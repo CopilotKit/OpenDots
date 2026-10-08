@@ -36,6 +36,7 @@ import { Mascot } from './Mascot';
 import { useVoice } from './useVoice';
 import { CallView } from './CallView';
 import { shouldSubmitComposerOnKeyDown } from './chat-composer';
+import { t } from './i18n';
 
 export function Chat({
   thread,
@@ -84,10 +85,7 @@ export function Chat({
         if (active) setPageContext(page);
       })
       .catch(() => {
-        if (active)
-          setContextError(
-            'Conversation context could not load. Retry before sending your message.',
-          );
+        if (active) setContextError(t('chat.contextLoadError'));
       });
     return () => {
       active = false;
@@ -124,9 +122,7 @@ export function Chat({
       })
       .catch((e) => {
         if (active)
-          setError(
-            e instanceof Error ? e.message : 'Conversation could not connect.',
-          );
+          setError(e instanceof Error ? e.message : t('chat.connectionError'));
       });
     return () => {
       active = false;
@@ -147,16 +143,10 @@ export function Chat({
     try {
       const result = await copilotkit.runAgent({ agent });
       if (!result.newMessages.some((message) => message.role === 'assistant'))
-        throw new Error(
-          'The current turn returned no response. Check the runtime connection and retry.',
-        );
+        throw new Error(t('chat.noResponse'));
       onSaved();
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : 'The turn failed. Your conversation remains saved.',
-      );
+      setError(e instanceof Error ? e.message : t('chat.turnError'));
     } finally {
       setRunning(false);
     }
@@ -254,21 +244,21 @@ export function Chat({
           <strong>{dot.name}</strong>
           <span>
             {paused
-              ? 'Paused'
+              ? t('chat.paused')
               : running
-                ? 'Thinking…'
+                ? t('chat.thinking')
                 : loaded && contextReady
-                  ? 'Here with you'
-                  : 'Connecting to your conversation…'}
+                  ? t('chat.here')
+                  : t('chat.connecting')}
           </span>
         </div>
         <div className="chat-persona-actions">
           <button
             className="icon-button"
-            aria-label="Save conversation as page"
+            aria-label={t('chat.savePage')}
             disabled={running}
             onClick={async () => {
-              const title = window.prompt('Page title', thread.title);
+              const title = window.prompt(t('chat.pageTitle'), thread.title);
               if (!title) return;
               try {
                 const page = await api<Page>(
@@ -278,11 +268,7 @@ export function Chat({
                 );
                 location.hash = `/spaces/${page.spaceId}/pages/${page.id}`;
               } catch (e) {
-                setError(
-                  e instanceof Error
-                    ? e.message
-                    : 'Could not save conversation.',
-                );
+                setError(e instanceof Error ? e.message : t('chat.saveError'));
               }
             }}
           >
@@ -290,7 +276,7 @@ export function Chat({
           </button>
           <button
             className="icon-button"
-            aria-label="Schedule a task in this conversation"
+            aria-label={t('chat.scheduleConversation')}
             onClick={onSchedule}
           >
             <Clock3 size={18} />
@@ -298,13 +284,9 @@ export function Chat({
           <button
             className={`icon-button ${voice.status === 'active' ? 'on-call' : ''}`}
             aria-label={
-              voice.status === 'idle' ? 'Start voice call' : 'End voice call'
+              voice.status === 'idle' ? t('chat.startCall') : t('chat.endCall')
             }
-            title={
-              voiceReady
-                ? 'Talk with your Dot'
-                : 'Voice setup requires VOICE_API_KEY and VOICE_MODEL'
-            }
+            title={voiceReady ? t('chat.talk') : t('chat.voiceSetup')}
             disabled={!voiceReady || paused || !loaded || !contextReady}
             onClick={() =>
               voice.status === 'idle' ? void voice.start() : void voice.end()
@@ -320,7 +302,7 @@ export function Chat({
       </header>
       {pageContext && (
         <div className="page-chat-context">
-          Working on{' '}
+          {t('chat.workingOn')}{' '}
           <a href={`/#/spaces/${pageContext.spaceId}/pages/${pageContext.id}`}>
             {pageContext.title}
           </a>
@@ -329,12 +311,10 @@ export function Chat({
       <div className="chat-transcript">
         {!visible.length && (
           <div className="chat-welcome">
-            <span className="eyebrow">A LITTLE SPACE TO THINK</span>
-            <h1>What’s on your mind?</h1>
+            <span className="eyebrow">{t('chat.thinkingSpace')}</span>
+            <h1>{t('chat.whatOnMind')}</h1>
             <p>{dot.instructions}</p>
-            <p className="muted">
-              Your conversation stays with this Dot, across text and calls.
-            </p>
+            <p className="muted">{t('chat.conversationPersists')}</p>
           </div>
         )}
         <ChatTranscript
@@ -352,7 +332,7 @@ export function Chat({
             <span />
             <span />
             <span />
-            <span>{dot.name} is thinking</span>
+            <span>{dot.name} está pensando</span>
           </div>
         )}
         <div ref={bottom} />
@@ -361,7 +341,7 @@ export function Chat({
         <div className="chat-error" role="alert">
           {contextError}
           <button onClick={() => setContextAttempt((value) => value + 1)}>
-            Retry context
+            {t('chat.retryContext')}
           </button>
         </div>
       )}
@@ -378,7 +358,7 @@ export function Chat({
                   .catch((e) => setError(e.message));
               }}
             >
-              Reconnect
+              {t('chat.reconnect')}
             </button>
           )}
         </div>
@@ -399,7 +379,7 @@ export function Chat({
           <div className="source-input">
             <Link2 size={15} />
             <input
-              aria-label="Source page URL"
+              aria-label={t('chat.sourceUrl')}
               type="url"
               value={source}
               onChange={(e) => setSource(e.target.value)}
@@ -408,7 +388,7 @@ export function Chat({
             <button
               type="button"
               className="icon-button"
-              aria-label="Remove source"
+              aria-label={t('chat.removeSource')}
               onClick={() => {
                 setSourceOpen(false);
                 setSource('');
@@ -422,14 +402,14 @@ export function Chat({
           <button
             type="button"
             className="icon-button"
-            aria-label="Add source page link"
+            aria-label={t('chat.addSource')}
             onClick={() => setSourceOpen(!sourceOpen)}
           >
             <Link2 size={19} />
           </button>
           <textarea
-            aria-label="Message your Dot"
-            placeholder={`Message ${dot.name}…`}
+            aria-label={t('chat.messageAgent')}
+            placeholder={`${t('chat.messagePlaceholder')} ${dot.name}…`}
             rows={1}
             value={draft}
             maxLength={4000}
@@ -445,7 +425,7 @@ export function Chat({
             <button
               type="button"
               className="send-button"
-              aria-label="Stop response"
+              aria-label={t('chat.stopResponse')}
               onClick={() => copilotkit.stopAgent({ agent })}
             >
               <Square size={16} />
@@ -453,7 +433,7 @@ export function Chat({
           ) : (
             <button
               className="send-button"
-              aria-label="Send message"
+              aria-label={t('chat.send')}
               disabled={!draft.trim() || !loaded || !contextReady || paused}
             >
               <ArrowUp size={19} />
@@ -461,9 +441,7 @@ export function Chat({
           )}
         </div>
         <div className="chat-compose-note">
-          {voiceReady
-            ? 'Text and voice, one conversation.'
-            : 'Text is ready. Voice needs separate server configuration.'}
+          {voiceReady ? t('chat.textVoiceTogether') : t('chat.voiceNeedsSetup')}
         </div>
       </form>
     </div>

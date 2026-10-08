@@ -7,6 +7,15 @@ import {
   themePreference,
   type ThemePreference,
 } from './theme';
+import {
+  languagePreference,
+  localizedSlackStatus,
+  localizeMissingSetting,
+  localizedStarterSpaceName,
+  setLanguage,
+  t,
+} from './i18n';
+import type { Language } from './i18n';
 export type Dialog =
   | { type: 'space' }
   | { type: 'dot'; dot?: Dot; spaceId: string }
@@ -96,16 +105,16 @@ export function WorkspaceDialog({
   }, []);
   const title =
     dialog.type === 'space'
-      ? 'A space for something.'
+      ? t('dialogs.newSpace')
       : dialog.type === 'dot'
         ? dialog.dot
-          ? 'Make this Dot yours.'
-          : 'Meet your next specialist.'
+          ? t('dialogs.editAgent')
+          : t('dialogs.newAgent')
         : dialog.type === 'settings'
-          ? 'Your workspace, your rules.'
+          ? t('dialogs.workspaceRules')
           : dialog.type === 'memory'
-            ? 'Something to remember.'
-            : 'Let your Dot keep time.';
+            ? t('dialogs.memoryTitle')
+            : t('dialogs.scheduleTitle');
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <section
@@ -118,12 +127,12 @@ export function WorkspaceDialog({
       >
         <button
           className="modal-close icon-button"
-          aria-label="Close dialog"
+          aria-label={t('dialogs.close')}
           onClick={onClose}
         >
           <X size={18} />
         </button>
-        <span className="eyebrow">OPENDOTS TEMPLATE</span>
+        <span className="eyebrow">{t('dialogs.template')}</span>
         <h2 id="dialog-title">{title}</h2>
         <form
           onSubmit={async (e) => {
@@ -172,15 +181,14 @@ export function WorkspaceDialog({
               };
             }
             if (await mutate(path, method, body)) onClose();
-            else
-              setError('Could not save. Review the workspace error and retry.');
+            else setError(t('editor.saveReviewError'));
             setBusy(false);
           }}
         >
           {(dialog.type === 'space' || dialog.type === 'dot') && (
             <>
               <label className="field-label" htmlFor="entity-name">
-                Name
+                {t('dialogs.name')}
               </label>
               <input
                 id="entity-name"
@@ -195,12 +203,12 @@ export function WorkspaceDialog({
             <>
               <label className="field-label" htmlFor="entity-text">
                 {dialog.type === 'dot'
-                  ? 'Role instructions'
+                  ? t('dialogs.roleInstructions')
                   : dialog.type === 'space'
-                    ? 'What belongs here?'
+                    ? t('dialogs.whatBelongs')
                     : dialog.type === 'memory'
-                      ? 'Preference or context'
-                      : 'Task to revisit'}
+                      ? t('dialogs.preferenceContext')
+                      : t('dialogs.taskToRevisit')}
               </label>
               <textarea
                 id="entity-text"
@@ -211,7 +219,7 @@ export function WorkspaceDialog({
                 onChange={(e) => setText(e.target.value)}
                 placeholder={
                   dialog.type === 'dot'
-                    ? 'You are a thoughtful research partner. Compare evidence and be clear about uncertainty.'
+                    ? t('dialogs.instructionsPlaceholder')
                     : ''
                 }
               />
@@ -219,10 +227,8 @@ export function WorkspaceDialog({
           )}
           {dialog.type === 'dot' && (
             <fieldset className="space-access-fields">
-              <legend>Space access</legend>
-              <p className="muted">
-                Choose where this Dot can read and edit pages.
-              </p>
+              <legend>{t('dialogs.spaceAccess')}</legend>
+              <p className="muted">{t('dialogs.chooseSpaceAccess')}</p>
               {workspace.spaces.map((space) => (
                 <label className="permission-row" key={space.id}>
                   <input
@@ -237,11 +243,11 @@ export function WorkspaceDialog({
                         setDefaultSpace(next[0] ?? '');
                     }}
                   />
-                  <span>{space.name}</span>
+                  <span>{localizedStarterSpaceName(space.name)}</span>
                 </label>
               ))}
               <label className="field-label" htmlFor="default-space">
-                Default destination for saved pages
+                {t('dialogs.defaultSavedPages')}
               </label>
               <select
                 id="default-space"
@@ -250,13 +256,13 @@ export function WorkspaceDialog({
                 onChange={(event) => setDefaultSpace(event.target.value)}
               >
                 <option value="" disabled>
-                  Choose a Space
+                  {t('dialogs.chooseSpace')}
                 </option>
                 {workspace.spaces
                   .filter((space) => spaceIds.includes(space.id))
                   .map((space) => (
                     <option key={space.id} value={space.id}>
-                      {space.name}
+                      {localizedStarterSpaceName(space.name)}
                     </option>
                   ))}
               </select>
@@ -271,11 +277,8 @@ export function WorkspaceDialog({
                   onChange={(e) => setResearch(e.target.checked)}
                 />
                 <span>
-                  <strong>Public-page research</strong>
-                  <small>
-                    Allow the server-side read-only browser tool. Global
-                    settings always take precedence.
-                  </small>
+                  <strong>{t('dialogs.researchHeading')}</strong>
+                  <small>{t('dialogs.researchHelp')}</small>
                 </span>
               </label>
               <label className="permission-row">
@@ -285,20 +288,17 @@ export function WorkspaceDialog({
                   onChange={(e) => setMemory(e.target.checked)}
                 />
                 <span>
-                  <strong>Use saved memories</strong>
-                  <small>
-                    Include your preferences in new turns. Changing permission
-                    stops active work.
-                  </small>
+                  <strong>{t('dialogs.memoryHeading')}</strong>
+                  <small>{t('dialogs.memoryHelp')}</small>
                 </span>
               </label>
             </>
           )}
           {dialog.type === 'dot' && (
             <fieldset className="space-access-fields">
-              <legend>Automatic Learning</legend>
+              <legend>{t('dialogs.learning')}</legend>
               <label className="field-label" htmlFor="learning-container">
-                Learning container ID
+                {t('dialogs.learningContainerId')}
               </label>
               <input
                 id="learning-container"
@@ -313,10 +313,7 @@ export function WorkspaceDialog({
                 }}
               />
               <p className="muted" id="learning-help">
-                Create this container in your Intelligence project first. New
-                conversations will contribute evidence to it. Leave blank to
-                keep new conversations out of Learning. Existing conversations
-                retain their original assignment.
+                {t('dialogs.learningHelp')}
               </p>
               <label className="permission-row">
                 <input
@@ -326,13 +323,8 @@ export function WorkspaceDialog({
                   onChange={(event) => setSkillDelivery(event.target.checked)}
                 />
                 <span>
-                  <strong>Use published skills</strong>
-                  <small>
-                    Load reviewed skills from each conversation’s assigned
-                    container. Enable delivery in Intelligence too. Turning this
-                    off stops skill loading; it does not stop evidence
-                    collection.
-                  </small>
+                  <strong>{t('dialogs.publishedSkills')}</strong>
+                  <small>{t('dialogs.publishedSkillsHelp')}</small>
                 </span>
               </label>
               <a
@@ -340,7 +332,7 @@ export function WorkspaceDialog({
                 target="_blank"
                 rel="noreferrer"
               >
-                Set up Learning and review skills ↗
+                {t('dialogs.learningGuide')} ↗
               </a>
             </fieldset>
           )}
@@ -350,28 +342,42 @@ export function WorkspaceDialog({
           {dialog.type === 'schedule' && (
             <>
               <label className="field-label" htmlFor="schedule-interval">
-                Repeat after each successful run
+                {t('dialogs.repeatAfterRun')}
               </label>
               <select
                 id="schedule-interval"
                 value={interval}
                 onChange={(e) => setInterval(e.target.value)}
               >
-                <option value="60">Every minute (testing)</option>
-                <option value="3600">Every hour</option>
-                <option value="86400">Every day</option>
-                <option value="604800">Every week</option>
+                <option value="60">{t('dialogs.everyMinute')}</option>
+                <option value="3600">{t('dialogs.everyHour')}</option>
+                <option value="86400">{t('dialogs.everyDay')}</option>
+                <option value="604800">{t('dialogs.everyWeek')}</option>
               </select>
-              <p className="muted">
-                Runs on the server in this same conversation, even with the tab
-                closed. Failed or interrupted runs wait for manual retry. Review
-                completed work before retrying an interrupted run.
-              </p>
+              <p className="muted">{t('dialogs.scheduleHelp')}</p>
             </>
           )}
           {dialog.type === 'settings' && (
             <fieldset className="appearance-fields">
-              <legend>Appearance</legend>
+              <legend>{t('dialogs.language')}</legend>
+              <select
+                aria-label={t('dialogs.language')}
+                value={languagePreference()}
+                onChange={(event) =>
+                  setLanguage(event.target.value as Language)
+                }
+              >
+                <option value="pt-BR">{t('dialogs.portugueseBrazil')}</option>
+                <option value="en">{t('dialogs.english')}</option>
+                <option value="es">{t('dialogs.spanish')}</option>
+                <option value="fr">{t('dialogs.french')}</option>
+              </select>
+              <p className="muted">{t('dialogs.languageSaved')}</p>
+            </fieldset>
+          )}
+          {dialog.type === 'settings' && (
+            <fieldset className="appearance-fields">
+              <legend>{t('dialogs.appearance')}</legend>
               <div className="segmented" role="radiogroup">
                 {(['system', 'light', 'dark'] as ThemePreference[]).map(
                   (option) => (
@@ -386,50 +392,55 @@ export function WorkspaceDialog({
                           setThemePreference(option);
                         }}
                       />
-                      <span>{option[0].toUpperCase() + option.slice(1)}</span>
+                      <span>
+                        {t(
+                          `dialogs.${option}` as
+                            'dialogs.system' | 'dialogs.light' | 'dialogs.dark',
+                        )}
+                      </span>
                     </label>
                   ),
                 )}
               </div>
-              <p className="muted">
-                Saved in this browser. System follows your device.
-              </p>
+              <p className="muted">{t('dialogs.savedInBrowser')}</p>
             </fieldset>
           )}
           {dialog.type === 'settings' && (
             <div className="config-note">
-              <strong>Service setup</strong>
+              <strong>{t('dialogs.serviceSetup')}</strong>
               <p>
                 {workspace.setup.missing.length ? (
                   <>
-                    Add{' '}
+                    {t('dialogs.addMissing')}{' '}
                     {workspace.setup.missing.map((name, index) => (
                       <span key={name}>
                         {index > 0 && ', '}
-                        <code>{name}</code>
+                        <code>{localizeMissingSetting(name)}</code>
                       </span>
                     ))}{' '}
-                    to the server environment, then restart.
+                    {t('dialogs.addMissingSuffix')}
                   </>
                 ) : (
-                  'Text configuration is present. A successful conversation confirms connectivity.'
+                  t('dialogs.configPresent')
                 )}
               </p>
               <p>
-                Slack: {workspace.setup.slack.replaceAll('_', ' ')}. Voice:{' '}
+                {t('editor.slack')}:{' '}
+                {localizedSlackStatus(workspace.setup.slack)}.{' '}
+                {t('editor.voice')}:{' '}
                 {workspace.setup.voice
-                  ? 'configuration present'
-                  : 'needs VOICE_API_KEY and VOICE_MODEL'}
+                  ? t('dialogs.voiceConfigured')
+                  : t('dialogs.voiceMissing')}
                 .
               </p>
               <p>
-                Setup and usage metadata is collected by default.{' '}
+                {t('dialogs.telemetry')}{' '}
                 <a
                   href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP-TELEMETRY.md"
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Tracking and opt-out details
+                  {t('dialogs.trackingDetails')}
                 </a>
               </p>
               <a
@@ -437,15 +448,12 @@ export function WorkspaceDialog({
                 target="_blank"
                 rel="noreferrer"
               >
-                Template setup guide ↗
+                {t('dialogs.setupGuide')} ↗
               </a>
             </div>
           )}
           {dialog.type === 'memory' && (
-            <p className="muted">
-              Memories are explicit preferences, not automatic learning. Avoid
-              secrets; enabled memories go to your model provider.
-            </p>
+            <p className="muted">{t('dialogs.memoryPrivacy')}</p>
           )}
           {error && (
             <p className="chat-error" role="alert">
@@ -453,7 +461,7 @@ export function WorkspaceDialog({
             </p>
           )}
           <button className="primary full" disabled={busy}>
-            {busy ? 'Saving…' : 'Save'}
+            {busy ? t('dialogs.saving') : t('dialogs.save')}
           </button>
         </form>
       </section>
