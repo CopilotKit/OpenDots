@@ -6,6 +6,7 @@ import {
   type PendingApproval,
 } from '../shared/connection-types';
 import { api } from './api';
+import { t } from './i18n/pt-BR';
 import { computerToolResult } from './ComputerToolCard';
 type Receipt = {
   approvalId: string | null;
@@ -57,7 +58,7 @@ export function ConnectionActionCard({
           setApprovalError(
             cause instanceof Error
               ? cause.message
-              : 'Could not load this request.',
+              : t('connectedAction.loadError'),
           ),
       );
     return () => {
@@ -81,7 +82,7 @@ export function ConnectionActionCard({
             setError(
               cause instanceof Error
                 ? cause.message
-                : 'Could not check this action.',
+                : t('connectedAction.checkError'),
             );
         });
     setError('');
@@ -122,7 +123,7 @@ export function ConnectionActionCard({
       await respond({ approved: true, ...value });
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : 'Could not run this action.',
+        cause instanceof Error ? cause.message : t('connectedAction.runError'),
       );
     } finally {
       pending.current = false;
@@ -133,34 +134,36 @@ export function ConnectionActionCard({
   return (
     <section
       className="page-review-card connection-action-card"
-      aria-label="Approve connected-service action"
+      aria-label={t('connectedAction.approveAction')}
     >
       <header>
         <PlugZap size={17} />
         <strong>
           {approval
             ? `${approval.connection} · ${approval.title}`
-            : 'Connected service'}
+            : t('connectedAction.service')}
         </strong>
         <span>
           {approved
             ? outcome?.isError
-              ? 'Failed'
-              : 'Approved'
+              ? t('connectedAction.failed')
+              : t('connectedAction.approved')
             : declined
-              ? 'Declined'
+              ? t('connectedAction.declined')
               : running
-                ? 'Running'
+                ? t('connectedAction.running')
                 : finished
-                  ? 'Ended'
+                  ? t('connectedAction.ended')
                   : !ready
-                    ? 'Checking'
-                    : 'Needs your approval'}
+                    ? t('connectedAction.checking')
+                    : t('connectedAction.needsApproval')}
         </span>
       </header>
       <div className="page-review-body">
         <h3>
-          {action.success ? action.data.summary : 'Preparing the action…'}
+          {action.success
+            ? action.data.summary
+            : t('connectedAction.preparing')}
         </h3>
         {entries.length > 0 && (
           <dl className="connection-action-args">
@@ -174,16 +177,13 @@ export function ConnectionActionCard({
         )}
         {mismatch && (
           <div className="connection-action-result failed">
-            <strong>Cannot run</strong>
-            <pre>
-              This card’s saved result belongs to a different approval request.
-              Nothing was run for this one.
-            </pre>
+            <strong>{t('connectedAction.cannotRun')}</strong>
+            <pre>{t('connectedAction.mismatch')}</pre>
           </div>
         )}
         {approvalError && !outcome && (
           <div className="connection-action-result failed">
-            <strong>Cannot run</strong>
+            <strong>{t('connectedAction.cannotRun')}</strong>
             <pre>{approvalError}</pre>
           </div>
         )}
@@ -192,7 +192,9 @@ export function ConnectionActionCard({
             className={`connection-action-result ${outcome.isError ? 'failed' : ''}`}
           >
             <strong>
-              {outcome.isError ? 'Service error' : 'Service response'}
+              {outcome.isError
+                ? t('connectedAction.serviceError')
+                : t('connectedAction.serviceResponse')}
             </strong>
             <pre>{outcome.text}</pre>
           </div>
@@ -215,10 +217,10 @@ export function ConnectionActionCard({
             >
               <Check size={15} />
               {busy
-                ? 'Running…'
+                ? t('connectedAction.runningNow')
                 : outcome
-                  ? 'Continue conversation'
-                  : 'Approve & run'}
+                  ? t('connectedAction.continue')
+                  : t('connectedAction.approveRun')}
             </button>
             {!outcome && (
               <button
@@ -233,10 +235,10 @@ export function ConnectionActionCard({
         )}
         <small>
           {running
-            ? 'This action is still running on the server.'
+            ? t('connectedAction.stillRunning')
             : approved || declined || finished
               ? ''
-              : 'Nothing runs until you approve. These are the exact arguments.'}
+              : t('connectedAction.approvalDetails')}
         </small>
       </footer>
     </section>

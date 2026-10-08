@@ -1,6 +1,7 @@
 import { useThreads } from '@copilotkit/react-core/v2';
 import { MessageCircle, Plus } from 'lucide-react';
 import type { Conversation, Dot } from '../shared/types';
+import { t } from './i18n/pt-BR';
 export function ThreadList({
   dots,
   dotId,
@@ -25,20 +26,16 @@ export function ThreadList({
   return (
     <section className="thread-list">
       <div className="nav-label">
-        RECENT CHATS
+        {t('nav.recentConversations')}
         <button
           className="icon-button"
           onClick={onNew}
-          aria-label="New conversation"
+          aria-label={t('nav.newConversation')}
         >
           <Plus size={14} />
         </button>
       </div>
-      {threads.error && (
-        <p className="sidebar-error">
-          Conversation sync unavailable. Check your runtime connection.
-        </p>
-      )}
+      {threads.error && <p className="sidebar-error">{t('nav.syncError')}</p>}
       {local.map((thread) => {
         const remote = threads.threads.find((item) => item.id === thread.id);
         return (
@@ -56,7 +53,7 @@ export function ThreadList({
         );
       })}
       {!local.length && (
-        <p className="sidebar-empty">Your first conversation will live here.</p>
+        <p className="sidebar-empty">{t('nav.firstConversation')}</p>
       )}
       {threads.hasMoreThreads && (
         <button
@@ -64,7 +61,7 @@ export function ThreadList({
           disabled={threads.isFetchingMoreThreads}
           onClick={() => void threads.fetchMoreThreads()}
         >
-          Load more conversations
+          {t('nav.loadMore')}
         </button>
       )}
     </section>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowUpRight, FileText, Monitor, Terminal } from 'lucide-react';
 import { z } from 'zod';
 import { api } from './api';
+import { t } from './i18n/pt-BR';
 
 const screenSchema = z.object({
   base64: z
@@ -18,18 +19,18 @@ export type ComputerToolRenderProps = {
   result?: unknown;
 };
 const labels: Record<string, string> = {
-  navigate: 'Opening website',
-  snapshot: 'Inspecting browser',
-  read: 'Reading page',
-  screenshot: 'Viewing browser',
-  click: 'Clicking in browser',
-  type: 'Typing in browser',
-  key: 'Using keyboard',
-  scroll: 'Scrolling page',
-  files_write: 'Saving file',
-  files_read: 'Reading file',
-  files_list: 'Listing files',
-  exec: 'Running terminal command',
+  navigate: t('computer.openWebsite'),
+  snapshot: t('computer.inspectBrowser'),
+  read: t('computer.readPage'),
+  screenshot: t('computer.viewBrowser'),
+  click: t('computer.clickBrowser'),
+  type: t('computer.typeBrowser'),
+  key: t('computer.keyboard'),
+  scroll: t('computer.scrollPage'),
+  files_write: t('computer.saveFile'),
+  files_read: t('computer.readFile'),
+  files_list: t('computer.listFiles'),
+  exec: t('computer.runCommand'),
 };
 export function computerToolResult(raw: unknown): Record<string, unknown> {
   if (typeof raw === 'string') {
@@ -81,14 +82,14 @@ export function ComputerToolCard({
     !!error ||
     (typeof data.exitCode === 'number' && data.exitCode !== 0);
   const state = interrupted
-    ? 'Interrupted'
+    ? t('computer.interrupted')
     : failed
-      ? 'Needs attention'
+      ? t('computer.attention')
       : complete
-        ? 'Finished'
+        ? t('computer.finished')
         : running
-          ? 'Working'
-          : 'Interrupted';
+          ? t('computer.working')
+          : t('computer.interrupted');
   const detail =
     typeof parameters.url === 'string'
       ? parameters.url
@@ -121,7 +122,7 @@ export function ComputerToolCard({
             setScreenError(
               cause instanceof Error
                 ? cause.message
-                : 'Computer preview unavailable.',
+                : t('computer.previewUnavailable'),
             );
           }
         }
@@ -144,18 +145,18 @@ export function ComputerToolCard({
   return (
     <section
       className={`inline-computer ${showScreen ? 'with-screen' : ''}`}
-      aria-label={`${dotName} computer: ${labels[action] ?? action}`}
+      aria-label={`Computador de ${dotName}: ${labels[action] ?? action}`}
     >
       <header>
         <Icon size={16} aria-hidden="true" />
-        <strong>{labels[action] ?? 'Using computer'}</strong>
+        <strong>{labels[action] ?? t('computer.useComputer')}</strong>
         <span className={failed ? 'tool-state failed' : 'tool-state'}>
           {state}
         </span>
         {onExpand && (
           <button
             type="button"
-            aria-label={`Expand ${dotName} computer`}
+            aria-label={`Expandir computador de ${dotName}`}
             onClick={onExpand}
           >
             <ArrowUpRight size={16} />
@@ -170,7 +171,7 @@ export function ComputerToolCard({
       {error && <p role="alert">{error}</p>}
       {interruption && <p role="status">{interruption}</p>}
       {action === 'exec' && complete && typeof data.stdout === 'string' && (
-        <pre aria-label="Computer terminal output">
+        <pre aria-label={t('computer.terminalOutput')}>
           {data.stdout.slice(0, 4000)}
         </pre>
       )}
@@ -182,18 +183,19 @@ export function ComputerToolCard({
         <div className="inline-computer-preview">
           <div className="inline-computer-caption">
             <span className="live-indicator" />
-            {dotName}’s computer · Current browser view
+            {t('computer.liveComputer')} de {dotName} ·{' '}
+            {t('computer.currentBrowserView')}
           </div>
           {screen && (
             <img
               src={`data:image/png;base64,${screen.base64}`}
-              alt={`Current browser view from ${dotName}'s computer`}
+              alt={`${t('computer.browserImageAlt')} ${dotName}`}
             />
           )}
           {screenError ? (
             <p role="status">{screenError}</p>
           ) : (
-            !screen && <p role="status">Connecting to computer…</p>
+            !screen && <p role="status">{t('computer.connecting')}</p>
           )}
           {screen && <div className="inline-computer-url">{screen.url}</div>}
         </div>

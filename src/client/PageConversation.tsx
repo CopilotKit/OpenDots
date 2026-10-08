@@ -5,6 +5,7 @@ import type { Page } from '../server/pages';
 import { Chat } from './Chat';
 import { PageChatRequests } from './page-chat-requests';
 import { api } from './api';
+import { t } from './i18n/pt-BR';
 export function PageConversation({
   page,
   workspace,
@@ -59,7 +60,7 @@ export function PageConversation({
       async () => {
         if (!(await beforeChat()))
           throw new Error(
-            'Save or resolve your document changes before starting page chat.',
+            'Salve ou resolva as alterações do documento antes de iniciar uma conversa sobre a página.',
           );
         return api<Conversation>(
           `/spaces/${page.spaceId}/pages/${page.id}/conversation`,
@@ -77,7 +78,9 @@ export function PageConversation({
         },
         failure: (e) =>
           setError(
-            e instanceof Error ? e.message : 'Could not open page chat.',
+            e instanceof Error
+              ? e.message
+              : 'Não foi possível abrir a conversa sobre a página.',
           ),
         settled: () => setBusy(false),
       },
@@ -85,14 +88,14 @@ export function PageConversation({
   };
   if (thread && dot && thread.dotId === dot.id)
     return (
-      <aside className="document-chat-panel" aria-label="Page conversation">
+      <aside className="document-chat-panel" aria-label={t('pageChat.title')}>
         <div className="document-chat-heading">
           <span>
-            <MessageCircle size={16} /> Page conversation
+            <MessageCircle size={16} /> {t('pageChat.title')}
           </span>
           <button
             className="document-icon"
-            aria-label="Close page chat"
+            aria-label={t('pageChat.close')}
             onClick={() => {
               setThread(undefined);
               onOpenChange(false);
@@ -118,15 +121,15 @@ export function PageConversation({
   if (!dot)
     return (
       <div className="document-chat-setup">
-        <span>Add a specialist to work with this Space.</span>
-        <button onClick={onCreateDot}>Create specialist</button>
+        <span>{t('pageChat.addAgent')}</span>
+        <button onClick={onCreateDot}>{t('pageChat.createAgent')}</button>
       </div>
     );
   if (workspace.setup.missing.length)
     return (
       <div className="document-chat-setup">
-        <span>Connect your assistant to chat about this page.</span>
-        <button onClick={onSettings}>Set up assistant</button>
+        <span>{t('pageChat.connectAgent')}</span>
+        <button onClick={onSettings}>{t('pageChat.setupAgent')}</button>
       </div>
     );
   return (
@@ -139,11 +142,11 @@ export function PageConversation({
         }}
       >
         <label className="sr-only" htmlFor="page-prompt">
-          Ask about this page
+          {t('pageChat.ask')}
         </label>
         <input
           id="page-prompt"
-          placeholder="Ask about this page…"
+          placeholder={t('pageChat.ask')}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           disabled={paused || busy}
@@ -151,7 +154,7 @@ export function PageConversation({
         <div className="document-chat-dock-bottom">
           <label>
             <select
-              aria-label="Page specialist"
+              aria-label={t('pageChat.specialist')}
               disabled={busy}
               value={dot.id}
               onChange={(e) => setDotId(e.target.value)}
@@ -164,10 +167,10 @@ export function PageConversation({
             </select>
             <ChevronDown size={12} />
           </label>
-          <span>{paused ? 'Assistant paused' : 'Uses this saved page'}</span>
+          <span>{paused ? t('pageChat.paused') : t('pageChat.usesPage')}</span>
           <button
             type="submit"
-            aria-label="Send to page assistant"
+            aria-label={t('pageChat.send')}
             disabled={busy || paused}
           >
             <ArrowUp size={18} />

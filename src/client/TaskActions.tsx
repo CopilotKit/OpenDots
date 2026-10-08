@@ -1,5 +1,6 @@
 import { Clock3, Pause, Play, Square } from 'lucide-react';
 import type { Action, Settings, Task } from '../shared/types';
+import { t } from './i18n/pt-BR';
 export function TaskActions({
   task,
   busy,
@@ -19,7 +20,7 @@ export function TaskActions({
       {active ? (
         <button disabled={busy} onClick={() => onAction('pause')}>
           <Pause size={14} />
-          Pause task
+          {t('tasks.pause')}
         </button>
       ) : (
         <button
@@ -28,23 +29,23 @@ export function TaskActions({
         >
           <Play size={14} />
           {task.status === 'interrupted'
-            ? 'Retry after review'
+            ? t('tasks.retryAfterReview')
             : task.status === 'failed'
-              ? 'Retry task'
+              ? t('tasks.retry')
               : task.status === 'paused'
-                ? 'Resume task'
-                : 'Run again'}
+                ? t('tasks.resume')
+                : t('tasks.runAgain')}
         </button>
       )}
       {task.status === 'completed' && !!task.intervalSeconds && (
         <button disabled={busy} onClick={() => onAction('pause')}>
           <Pause size={14} />
-          Pause schedule
+          {t('tasks.pauseSchedule')}
         </button>
       )}
       <button onClick={onSchedule}>
         <Clock3 size={14} />
-        {task.intervalSeconds ? 'Edit schedule' : 'Set a schedule'}
+        {task.intervalSeconds ? t('tasks.editSchedule') : t('tasks.schedule')}
       </button>
       {task.status !== 'cancelled' && (
         <button
@@ -53,7 +54,7 @@ export function TaskActions({
           onClick={() => onAction('cancel')}
         >
           <Square size={12} />
-          Cancel
+          {t('tasks.cancel')}
         </button>
       )}
     </div>
