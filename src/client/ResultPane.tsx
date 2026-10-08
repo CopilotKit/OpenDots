@@ -11,7 +11,7 @@ import ReactMarkdown from 'react-markdown';
 import type { Dot, Result, Status } from '../shared/types';
 import { Mascot } from './Mascot';
 import { ComputerPanel } from './ComputerPanel';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 export function ResultPane({
   latest,
   status,

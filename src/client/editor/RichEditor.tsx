@@ -16,7 +16,7 @@ import {
 import { documentExtensions } from './markdown';
 import { SlashCommands } from './slash-commands';
 import { openPageLink } from '../page-navigation';
-import { t } from '../i18n/pt-BR';
+import { t } from '../i18n';
 export default function RichEditor({
   value,
   onChange,
@@ -68,9 +68,7 @@ export default function RichEditor({
         const html = event.clipboardData?.getData('text/html') ?? '';
         if (/<(img|iframe|script)\b/i.test(html)) {
           event.preventDefault();
-          notice.current(
-            'Imagens e conteúdo incorporado não são compatíveis aqui. Use a fonte Markdown para preservar a marcação original.',
-          );
+          notice.current(t('editor.unsupportedEmbeddedContent'));
           return true;
         }
         return false;
@@ -170,7 +168,7 @@ export default function RichEditor({
           aria-label={t('editor.addLink')}
           onClick={() => {
             const url = window.prompt(
-              'URL do link (https:// ou link para uma página interna)',
+              t('editor.linkPrompt'),
               editor.getAttributes('link').href ?? '',
             );
             if (url === null) return;
@@ -179,9 +177,7 @@ export default function RichEditor({
               return;
             }
             if (!/^(https?:\/\/|\/#\/spaces\/)/i.test(url)) {
-              onNotice(
-                'Use um endereço público http(s) ou um link para uma página interna.',
-              );
+              onNotice(t('editor.invalidLink'));
               return;
             }
             editor

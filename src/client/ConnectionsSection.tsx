@@ -2,7 +2,7 @@ import { useEffect, useState, type KeyboardEvent } from 'react';
 import { PlugZap, RefreshCw, Trash2 } from 'lucide-react';
 import type { Connection } from '../shared/connection-types';
 import { api } from './api';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 // Lives inside the Dot form, so it saves immediately through its own
 // requests and keeps Enter from submitting the surrounding form.
 const stayInSection = (event: KeyboardEvent) => {

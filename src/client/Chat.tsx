@@ -36,7 +36,7 @@ import { Mascot } from './Mascot';
 import { useVoice } from './useVoice';
 import { CallView } from './CallView';
 import { shouldSubmitComposerOnKeyDown } from './chat-composer';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 
 export function Chat({
   thread,
@@ -85,10 +85,7 @@ export function Chat({
         if (active) setPageContext(page);
       })
       .catch(() => {
-        if (active)
-          setContextError(
-            'Não foi possível carregar o contexto da conversa. Tente novamente antes de enviar sua mensagem.',
-          );
+        if (active) setContextError(t('chat.contextLoadError'));
       });
     return () => {
       active = false;

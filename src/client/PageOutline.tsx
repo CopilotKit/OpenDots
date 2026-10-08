@@ -1,6 +1,6 @@
 import { FileText, Plus, X } from 'lucide-react';
 import type { Page } from '../server/pages';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 export function PageOutline({
   pages,
   selected,

@@ -1,7 +1,7 @@
 import { useThreads } from '@copilotkit/react-core/v2';
 import { MessageCircle, Plus } from 'lucide-react';
 import type { Conversation, Dot } from '../shared/types';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 export function ThreadList({
   dots,
   dotId,

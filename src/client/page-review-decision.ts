@@ -1,6 +1,6 @@
 import { pageReviewSchema, type PageReviewDraft } from '../shared/page-review';
 import type { ReviewedPage } from '../server/pages';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 import { api } from './api';
 
 const reviewPath = (threadId: string) =>

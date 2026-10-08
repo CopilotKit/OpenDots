@@ -3,7 +3,7 @@ import { ChevronRight, FileText, Folder } from 'lucide-react';
 import type { Space } from '../shared/types';
 import type { Page } from '../server/pages';
 import { api } from './api';
-import { t } from './i18n/pt-BR';
+import { localizedStarterSpaceName, t } from './i18n';
 
 export function SpaceNav({
   space,
@@ -16,6 +16,7 @@ export function SpaceNav({
   pageId?: string;
   onOpen: (pageId?: string) => void;
 }) {
+  const spaceName = localizedStarterSpaceName(space.name);
   const [expanded, setExpanded] = useState(false);
   const [pages, setPages] = useState<Page[]>([]);
   const [error, setError] = useState('');
@@ -30,7 +31,7 @@ export function SpaceNav({
           setError('');
         }
       } catch {
-        if (current) setError('Não foi possível carregar as páginas.');
+        if (current) setError(t('pages.loadError'));
       }
     };
     void load();
@@ -65,7 +66,7 @@ export function SpaceNav({
           aria-label={(expanded
             ? t('nav.collapseSpace')
             : t('nav.expandSpace')
-          ).replace('{name}', space.name)}
+          ).replace('{name}', spaceName)}
           aria-expanded={expanded}
           aria-controls={`space-pages-${space.id}`}
           onClick={() => setExpanded(!expanded)}
@@ -81,7 +82,7 @@ export function SpaceNav({
           onClick={() => onOpen()}
         >
           <Folder size={16} />
-          <span>{space.name}</span>
+          <span>{spaceName}</span>
         </button>
       </div>
       {expanded && (

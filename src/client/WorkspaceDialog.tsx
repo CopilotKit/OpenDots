@@ -7,7 +7,15 @@ import {
   themePreference,
   type ThemePreference,
 } from './theme';
-import { t } from './i18n/pt-BR';
+import {
+  languagePreference,
+  localizedSlackStatus,
+  localizeMissingSetting,
+  localizedStarterSpaceName,
+  setLanguage,
+  t,
+} from './i18n';
+import type { Language } from './i18n';
 export type Dialog =
   | { type: 'space' }
   | { type: 'dot'; dot?: Dot; spaceId: string }
@@ -235,7 +243,7 @@ export function WorkspaceDialog({
                         setDefaultSpace(next[0] ?? '');
                     }}
                   />
-                  <span>{space.name}</span>
+                  <span>{localizedStarterSpaceName(space.name)}</span>
                 </label>
               ))}
               <label className="field-label" htmlFor="default-space">
@@ -254,7 +262,7 @@ export function WorkspaceDialog({
                   .filter((space) => spaceIds.includes(space.id))
                   .map((space) => (
                     <option key={space.id} value={space.id}>
-                      {space.name}
+                      {localizedStarterSpaceName(space.name)}
                     </option>
                   ))}
               </select>
@@ -351,6 +359,24 @@ export function WorkspaceDialog({
           )}
           {dialog.type === 'settings' && (
             <fieldset className="appearance-fields">
+              <legend>{t('dialogs.language')}</legend>
+              <select
+                aria-label={t('dialogs.language')}
+                value={languagePreference()}
+                onChange={(event) =>
+                  setLanguage(event.target.value as Language)
+                }
+              >
+                <option value="pt-BR">{t('dialogs.portugueseBrazil')}</option>
+                <option value="en">{t('dialogs.english')}</option>
+                <option value="es">{t('dialogs.spanish')}</option>
+                <option value="fr">{t('dialogs.french')}</option>
+              </select>
+              <p className="muted">{t('dialogs.languageSaved')}</p>
+            </fieldset>
+          )}
+          {dialog.type === 'settings' && (
+            <fieldset className="appearance-fields">
               <legend>{t('dialogs.appearance')}</legend>
               <div className="segmented" role="radiogroup">
                 {(['system', 'light', 'dark'] as ThemePreference[]).map(
@@ -389,7 +415,7 @@ export function WorkspaceDialog({
                     {workspace.setup.missing.map((name, index) => (
                       <span key={name}>
                         {index > 0 && ', '}
-                        <code>{name}</code>
+                        <code>{localizeMissingSetting(name)}</code>
                       </span>
                     ))}{' '}
                     {t('dialogs.addMissingSuffix')}
@@ -400,7 +426,7 @@ export function WorkspaceDialog({
               </p>
               <p>
                 {t('editor.slack')}:{' '}
-                {workspace.setup.slack.replaceAll('_', ' ')}.{' '}
+                {localizedSlackStatus(workspace.setup.slack)}.{' '}
                 {t('editor.voice')}:{' '}
                 {workspace.setup.voice
                   ? t('dialogs.voiceConfigured')

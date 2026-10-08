@@ -11,7 +11,7 @@ import {
 import { Mascot } from './Mascot';
 import type { Dot } from '../shared/types';
 import type { useVoice } from './useVoice';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 
 export function CallView({
   dot,

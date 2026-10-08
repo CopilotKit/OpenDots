@@ -1,5 +1,5 @@
 import type { Page } from '../server/pages';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 export type PageContext = Pick<Page, 'id' | 'spaceId' | 'title'>;
 export function contextualMessage(
   text: string,

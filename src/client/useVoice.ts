@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, authHeaders } from './api';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 // A single failed control poll is usually a network flap, not a dead call.
 // Only treat the control connection as lost after this many consecutive
 // poll failures, mirroring the grace period #26 gives the peer connection.

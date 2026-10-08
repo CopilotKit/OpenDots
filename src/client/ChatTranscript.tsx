@@ -6,7 +6,7 @@ import type { AssistantMessage, Message } from '@ag-ui/core';
 import type { CallReceipt } from '../shared/types';
 import { voiceReceiptMessagePrefix } from '../shared/voice-receipt';
 import { isScheduledTaskMessage } from '../shared/scheduled-message';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 // These markers only control rendering; they do not confer trust or permissions.
 export function isInternalVoiceReceipt(message: Message): boolean {
   const metadata = message.metadata;
@@ -60,7 +60,9 @@ export function ChatTranscript({
               className={`chat-bubble ${message.role}${isScheduledTaskMessage(message) ? ' scheduled' : ''}`}
             >
               {isScheduledTaskMessage(message) && (
-                <span className="scheduled-message-label">Agendada</span>
+                <span className="scheduled-message-label">
+                  {t('tasks.scheduled')}
+                </span>
               )}
               <ReactMarkdown
                 components={{

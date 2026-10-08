@@ -21,7 +21,7 @@ import { usePageAutosave } from './editor/use-page-autosave';
 import { inspectMarkdown } from './editor/markdown';
 import { DocumentMenu } from './editor/DocumentMenu';
 import { PageConversation } from './PageConversation';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 const RichEditor = lazy(() => import('./editor/RichEditor'));
 export function PageDocument({
   page,
@@ -209,7 +209,7 @@ export function PageDocument({
                     !window.confirm(
                       t('editor.deleteConfirm').replace(
                         '{title}',
-                        draft.title || 'Sem título',
+                        draft.title || t('editor.untitled'),
                       ),
                     )
                   )

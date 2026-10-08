@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dot } from '../shared/types';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 import type { ComputerAction, ComputerStatus } from '../shared/computer-types';
 import { api } from './api';
 
@@ -97,7 +97,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
             setScreenError(
               cause instanceof Error
                 ? cause.message
-                : 'Não foi possível atualizar a tela.',
+                : t('computer.refreshScreenError'),
             );
           }
         }
@@ -108,9 +108,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
     } catch (cause) {
       if (current()) {
         setError(
-          cause instanceof Error
-            ? cause.message
-            : 'Não foi possível carregar o computador.',
+          cause instanceof Error ? cause.message : t('computer.loadError'),
         );
         setScreen(undefined);
       }
@@ -169,7 +167,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
     } catch (cause) {
       if (!lifecycle.current.active) return;
       const message =
-        cause instanceof Error ? cause.message : 'A ação do computador falhou.';
+        cause instanceof Error ? cause.message : t('computer.actionFailed');
       // Status polling clears the panel error, so keep output action failures
       // next to the output they replace.
       if (showOutput) {
@@ -458,7 +456,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                       }}
                     >
                       <select
-                        aria-label="Tecla a pressionar"
+                        aria-label={t('computer.keyToPress')}
                         value={key}
                         onChange={(event) => setKey(event.target.value)}
                       >

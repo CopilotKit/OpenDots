@@ -48,7 +48,7 @@ import { TaskRow } from './TaskPresentation';
 import { TaskActions } from './TaskActions';
 import { WorkspaceDialog, type Dialog } from './WorkspaceDialog';
 import { submitComposerOnEnter } from './chat-composer';
-import { t } from './i18n/pt-BR';
+import { localizedSlackStatus, t, useLanguage } from './i18n';
 
 function describeFailure(error: unknown, fallback: string) {
   return {
@@ -64,6 +64,7 @@ function describeFailure(error: unknown, fallback: string) {
 }
 
 export function App() {
+  const language = useLanguage();
   const [state, setState] = useState<State>();
   const [workspace, setWorkspace] = useState<WorkspaceState>();
   const [selectedDot, setSelectedDot] = useState('');
@@ -301,11 +302,14 @@ export function App() {
       </main>
     );
   const content = (
-    <div className={`app template-app ${navCollapsed ? 'nav-collapsed' : ''}`}>
-      <nav className="icon-rail" aria-label="Navegação do espaço de trabalho">
+    <div
+      className={`app template-app ${navCollapsed ? 'nav-collapsed' : ''}`}
+      lang={language}
+    >
+      <nav className="icon-rail" aria-label={t('app.navShow')}>
         <button
           className="rail-brand"
-          aria-label="Página inicial do OpenDots"
+          aria-label={t('nav.home')}
           onClick={() => {
             setView('chat');
             setSelectedThread(undefined);
@@ -320,26 +324,26 @@ export function App() {
           <PanelLeft size={18} />
         </button>
         <button
-          aria-label="Nova conversa"
+          aria-label={t('nav.newConversation')}
           disabled={!configured}
           onClick={() => void newConversation()}
         >
           <Plus size={19} />
         </button>
         <button
-          aria-label="Abrir espaços"
+          aria-label={t('nav.spaces')}
           onClick={() => {
             if (workspace.spaces[0]) openPage(workspace.spaces[0].id);
           }}
         >
           <Folder size={18} />
         </button>
-        <button aria-label="Abrir atividades" onClick={() => setView('tasks')}>
+        <button aria-label={t('nav.activity')} onClick={() => setView('tasks')}>
           <Clock3 size={18} />
         </button>
         <button
           className="rail-settings"
-          aria-label="Abrir configurações"
+          aria-label={t('nav.settings')}
           onClick={() => setDialog({ type: 'settings' })}
         >
           <Settings2 size={18} />
@@ -347,7 +351,7 @@ export function App() {
       </nav>
       <button
         className="mobile-menu icon-button"
-        aria-label="Abrir navegação"
+        aria-label={t('app.navShow')}
         aria-expanded={mobile}
         aria-controls="workspace-sidebar"
         onClick={() => setMobile(true)}
@@ -357,7 +361,7 @@ export function App() {
       {mobile && (
         <button
           className="nav-scrim"
-          aria-label="Fechar navegação"
+          aria-label={t('app.navHide')}
           onClick={() => setMobile(false)}
         />
       )}
@@ -400,7 +404,7 @@ export function App() {
             <Plus size={14} />
           </button>
         </div>
-        <nav className="dots-nav" aria-label="Agentes">
+        <nav className="dots-nav" aria-label={t('nav.agents')}>
           {workspace.dots.map((item) => (
             <div className="dot-nav-row" key={item.id}>
               <button
@@ -415,7 +419,7 @@ export function App() {
               </button>
               <button
                 className="icon-button dot-settings"
-                aria-label={`Editar configurações de ${item.name}`}
+                aria-label={`${t('app.editAgentSettings')} ${item.name}`}
                 onClick={() =>
                   setDialog({ type: 'dot', dot: item, spaceId: item.spaceId })
                 }
@@ -426,7 +430,7 @@ export function App() {
           ))}
         </nav>
         <div className="spaces-heading nav-label">
-          {t('nav.spaces').toLocaleUpperCase('pt-BR')}
+          {t('nav.spacesHeading')}
           <button
             className="icon-button"
             aria-label={t('nav.createSpace')}
@@ -576,7 +580,7 @@ export function App() {
             <span>{error}</span>
             <button
               className="icon-button"
-              aria-label="Fechar aviso de erro"
+              aria-label={t('dialogs.close')}
               onClick={() => setNotices((current) => dismissNotice(current))}
             >
               <X size={16} />
@@ -641,7 +645,12 @@ export function App() {
                       state={state.settings.paused ? 'paused' : 'idle'}
                     />
                     <h2>{dot.name}</h2>
-                    <p>{dot.instructions}</p>
+                    <p>
+                      {dot.instructions ===
+                      'Be thoughtful, practical, and concise. Help the user think clearly and follow through.'
+                        ? t('app.defaultAgentDescription')
+                        : dot.instructions}
+                    </p>
                     <button
                       className="text-button"
                       onClick={() =>
@@ -658,11 +667,7 @@ export function App() {
                       </span>
                       <div>
                         <strong>{t('app.connectAgent')}</strong>
-                        <p>
-                          Conecte o modelo e o serviço de conversas em
-                          Configurações para começar a conversar. Seus espaços e
-                          preferências dos agentes continuam salvos.
-                        </p>
+                        <p>{t('app.setupIncomplete')}</p>
                         <p>
                           {t('app.telemetryNotice')}{' '}
                           <a
@@ -743,7 +748,7 @@ export function App() {
                       className={`online-dot ${workspace.setup.slack === 'online' ? '' : 'off'}`}
                     />
                     {t('app.slack')} ·{' '}
-                    {workspace.setup.slack.replaceAll('_', ' ')}
+                    {localizedSlackStatus(workspace.setup.slack)}
                     <button
                       className="text-button"
                       onClick={() => setDialog({ type: 'settings' })}

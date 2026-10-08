@@ -1,7 +1,5 @@
 # Interface localization
 
-The interface currently ships in Brazilian Portuguese (`pt-BR`). Keep user-facing strings in `src/client/i18n/pt-BR.ts` and access them through the typed `t()` helper instead of adding translated copy directly to components.
+The interface ships in Brazilian Portuguese (`pt-BR`), English (`en`), Spanish (`es`), and French (`fr`). Keep user-facing strings in the matching locale files under `src/client/i18n/`, and access them through the typed `t()` helper in `src/client/i18n/index.ts`.
 
-Translation keys are grouped by interface area (`nav`, `pages`, `tasks`, `chat`, and `dialogs`). Prefer short, descriptive keys and preserve product names, environment variable names, and technical identifiers. Format dates with the `pt-BR` locale.
-
-When adding another locale in the future, keep the same key structure so components can switch dictionaries without changing their copy. Update this document and the document language metadata when the default locale changes.
+Translation keys are grouped by interface area. Keep all dictionaries aligned when adding keys, preserve product names and technical identifiers, and keep interpolation placeholders such as `{name}` identical. The selected language is saved in the browser.

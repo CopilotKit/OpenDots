@@ -5,7 +5,7 @@ import type { Page } from '../server/pages';
 import { Chat } from './Chat';
 import { PageChatRequests } from './page-chat-requests';
 import { api } from './api';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 export function PageConversation({
   page,
   workspace,
@@ -59,9 +59,7 @@ export function PageConversation({
       scope,
       async () => {
         if (!(await beforeChat()))
-          throw new Error(
-            'Salve ou resolva as alterações do documento antes de iniciar uma conversa sobre a página.',
-          );
+          throw new Error(t('pageChat.saveBeforeChat'));
         return api<Conversation>(
           `/spaces/${page.spaceId}/pages/${page.id}/conversation`,
           'POST',
@@ -77,11 +75,7 @@ export function PageConversation({
           onRefresh();
         },
         failure: (e) =>
-          setError(
-            e instanceof Error
-              ? e.message
-              : 'Não foi possível abrir a conversa sobre a página.',
-          ),
+          setError(e instanceof Error ? e.message : t('pageChat.openError')),
         settled: () => setBusy(false),
       },
     );

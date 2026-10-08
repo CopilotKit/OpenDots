@@ -1,4 +1,4 @@
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 let token = sessionStorage.getItem('opendots-token') ?? '';
 export function setToken(value: string) {
   token = value;

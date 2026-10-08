@@ -6,7 +6,7 @@ import { api } from './api';
 import { SpaceLibrary } from './SpaceLibrary';
 import { PageDocument } from './PageDocument';
 import { PageOutline } from './PageOutline';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 export function SpaceWorkspace({
   space,
   pageId,
@@ -51,11 +51,7 @@ export function SpaceWorkspace({
         }
       } catch (e) {
         if (active)
-          setError(
-            e instanceof Error
-              ? e.message
-              : 'Não foi possível carregar as páginas.',
-          );
+          setError(e instanceof Error ? e.message : t('pages.loadError'));
       }
     };
     void load();
@@ -95,9 +91,7 @@ export function SpaceWorkspace({
       setPages((previous) => [...previous, next]);
       onPage(next.id);
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : 'Não foi possível criar a página.',
-      );
+      setError(e instanceof Error ? e.message : t('pages.createError'));
     }
   };
   return (

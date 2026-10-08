@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { Task } from '../shared/types';
 import { Mascot } from './Mascot';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 export const relative = (value: number) => {
   const minutes = Math.floor((Date.now() - value) / 60000);
   return minutes < 1

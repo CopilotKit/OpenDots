@@ -3,7 +3,7 @@ import { MarkdownManager } from '@tiptap/markdown';
 import { TableKit } from '@tiptap/extension-table';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
-import { t } from '../i18n/pt-BR';
+import { t } from '../i18n';
 export const documentExtensions = () => [
   StarterKit.configure({
     underline: false,

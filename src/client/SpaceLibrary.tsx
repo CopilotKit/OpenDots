@@ -9,7 +9,11 @@ import {
 } from 'lucide-react';
 import type { Page } from '../server/pages';
 import type { Space } from '../shared/types';
-import { t } from './i18n/pt-BR';
+import {
+  localizedStarterSpaceDescription,
+  localizedStarterSpaceName,
+  t,
+} from './i18n';
 export function pageExcerpt(content: string) {
   return content
     .replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '')
@@ -34,6 +38,8 @@ export function SpaceLibrary({
   onPage: (id: string) => void;
   onNew: () => void;
 }) {
+  const spaceName = localizedStarterSpaceName(space.name);
+  const spaceDescription = localizedStarterSpaceDescription(space.description);
   const [query, setQuery] = useState('');
   const [layout, setLayout] = useState<'grid' | 'list'>('grid');
   const [sort, setSort] = useState('recent');
@@ -55,13 +61,13 @@ export function SpaceLibrary({
   return (
     <section
       className="space-library"
-      aria-label={`${space.name} page library`}
+      aria-label={t('pages.libraryLabel').replace('{name}', spaceName)}
     >
       <header className="library-heading">
         <div>
           <span className="library-eyebrow">{t('pages.space')}</span>
-          <h1>{space.name}</h1>
-          {space.description && <p>{space.description}</p>}
+          <h1>{spaceName}</h1>
+          {spaceDescription && <p>{spaceDescription}</p>}
         </div>
         <button className="document-primary" onClick={onNew}>
           <Plus size={17} /> {t('pages.new')}

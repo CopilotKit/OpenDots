@@ -6,7 +6,7 @@ import {
   type PendingApproval,
 } from '../shared/connection-types';
 import { api } from './api';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 import { computerToolResult } from './ComputerToolCard';
 type Receipt = {
   approvalId: string | null;

@@ -1,6 +1,6 @@
 import { Clock3, Pause, Play, Square } from 'lucide-react';
 import type { Action, Settings, Task } from '../shared/types';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 export function TaskActions({
   task,
   busy,

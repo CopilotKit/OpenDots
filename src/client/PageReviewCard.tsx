@@ -12,7 +12,7 @@ import {
 } from './page-review-decision';
 import { openPageLink } from './page-navigation';
 import type { ReviewedPage } from '../server/pages';
-import { t } from './i18n/pt-BR';
+import { t } from './i18n';
 export function PageReviewCard({
   args,
   status,
@@ -77,7 +77,7 @@ export function PageReviewCard({
       if (!page) {
         await respond({
           approved: false,
-          message: 'A pessoa responsável recusou este rascunho. Não o salve.',
+          message: t('review.declinedMessage'),
         });
         return;
       }

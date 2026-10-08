@@ -3,7 +3,7 @@ import Suggestion, {
   exitSuggestion,
   type SuggestionProps,
 } from '@tiptap/suggestion';
-import { t } from '../i18n/pt-BR';
+import { t } from '../i18n';
 interface Block {
   title: string;
   description: string;

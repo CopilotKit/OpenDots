@@ -4,6 +4,7 @@ export const ptBR = {
     home: 'Página inicial do OpenDots',
     newConversation: 'Nova conversa',
     spaces: 'Espaços',
+    spacesHeading: 'ESPAÇOS',
     activity: 'Atividades',
     settings: 'Configurações',
     agents: 'Agentes',
@@ -24,6 +25,7 @@ export const ptBR = {
   },
   workspace: {
     yourCorner: 'Seu cantinho.',
+    navigation: 'Navegação do espaço de trabalho',
     ownerToken:
       'Digite o token de acesso do proprietário configurado no servidor.',
     tokenLabel: 'Token de acesso do proprietário',
@@ -61,6 +63,13 @@ export const ptBR = {
     backToAll: 'Voltar para todas as páginas',
     documents: 'Documentos do espaço',
     untitled: 'Página sem título',
+    libraryLabel: 'Biblioteca de páginas de {name}',
+    loadError: 'Não foi possível carregar as páginas.',
+    createError: 'Não foi possível criar a página.',
+  },
+  starter: {
+    spaceName: 'Espaço do dia a dia',
+    spaceDescription: 'Um espaço para organizar seu dia.',
   },
   tasks: {
     now: 'Agora mesmo',
@@ -118,6 +127,8 @@ export const ptBR = {
     saveError: 'Não foi possível salvar a conversa.',
     noResponse:
       'Esta solicitação não recebeu resposta. Verifique a conexão do serviço e tente novamente.',
+    contextLoadError:
+      'Não foi possível carregar o contexto da conversa. Tente novamente antes de enviar sua mensagem.',
   },
   dialogs: {
     close: 'Fechar janela',
@@ -134,6 +145,12 @@ export const ptBR = {
     research: 'Pesquisa em páginas públicas',
     memory: 'Usar memórias salvas',
     appearance: 'Aparência',
+    language: 'Idioma',
+    portugueseBrazil: 'Português (Brasil)',
+    english: 'Inglês',
+    spanish: 'Español',
+    french: 'Français',
+    languageSaved: 'A preferência de idioma fica salva neste navegador.',
     system: 'Sistema',
     light: 'Claro',
     dark: 'Escuro',
@@ -186,6 +203,11 @@ export const ptBR = {
     researchHeading: 'Pesquisa em páginas públicas',
     memoryHeading: 'Usar memórias salvas',
     openLearning: 'Abrir a configuração do Learning e revisar habilidades',
+    or: 'ou',
+    slackOnline: 'online',
+    slackActivationFailed: 'falha na ativação',
+    slackSetupRequired: 'configuração necessária',
+    slackNotConfigured: 'não configurado',
   },
   app: {
     activity: 'Atividades',
@@ -194,6 +216,7 @@ export const ptBR = {
     conversationError: 'Não foi possível criar a conversa.',
     badToken: 'O token de acesso não foi aceito.',
     editSpecialist: 'Editar agente especialista',
+    editAgentSettings: 'Editar configurações de',
     telemetryNotice:
       'Metadados de configuração e uso são coletados por padrão.',
     tracking: 'Detalhes da coleta e como desativá-la',
@@ -248,6 +271,10 @@ export const ptBR = {
     navCollapse: 'Recolher barra lateral',
     navShow: 'Mostrar navegação',
     navHide: 'Ocultar navegação',
+    setupIncomplete:
+      'Conecte o modelo e o serviço de conversas em Configurações para começar a conversar. Seus espaços e preferências dos agentes continuam salvos.',
+    defaultAgentDescription:
+      'Seja cuidadoso, prático e conciso. Ajude a pessoa a pensar com clareza e seguir em frente.',
   },
   calls: {
     connecting: 'Conectando…',
@@ -386,6 +413,9 @@ export const ptBR = {
       'Clique na tela ou informe as coordenadas abaixo. O texto será enviado diretamente ao navegador, fora do chat. Devolva o controle quando terminar.',
     click: 'Clicar',
     terminalOutput: 'Saída do terminal do computador',
+    refreshScreenError: 'Não foi possível atualizar a tela.',
+    loadError: 'Não foi possível carregar o computador.',
+    actionFailed: 'A ação do computador falhou.',
   },
   connections: {
     title: 'Conexões',
@@ -491,6 +521,11 @@ export const ptBR = {
     slack: 'Slack',
     voice: 'Voz',
     setupNeeded: 'Configuração necessária',
+    unsupportedEmbeddedContent:
+      'Imagens e conteúdo incorporado não são compatíveis aqui. Use a fonte Markdown para preservar a marcação original.',
+    linkPrompt: 'URL do link (https:// ou link para uma página interna)',
+    invalidLink:
+      'Use um endereço público http(s) ou um link para uma página interna.',
   },
   review: {
     restoreError: 'Não foi possível restaurar esta revisão.',
@@ -519,6 +554,7 @@ export const ptBR = {
     changedDraft:
       'Esta revisão foi salva com um rascunho diferente. Inicie uma nova revisão para o rascunho alterado.',
     retry: 'Tentar revisão novamente',
+    declinedMessage: 'A pessoa responsável recusou este rascunho. Não o salve.',
   },
   connectedAction: {
     mismatch:
@@ -616,15 +652,3 @@ export const ptBR = {
     none: 'Nenhum bloco correspondente',
   },
 } as const;
-
-export type TranslationPath = {
-  [
-    Group in keyof typeof ptBR
-  ]: `${Group}.${Extract<keyof (typeof ptBR)[Group], string>}`;
-}[keyof typeof ptBR];
-
-/** Resolve a typed translation key such as `pages.new`. */
-export function t(key: TranslationPath): string {
-  const [group, item] = key.split('.') as [keyof typeof ptBR, string];
-  return (ptBR[group] as Record<string, string>)[item];
-}
