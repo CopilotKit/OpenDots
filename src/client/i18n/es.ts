@@ -315,6 +315,8 @@ export const es = {
   },
   computer: {
     liveComputer: 'ordenador',
+    dotComputer: 'Ordenador de {name}',
+    expandComputer: 'Expandir ordenador de {name}',
     liveBrowserFor: 'Pantalla del navegador en tiempo real de',
     refreshed: 'Actualizada a las',
     panelUpdates: 'La pantalla se actualiza mientras este panel está abierto.',

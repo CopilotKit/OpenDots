@@ -307,6 +307,8 @@ export const ptBR = {
   },
   computer: {
     liveComputer: 'computador',
+    dotComputer: 'Computador de {name}',
+    expandComputer: 'Expandir computador de {name}',
     liveBrowserFor: 'Tela do navegador em tempo real de',
     refreshed: 'Atualizada às',
     panelUpdates: 'A tela é atualizada enquanto este painel está aberto.',

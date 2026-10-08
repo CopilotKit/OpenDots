@@ -56,18 +56,6 @@ export class WorkspaceStore {
     this.pages = new Pages(this.db, (id) =>
       this.spaces().some((space) => space.id === id),
     );
-    this.db
-      .prepare(
-        `UPDATE spaces
-         SET name = ?, description = ?
-         WHERE name = ? AND description = ?`,
-      )
-      .run(
-        'Espaço do dia a dia',
-        'Um espaço para organizar seu dia.',
-        'Everyday',
-        'A little space for your day.',
-      );
     if (
       !this.db
         .prepare('PRAGMA table_info(calls)')
@@ -77,8 +65,8 @@ export class WorkspaceStore {
       this.db.exec('ALTER TABLE calls ADD COLUMN anchorMessageId TEXT');
     if (!this.spaces().length) {
       const space = this.createSpace(
-        'Espaço do dia a dia',
-        'Um espaço para organizar seu dia.',
+        'Everyday',
+        'A little space for your day.',
       );
       this.createDot(
         space.id,

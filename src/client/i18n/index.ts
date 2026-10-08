@@ -16,33 +16,57 @@ const changeEvent = 'opendots-language-change';
 
 export function languagePreference(): Language {
   try {
+    if (typeof localStorage === 'undefined') {
+      return 'en';
+    }
     const language = localStorage.getItem(storageKey);
-    return language === 'en' || language === 'es' || language === 'fr'
-      ? language
-      : 'pt-BR';
+    if (
+      language === 'en' ||
+      language === 'pt-BR' ||
+      language === 'es' ||
+      language === 'fr'
+    ) {
+      return language;
+    }
+    if (typeof navigator !== 'undefined' && navigator.language) {
+      const navLang = navigator.language.toLowerCase();
+      if (navLang.startsWith('pt')) return 'pt-BR';
+      if (navLang.startsWith('es')) return 'es';
+      if (navLang.startsWith('fr')) return 'fr';
+    }
+    return 'en';
   } catch {
-    return 'pt-BR';
+    return 'en';
   }
 }
 
 export function setLanguage(language: Language) {
   try {
-    localStorage.setItem(storageKey, language);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(storageKey, language);
+    }
   } catch {
     // Keep the current page usable when browser storage is unavailable.
   }
-  document.documentElement.lang = language;
-  window.dispatchEvent(new Event(changeEvent));
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = language;
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(changeEvent));
+  }
 }
 
 export function useLanguage() {
   return useSyncExternalStore(
     (callback) => {
+      if (typeof window === 'undefined') {
+        return () => {};
+      }
       window.addEventListener(changeEvent, callback);
       return () => window.removeEventListener(changeEvent, callback);
     },
     languagePreference,
-    () => 'pt-BR',
+    () => 'en',
   );
 }
 
@@ -79,4 +103,6 @@ export function localizeMissingSetting(name: string) {
   return name.replace(' (or ', ` (${t('dialogs.or')} `);
 }
 
-document.documentElement.lang = languagePreference();
+if (typeof document !== 'undefined') {
+  document.documentElement.lang = languagePreference();
+}

@@ -145,7 +145,7 @@ export function ComputerToolCard({
   return (
     <section
       className={`inline-computer ${showScreen ? 'with-screen' : ''}`}
-      aria-label={`Computador de ${dotName}: ${labels[action] ?? action}`}
+      aria-label={`${t('computer.dotComputer').replace('{name}', dotName)}: ${labels[action] ?? action}`}
     >
       <header>
         <Icon size={16} aria-hidden="true" />
@@ -156,7 +156,7 @@ export function ComputerToolCard({
         {onExpand && (
           <button
             type="button"
-            aria-label={`Expandir computador de ${dotName}`}
+            aria-label={t('computer.expandComputer').replace('{name}', dotName)}
             onClick={onExpand}
           >
             <ArrowUpRight size={16} />
@@ -183,7 +183,7 @@ export function ComputerToolCard({
         <div className="inline-computer-preview">
           <div className="inline-computer-caption">
             <span className="live-indicator" />
-            {t('computer.liveComputer')} de {dotName} ·{' '}
+            {t('computer.dotComputer').replace('{name}', dotName)} ·{' '}
             {t('computer.currentBrowserView')}
           </div>
           {screen && (

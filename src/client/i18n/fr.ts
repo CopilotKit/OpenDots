@@ -322,6 +322,8 @@ export const fr = {
   },
   computer: {
     liveComputer: 'ordinateur',
+    dotComputer: 'Ordinateur de {name}',
+    expandComputer: 'Agrandir l’ordinateur de {name}',
     liveBrowserFor: 'Écran du navigateur en direct de',
     refreshed: 'Mis à jour à',
     panelUpdates: 'L’écran se met à jour tant que ce panneau est ouvert.',
