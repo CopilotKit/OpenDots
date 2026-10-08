@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 const run = promisify(execFile);
 const platformUrl = new URL('../src/server/platform.ts', import.meta.url).href;
@@ -9,6 +9,10 @@ const storeUrl = new URL('../src/server/store.ts', import.meta.url).href;
 const workspaceUrl = new URL('../src/server/workspace.ts', import.meta.url)
   .href;
 const tsxUrl = import.meta.resolve('tsx');
+
+// Every probe boots a fresh tsx process, and captureRuntime already lets that
+// process run for 15 s, which outlasts Vitest's 5 s default test timeout.
+vi.setConfig({ testTimeout: 20000 });
 
 // Intercept the real SDK transport before import, in a fresh process so its
 // singleton observes each environment. These probes never send live telemetry.
