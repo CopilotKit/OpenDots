@@ -1,4 +1,5 @@
 import { ComputerService } from './computer-service.js';
+import { ConnectionService } from './connections.js';
 import { PageService } from './page-service.js';
 import { randomUUID } from 'node:crypto';
 import {
@@ -26,6 +27,7 @@ export class Platform {
   readonly setupTelemetry: SetupTelemetry;
   readonly pages: PageService;
   readonly computers: ComputerService;
+  readonly connections: ConnectionService;
   readonly intelligence?: CopilotKitIntelligence;
   readonly handler?: CopilotHonoApp;
   constructor(
@@ -39,6 +41,7 @@ export class Platform {
       config,
       () => store.settings().paused,
     );
+    this.connections = new ConnectionService(workspace.connections);
     this.pages = new PageService(workspace, () => {
       this.requireReady();
       return this.intelligence!;
