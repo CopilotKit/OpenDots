@@ -179,6 +179,13 @@ docker compose down
 
 For remote hosting, configure an HTTPS reverse proxy and the matching `APP_ORIGIN`. See [Security](../SECURITY.md) for the template's deployment boundary.
 
+### Dokploy
+
+For deployment through Dokploy, use `compose.dokploy.yml` and follow the
+[Dokploy setup guide](DOKPLOY.md). It selects the application Docker stage, keeps
+workspace data in a named volume, and uses Dokploy's domain routing to serve port 4310. Set `OWNER_TOKEN` and the exact HTTPS `APP_ORIGIN` in Dokploy's Environment
+tab before deploying; add Intelligence and model credentials to enable chat.
+
 ## Automatic Learning
 
 OpenDots connects [CopilotKit Automatic Learning](https://docs.copilotkit.ai/learning)

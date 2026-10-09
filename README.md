@@ -181,6 +181,8 @@ Do not run `copilotkit onboard` in this folder. OpenDots already contains its Co
 
 See [Setup](docs/SETUP.md) for configuration, Slack, calls, the browser service, and Docker.
 
+To deploy with Dokploy, follow the [Dokploy setup guide](docs/DOKPLOY.md).
+
 ## Data and privacy
 
 Conversation messages, tool calls, and run events are persisted in the configured Intelligence deployment. The hosted setup sends them to CopilotKit's cloud; the local evaluation setup uses Intelligence on your machine. OpenDots has no standalone SQLite conversation store. SQLite stores pages, workspace metadata, and thread bindings separately.
