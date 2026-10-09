@@ -74,6 +74,9 @@ Edit `.env` on the server and restart after changes:
 | `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_WS_URL` | Gateway WebSocket override (CLI name preferred; legacy name supported) |
 | `OPENAI_API_KEY`, `OPENAI_MODEL`                     | Model credential and model identifier                                  |
 | `OPENAI_BASE_URL`                                    | Compatible model API endpoint                                          |
+| `DOT_MODEL_API`                                      | Dot compute API: `chat-completions` (default) or opt-in `responses`    |
+| `DOT_MAX_OUTPUT_TOKENS`                              | Per-request Dot output token budget (default `2200`)                   |
+| `DOT_REASONING_EFFORT`                               | Optional native reasoning effort; blank preserves the provider default |
 | `OWNER_ID`                                           | Stable identity used for this deployment's conversations               |
 | `DATABASE_PATH`                                      | SQLite file containing pages, workspace and work metadata              |
 | `OWNER_TOKEN`                                        | Application access token; required for external bindings               |
@@ -84,6 +87,30 @@ Edit `.env` on the server and restart after changes:
 A non-empty `INTELLIGENCE_GATEWAY_WS_URL` takes precedence over `INTELLIGENCE_WS_URL`. Without either WebSocket override, OpenDots uses the hosted gateway. Set both the API and gateway endpoints when connecting a self-hosted deployment.
 
 The model environment variable names follow the configured provider adapter. Provider credentials belong in `.env`, not client-side variables or source code. Conversation history lives in the configured Intelligence project; copying the SQLite file alone does not back up that history.
+
+### Dot model API
+
+Dot compute defaults to `DOT_MODEL_API=chat-completions` with `DOT_MAX_OUTPUT_TOKENS=2200`, preserving the existing output budget. `DOT_REASONING_EFFORT` is optional: unset or blank leaves the provider's reasoning default unchanged. These settings apply globally to Dot chat (including page chat), Slack turns, scheduled turns, delegated voice compute, and call-receipt generation. They do not change the legacy research model path or the Realtime speech endpoint.
+
+**Pending SDK release:** The Responses path is a draft dependency on CopilotKit runtime fixes for continuation and human-in-the-loop resume in [CopilotKit PR #7672](https://github.com/CopilotKit/CopilotKit/pull/7672). Published `@copilotkit/runtime` version `1.77.0` does not include these fixes; upgrading to that version alone is insufficient. Keep the default Chat Completions mode until a corrected SDK release is available. Follow [issue #58](https://github.com/CopilotKit/OpenDots/issues/58) for release status.
+
+After that dependency is available, opt in on the server with, for example:
+
+```dotenv
+DOT_MODEL_API=responses
+DOT_MAX_OUTPUT_TOKENS=8192
+DOT_REASONING_EFFORT=medium
+```
+
+`8192` is an example budget, not a model requirement. Choose a model and an `OPENAI_BASE_URL` whose provider implements the selected API; an OpenAI-compatible Chat Completions endpoint does not necessarily implement Responses. Restart the app after changing these settings. For containers, recreate the app with `docker compose up -d` to apply the updated environment.
+
+`medium` is an explicit reasoning choice in this example, not an application default. Provider defaults vary, and even a reasoning-capable model may not reason by default on a particular endpoint. Set `DOT_REASONING_EFFORT` explicitly when you need a specific effort. OpenDots accepts the exact values `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`; support depends on the selected model and provider, which may reject some values. `none` explicitly disables reasoning where supported; OpenDots never selects it automatically. Configured effort maps to `reasoning_effort` in Chat Completions and `reasoning: { effort }` in Responses. With the setting unset or blank, neither effort option is sent. OpenDots does not infer model capabilities or choose an API from the model name.
+
+The output budget is per model request. In Responses mode it covers reasoning tokens and visible output together. OpenDots does not automatically increase the default or force reasoning off. Incomplete Responses are reported as errors rather than silently retried through another API; choose a budget appropriate for your model, workload, and cost expectations. There is no automatic fallback between APIs.
+
+Responses requests set `store: false` and include `reasoning.encrypted_content` for encrypted reasoning continuation. Conversation messages, tool calls, and run events still persist through Threads in the configured Intelligence deployment. These request settings do not imply zero data retention by every configured service.
+
+Only the exact API names `chat-completions` and `responses` are accepted. The output budget must contain decimal digits representing a positive safe integer. Surrounding whitespace is trimmed; unset or blank API and budget values use the defaults, while unset or blank reasoning effort is omitted. API names and reasoning effort are case-sensitive. Invalid values produce configuration errors naming the variable without echoing its value.
 
 ## Pages and page conversations
 
