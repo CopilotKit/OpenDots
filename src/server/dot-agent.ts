@@ -17,6 +17,10 @@ import {
 import { chat, maxIterations } from '@tanstack/ai';
 import { openaiCompatibleText } from '@tanstack/ai-openai/compatible';
 import { learnedSkillTools, tanstackTools } from './tanstack-tools.js';
+import {
+  geminiToolCallFetch,
+  isGoogleOpenAIEndpoint,
+} from './gemini-compat.js';
 import { Observable } from 'rxjs';
 import { z } from 'zod';
 import { Store } from './store.js';
@@ -304,11 +308,19 @@ export class DotAgent extends AbstractAgent {
           initialSettings.memoryAllowed && dot.memoryAllowed
             ? this.store.memories().map((memory) => memory.text)
             : [];
+        const baseURL = this.config.baseUrl ?? 'https://api.openai.com/v1';
         const adapter = openaiCompatibleText(this.config.model, {
           apiKey: this.config.apiKey,
-          baseURL: this.config.baseUrl ?? 'https://api.openai.com/v1',
+          baseURL,
           api: 'chat-completions',
           maxRetries: 1,
+          ...(isGoogleOpenAIEndpoint(baseURL)
+            ? {
+                fetch: geminiToolCallFetch(
+                  `${baseURL}|${this.config.model}|${input.threadId}`,
+                ),
+              }
+            : {}),
         });
         const serverTools = [
           ...tools,
