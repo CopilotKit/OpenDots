@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
+import { ACTION_TTL_MS } from '../shared/connection-types.js';
 import type {
   Connection,
   ConnectionActionResult,
@@ -140,7 +141,7 @@ export class ConnectionStore {
   action(threadId: string, toolCallId: string) {
     const row = this.db
       .prepare(
-        'SELECT status, result, approvalId FROM mcp_actions WHERE threadId=? AND toolCallId=?',
+        'SELECT status, result, approvalId, createdAt FROM mcp_actions WHERE threadId=? AND toolCallId=?',
       )
       .get(threadId, toolCallId);
     if (!row) return undefined;
@@ -151,24 +152,46 @@ export class ConnectionStore {
         typeof row.result === 'string'
           ? (JSON.parse(row.result) as ConnectionActionResult)
           : null,
+      createdAt: Number(row.createdAt),
     };
   }
   // Claim an approved action once. Returns false if it was already claimed,
-  // so a double click or a retried request never executes twice.
+  // so a double click or a retried request never executes twice. A
+  // result-less claim older than `ttlMs` was interrupted before it could
+  // finish, so it is reclaimed atomically: the UPDATE only matches a row no
+  // live run owns, and concurrent reclaimers serialize on the write.
   claimAction(
     threadId: string,
     toolCallId: string,
     approvalId: string,
     connectionId: string,
     tool: string,
+    ttlMs = ACTION_TTL_MS,
   ) {
-    return (
+    const now = Date.now();
+    if (
       this.db
         .prepare(
           "INSERT OR IGNORE INTO mcp_actions (threadId, toolCallId, connectionId, tool, status, result, createdAt, approvalId) VALUES (?, ?, ?, ?, 'running', NULL, ?, ?)",
         )
-        .run(threadId, toolCallId, connectionId, tool, Date.now(), approvalId)
+        .run(threadId, toolCallId, connectionId, tool, now, approvalId)
         .changes > 0
+    )
+      return true;
+    return (
+      this.db
+        .prepare(
+          "UPDATE mcp_actions SET connectionId=?, tool=?, status='running', createdAt=?, approvalId=? WHERE threadId=? AND toolCallId=? AND status='running' AND result IS NULL AND createdAt<=?",
+        )
+        .run(
+          connectionId,
+          tool,
+          now,
+          approvalId,
+          threadId,
+          toolCallId,
+          now - ttlMs,
+        ).changes > 0
     );
   }
   finishAction(
@@ -178,7 +201,7 @@ export class ConnectionStore {
   ) {
     this.db
       .prepare(
-        "UPDATE mcp_actions SET status='done', result=? WHERE threadId=? AND toolCallId=?",
+        "UPDATE mcp_actions SET status='done', result=? WHERE threadId=? AND toolCallId=? AND result IS NULL",
       )
       .run(JSON.stringify(result), threadId, toolCallId);
   }

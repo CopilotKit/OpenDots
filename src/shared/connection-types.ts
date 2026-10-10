@@ -35,6 +35,9 @@ export interface PendingApproval {
   expiresAt: number;
 }
 export const APPROVAL_TTL_MS = 60 * 60_000;
+// A claimed action settles in about a minute (one bounded MCP call), so a
+// result-less claim older than this was interrupted before it could finish.
+export const ACTION_TTL_MS = 10 * 60_000;
 export const connectionActionSchema = z
   .object({
     approvalId: z.string().min(1).max(64),
