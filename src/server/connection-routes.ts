@@ -132,6 +132,15 @@ export function connectionRoutes(
     const earlier = recovered();
     if (earlier) return earlier;
     const { approval, exposed } = approvalFor(thread.id, body.approvalId);
+    // An approval runs its stored request once. The claim below binds one
+    // tool call id, so without this check the same approval could execute
+    // again for every fresh tool call id sent with it.
+    const claimed = connections.store.actionForApproval(approval.id);
+    if (claimed && claimed.toolCallId !== body.toolCallId)
+      return c.json(
+        { error: 'This approval request already ran its stored action.' },
+        409,
+      );
     if (
       !connections.store.claimAction(
         thread.id,
