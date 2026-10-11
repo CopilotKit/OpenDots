@@ -61,6 +61,14 @@ export function PageDocument({
   const [move, setMove] = useState(false);
   const [notice, setNotice] = useState('');
   const open = useRef(true);
+  const titleRef = useRef<HTMLTextAreaElement | null>(null);
+  // The title wraps instead of scrolling sideways, so the field grows to fit every line.
+  useEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [draft.title]);
   useEffect(() => {
     open.current = true;
     return () => {
@@ -303,15 +311,24 @@ export function PageDocument({
                 <button onClick={() => setMove(false)}>Done</button>
               </div>
             )}
-            <input
+            <textarea
+              ref={titleRef}
               className="document-title"
               aria-label="Page title"
               placeholder="Untitled page"
+              rows={1}
               maxLength={160}
               value={draft.title}
               onChange={(event) =>
                 controller.edit({ title: event.target.value })
               }
+              onKeyDown={(event) => {
+                // A title is one paragraph: Enter leaves the field, Shift+Enter keeps a break.
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }
+              }}
             />
             {sourceMode ? (
               <>
