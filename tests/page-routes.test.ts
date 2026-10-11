@@ -409,15 +409,37 @@ it.each([
   },
 );
 
-it('keeps real Intelligence failures as 503 without exposing details', async () => {
+it.each([
+  new Error('Provider secret'),
+  new SyntaxError('Unexpected token in provider secret'),
+])(
+  'keeps real Intelligence failures as 503 without exposing details: %s',
+  async (error) => {
+    const { ws, app, platform } = fixture();
+    ws.bindThread('valid-thread', ws.dots()[0].id, 'Conversation');
+    vi.spyOn(platform.pages, 'saveConversation').mockRejectedValueOnce(error);
+    const response = await app.request(
+      '/api/conversations/valid-thread/page',
+      request({ title: 'Draft' }),
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error:
+        'Page operation could not complete. Check Intelligence setup or retry; your draft has not been discarded.',
+    });
+  },
+);
+
+it('keeps page conversation response parsing failures as 503', async () => {
   const { ws, app, platform } = fixture();
-  ws.bindThread('valid-thread', ws.dots()[0].id, 'Conversation');
-  vi.spyOn(platform.pages, 'saveConversation').mockRejectedValueOnce(
-    new Error('Provider secret'),
+  const dot = ws.dots()[0];
+  const page = ws.pages.create(dot.spaceId, { title: 'Document' });
+  vi.spyOn(platform.pages, 'conversation').mockRejectedValueOnce(
+    new SyntaxError('Unexpected token in provider secret'),
   );
   const response = await app.request(
-    '/api/conversations/valid-thread/page',
-    request({ title: 'Draft' }),
+    `/api/spaces/${dot.spaceId}/pages/${page.id}/conversation`,
+    request({ dotId: dot.id }),
   );
   expect(response.status).toBe(503);
   expect(await response.json()).toEqual({
@@ -425,6 +447,32 @@ it('keeps real Intelligence failures as 503 without exposing details', async () 
       'Page operation could not complete. Check Intelligence setup or retry; your draft has not been discarded.',
   });
 });
+
+it.each([
+  ['POST', '/spaces/space/pages'],
+  ['PATCH', '/spaces/space/pages/page'],
+  ['POST', '/spaces/space/pages/page/conversation'],
+  ['POST', '/conversations/thread/reviewed-page'],
+  ['POST', '/conversations/thread/page'],
+])(
+  'rejects malformed request JSON before any page operation on %s %s',
+  async (method, path) => {
+    const { app, platform, ws } = fixture();
+    const conversation = vi.spyOn(platform.pages, 'conversation');
+    const save = vi.spyOn(platform.pages, 'saveConversation');
+    const create = vi.spyOn(ws.pages, 'create');
+    const update = vi.spyOn(ws.pages, 'update');
+    const review = vi.spyOn(ws.pages, 'createReviewed');
+    const response = await app.request(`/api${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: '{',
+    });
+    expect(response.status).toBe(400);
+    for (const operation of [conversation, save, create, update, review])
+      expect(operation).not.toHaveBeenCalled();
+  },
+);
 
 it('answers 404, not 503, for a conversation or call that does not exist', async () => {
   const { app } = fixture();
