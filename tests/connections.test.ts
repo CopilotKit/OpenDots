@@ -10,6 +10,7 @@ import {
   type McpTransportFactory,
 } from '../src/server/connections.js';
 import { connectionTools } from '../src/server/connection-tools.js';
+import { STALE_ACTION_MS } from '../src/server/connection-store.js';
 import { connectionRoutes } from '../src/server/connection-routes.js';
 import type { Connection } from '../src/shared/connection-types.js';
 const resources: (() => void)[] = [];
@@ -485,4 +486,90 @@ it('returns a saved result only for the approval that produced it', async () => 
   });
   expect(sent).toHaveBeenCalledOnce();
   expect(sent.mock.calls[0][0]).toMatchObject({ to: 'alice@example.com' });
+});
+
+it('reclaims an interrupted approval-gated run for the same approval only', async () => {
+  const { connections, dot, request, sent } = fixture();
+  await connections.add(dot.id, {
+    name: 'Mail',
+    url: 'https://mail.example.com/mcp',
+  });
+  const approvalId = await requestApproval(
+    connections,
+    dot.id,
+    'mail__send_mail',
+    { to: 'a@example.com', body: 'Hi' },
+  );
+  // The server claimed the action and died before saving its result.
+  const store = connections.store;
+  expect(store.claimAction('thread', 'tc1', approvalId, 'c', 'tool')).toBe(
+    true,
+  );
+  const db = (store as unknown as { db: import('node:sqlite').DatabaseSync })
+    .db;
+  db.prepare('UPDATE mcp_actions SET createdAt=? WHERE toolCallId=?').run(
+    Date.now() - STALE_ACTION_MS - 1000,
+    'tc1',
+  );
+  // The receipt surfaces the interruption, so the card can explain it and
+  // offer Approve again.
+  expect(
+    await (
+      await request('/conversations/thread/connection-actions/tc1')
+    ).json(),
+  ).toMatchObject({ status: 'interrupted' });
+  // A different approval still cannot touch the row, interrupted or not.
+  const other = await request('/conversations/thread/connection-actions', 'POST', {
+    toolCallId: 'tc1',
+    approvalId: 'not-the-approval',
+  });
+  expect(other.status).toBe(409);
+  expect(await other.json()).toEqual({
+    error: 'This action belongs to a different approval request.',
+  });
+  expect(sent).not.toHaveBeenCalled();
+  // The owning approval reclaims and runs the stored request.
+  const rerun = await request('/conversations/thread/connection-actions', 'POST', {
+    toolCallId: 'tc1',
+    approvalId,
+  });
+  expect(await rerun.json()).toEqual({ isError: false, text: 'Sent to a@example.com' });
+  expect(sent).toHaveBeenCalledOnce();
+  expect(
+    await (
+      await request('/conversations/thread/connection-actions/tc1')
+    ).json(),
+  ).toMatchObject({ status: 'done' });
+});
+it('a fresh result-less claim still guards against a double run', async () => {
+  const { connections, dot, request, sent } = fixture();
+  await connections.add(dot.id, {
+    name: 'Mail',
+    url: 'https://mail.example.com/mcp',
+  });
+  const approvalId = await requestApproval(
+    connections,
+    dot.id,
+    'mail__send_mail',
+    { to: 'a@example.com', body: 'Hi' },
+  );
+  const store = connections.store;
+  expect(store.claimAction('thread', 'tc1', approvalId, 'c', 'tool')).toBe(
+    true,
+  );
+  // Claimed seconds ago: this is a live run, not an interrupted one.
+  expect(
+    await (
+      await request('/conversations/thread/connection-actions/tc1')
+    ).json(),
+  ).toMatchObject({ status: 'running' });
+  expect(store.claimAction('thread', 'tc1', approvalId, 'c', 'tool')).toBe(
+    false,
+  );
+  const again = await request('/conversations/thread/connection-actions', 'POST', {
+    toolCallId: 'tc1',
+    approvalId,
+  });
+  expect(again.status).toBe(409);
+  expect(sent).not.toHaveBeenCalled();
 });

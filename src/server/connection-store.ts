@@ -9,6 +9,13 @@ type Row = Omit<Connection, 'hasToken' | 'tools'> & {
   token: string | null;
   tools: string;
 };
+/**
+ * Longest a claimed action may stay result-less before it counts as
+ * interrupted. Tool calls are bounded to 60 seconds, so a claim this old
+ * cannot belong to a live run.
+ */
+export const STALE_ACTION_MS = 5 * 60 * 1000;
+
 export class ConnectionStore {
   constructor(private db: DatabaseSync) {
     db.exec(`CREATE TABLE IF NOT EXISTS mcp_connections(id TEXT PRIMARY KEY, dotId TEXT NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL, token TEXT, tools TEXT NOT NULL, error TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
@@ -140,17 +147,28 @@ export class ConnectionStore {
   action(threadId: string, toolCallId: string) {
     const row = this.db
       .prepare(
-        'SELECT status, result, approvalId FROM mcp_actions WHERE threadId=? AND toolCallId=?',
+        'SELECT status, result, approvalId, createdAt FROM mcp_actions WHERE threadId=? AND toolCallId=?',
       )
       .get(threadId, toolCallId);
     if (!row) return undefined;
+    const status = String(row.status) as 'running' | 'done';
+    const result =
+      typeof row.result === 'string'
+        ? (JSON.parse(row.result) as ConnectionActionResult)
+        : null;
+    // A result-less claim older than the longest possible tool call belongs
+    // to a server that died mid-run. Surface it as interrupted, not absent:
+    // the owner should know the earlier attempt may have happened before
+    // approving a replay. The claim path reclaims the row atomically, so a
+    // live run is never disturbed.
+    const interrupted =
+      status === 'running' &&
+      result === null &&
+      Number(row.createdAt) < Date.now() - STALE_ACTION_MS;
     return {
       approvalId: typeof row.approvalId === 'string' ? row.approvalId : null,
-      status: String(row.status) as 'running' | 'done',
-      result:
-        typeof row.result === 'string'
-          ? (JSON.parse(row.result) as ConnectionActionResult)
-          : null,
+      status: interrupted ? ('interrupted' as const) : status,
+      result,
     };
   }
   // Claim an approved action once. Returns false if it was already claimed,
@@ -162,13 +180,30 @@ export class ConnectionStore {
     connectionId: string,
     tool: string,
   ) {
+    const inserted = this.db
+      .prepare(
+        "INSERT OR IGNORE INTO mcp_actions (threadId, toolCallId, connectionId, tool, status, result, createdAt, approvalId) VALUES (?, ?, ?, ?, 'running', NULL, ?, ?)",
+      )
+      .run(threadId, toolCallId, connectionId, tool, Date.now(), approvalId);
+    if (inserted.changes > 0) return true;
+    // Reclaim an interrupted run: a result-less running row past the tool
+    // timeout, and only for the approval that claimed it. Refreshing
+    // createdAt makes a concurrent reclaim lose, so a fresh running row
+    // still guards against a double click.
     return (
       this.db
         .prepare(
-          "INSERT OR IGNORE INTO mcp_actions (threadId, toolCallId, connectionId, tool, status, result, createdAt, approvalId) VALUES (?, ?, ?, ?, 'running', NULL, ?, ?)",
+          "UPDATE mcp_actions SET createdAt=?, connectionId=?, tool=? WHERE threadId=? AND toolCallId=? AND approvalId=? AND status='running' AND result IS NULL AND createdAt < ?",
         )
-        .run(threadId, toolCallId, connectionId, tool, Date.now(), approvalId)
-        .changes > 0
+        .run(
+          Date.now(),
+          connectionId,
+          tool,
+          threadId,
+          toolCallId,
+          approvalId,
+          Date.now() - STALE_ACTION_MS,
+        ).changes > 0
     );
   }
   finishAction(

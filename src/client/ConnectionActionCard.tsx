@@ -9,7 +9,7 @@ import { api } from './api';
 import { computerToolResult } from './ComputerToolCard';
 type Receipt = {
   approvalId: string | null;
-  status: 'running' | 'done';
+  status: 'running' | 'done' | 'interrupted';
   result: ConnectionActionResult | null;
 };
 const conversation = (threadId: string) =>
@@ -69,6 +69,9 @@ export function ConnectionActionCard({
   const own = mismatch ? null : receipt;
   // A receipt that is still running is checked until the server finishes.
   const running = own?.status === 'running';
+  // A run the server lost before saving its result: the tool may have
+  // completed remotely, so the card says so instead of looking unrun.
+  const interrupted = own?.status === 'interrupted';
   useEffect(() => {
     let active = true;
     const load = () =>
@@ -234,9 +237,11 @@ export function ConnectionActionCard({
         <small>
           {running
             ? 'This action is still running on the server.'
-            : approved || declined || finished
-              ? ''
-              : 'Nothing runs until you approve. These are the exact arguments.'}
+            : interrupted
+              ? 'The earlier run was interrupted before its result was saved. It may have completed - approve again only if it did not.'
+              : approved || declined || finished
+                ? ''
+                : 'Nothing runs until you approve. These are the exact arguments.'}
         </small>
       </footer>
     </section>

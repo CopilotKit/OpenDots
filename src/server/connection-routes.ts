@@ -125,9 +125,12 @@ export function connectionRoutes(
           { error: 'This action belongs to a different approval request.' },
           409,
         );
-      return previous.result
-        ? c.json(previous.result)
-        : c.json({ error: 'This action is already running.' }, 409);
+      if (previous.result) return c.json(previous.result);
+      // An interrupted run falls through so the same approval can reclaim it;
+      // a live one keeps guarding against a double run.
+      if (previous.status !== 'interrupted')
+        return c.json({ error: 'This action is already running.' }, 409);
+      return undefined;
     };
     const earlier = recovered();
     if (earlier) return earlier;
