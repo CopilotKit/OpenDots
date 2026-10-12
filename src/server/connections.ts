@@ -165,7 +165,7 @@ export class ConnectionService {
       });
       return await use(client, bounded);
     } finally {
-      await client.close().catch(() => {});
+      await client.close().catch((err) => console.error('Failed to close MCP client:', err.message));
     }
   }
   private async discover(
