@@ -98,21 +98,25 @@ export class WorkspaceStore {
     return space;
   }
   dots(): Dot[] {
-    return this.db
+    const rows = this.db
       .prepare('SELECT * FROM dots ORDER BY createdAt')
-      .all()
-      .map((row) => ({
-        ...row,
-        spaceIds: this.db
-          .prepare(
-            'SELECT spaceId FROM dot_spaces WHERE dotId=? ORDER BY spaceId',
-          )
-          .all(String(row.id))
-          .map((grant) => String(grant.spaceId)),
-        researchAllowed: !!row.researchAllowed,
-        memoryAllowed: !!row.memoryAllowed,
-        skillDeliveryEnabled: !!row.skillDeliveryEnabled,
-      })) as unknown as Dot[];
+      .all() as unknown as (Dot & { spaceId: string; researchAllowed: number; memoryAllowed: number; skillDeliveryEnabled: number })[];
+    const grants = this.db
+      .prepare('SELECT dotId, spaceId FROM dot_spaces')
+      .all() as { dotId: string; spaceId: string }[];
+    const byDot = new Map<string, string[]>();
+    for (const g of grants) {
+      const list = byDot.get(g.dotId) ?? [];
+      list.push(g.spaceId);
+      byDot.set(g.dotId, list);
+    }
+    return rows.map((row) => ({
+      ...row,
+      spaceIds: (byDot.get(String(row.id)) ?? [row.spaceId]).sort(),
+      researchAllowed: !!row.researchAllowed,
+      memoryAllowed: !!row.memoryAllowed,
+      skillDeliveryEnabled: !!row.skillDeliveryEnabled,
+    })) as unknown as Dot[];
   }
   dot(id: string) {
     return this.dots().find((dot) => dot.id === id);
