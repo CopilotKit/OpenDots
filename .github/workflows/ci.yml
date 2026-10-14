@@ -15,6 +15,10 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Knip (report only)
+        run: npm run knip -- --no-exit-code --reporter symbols --reporter github-actions
+      - name: Knip production (report only)
+        run: npm run knip:production -- --no-exit-code --reporter symbols --reporter github-actions
       - run: npm run check-format
       - run: npm run lint
       - run: npm run typecheck
