@@ -319,7 +319,7 @@ export class ComputerService {
     if (!Object.hasOwn(computerInputs, action))
       throw new Error('Unknown computer action.');
     const parsed = computerInputs[action].parse(input);
-    return this.audited(id, action, actor, async () => {
+    const dispatch = async () => {
       if (actor === 'agent' && action.startsWith('human_'))
         throw new Error('Human controls are owner-only.');
       const kind =
@@ -364,6 +364,22 @@ export class ComputerService {
       } finally {
         clearInterval(watcher);
       }
-    });
+    };
+    // The Computer panel refreshes the screen every few seconds. Recording each
+    // refresh would push the Dot's own actions out of the activity log, so an
+    // owner's screenshot is recorded only when it fails.
+    if (actor === 'owner' && action === 'screenshot') {
+      this.requireDot(id);
+      try {
+        return await dispatch();
+      } catch (error) {
+        this.workspace.computers.finish(
+          this.workspace.computers.begin(id, action, actor),
+          'failed',
+        );
+        throw error;
+      }
+    }
+    return this.audited(id, action, actor, dispatch);
   }
 }
