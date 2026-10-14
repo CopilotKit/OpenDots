@@ -212,6 +212,8 @@ const props: Parameters<typeof Chat>[0] = {
     instructions: '',
     researchAllowed: false,
     memoryAllowed: false,
+    appsAllowed: false,
+    composioToolkits: [],
     createdAt: 0,
   },
   onConsumed: vi.fn(),

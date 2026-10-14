@@ -1,4 +1,5 @@
 import { computerRoutes } from './computer-routes.js';
+import { connectionRoutes } from './connection-routes.js';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { timingSafeEqual } from 'node:crypto';
@@ -90,6 +91,11 @@ export function createApp({
     await next();
   });
   if (platform) app.route('/api', computerRoutes(platform.computers));
+  if (platform)
+    app.route(
+      '/api',
+      connectionRoutes(platform.workspace, platform.connections),
+    );
   const voice = platform ? new VoiceService(platform) : undefined;
   if (platform && voice) app.route('/api', workspaceRoutes(platform, voice));
   app.get('/api/state', (c) =>
@@ -184,6 +190,7 @@ export function createApp({
         paused: z.boolean().optional(),
         researchAllowed: z.boolean().optional(),
         memoryAllowed: z.boolean().optional(),
+        appsAllowed: z.boolean().optional(),
       })
       .strict()
       .safeParse(await c.req.json().catch(() => null));
@@ -193,7 +200,8 @@ export function createApp({
     if (
       settings.paused ||
       !settings.researchAllowed ||
-      previous.memoryAllowed !== settings.memoryAllowed
+      previous.memoryAllowed !== settings.memoryAllowed ||
+      previous.appsAllowed !== settings.appsAllowed
     )
       runner.abortAll();
     if (settings.paused) voice?.abortAll();

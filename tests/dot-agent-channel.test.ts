@@ -130,8 +130,25 @@ function fixture(channel = true) {
     context: [],
     forwardedProps: {},
   };
-  return { agent, input, workspace, telemetry };
+  return { agent, input, workspace, store, telemetry };
 }
+it('aborts an active turn when connected-app permission is revoked', async () => {
+  vi.useFakeTimers();
+  try {
+    const f = fixture(false);
+    f.store.updateSettings({ appsAllowed: true });
+    inner.run.mockReturnValue(new Subject<BaseEvent>());
+    const subscription = f.agent.run(f.input).subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    f.store.updateSettings({ appsAllowed: false });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(inner.abortRun).toHaveBeenCalled();
+    subscription.unsubscribe();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('replaces channel RUN_ERROR payload entirely before the SDK renderer sees it', async () => {
   const f = fixture();
   inner.run.mockReturnValue(

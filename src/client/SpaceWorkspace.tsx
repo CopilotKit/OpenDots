@@ -1,5 +1,5 @@
 import { mergePageSnapshot } from './page-snapshots';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Page } from '../server/pages';
 import type { Space, WorkspaceState } from '../shared/types';
 import { api } from './api';
@@ -32,6 +32,7 @@ export function SpaceWorkspace({
   onCreateDot: () => void;
 }) {
   const [pages, setPages] = useState<Page[]>([]);
+  const removed = useRef(new Set<string>());
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [outline, setOutline] = useState(false);
@@ -41,7 +42,9 @@ export function SpaceWorkspace({
       try {
         const next = await api<Page[]>(`/spaces/${space.id}/pages`);
         if (active) {
-          setPages((previous) => mergePageSnapshot(previous, next));
+          setPages((previous) =>
+            mergePageSnapshot(previous, next, removed.current),
+          );
           setLoaded(true);
           setError('');
         }
@@ -67,6 +70,16 @@ export function SpaceWorkspace({
       ),
     [],
   );
+  const deleted = useCallback((id: string) => {
+    removed.current.add(id);
+    setPages((previous) => {
+      const parentId =
+        previous.find((item) => item.id === id)?.parentId ?? null;
+      return previous
+        .filter((item) => item.id !== id)
+        .map((item) => (item.parentId === id ? { ...item, parentId } : item));
+    });
+  }, []);
   const create = async (parentId: string | null) => {
     try {
       const next = await api<Page>(`/spaces/${space.id}/pages`, 'POST', {
@@ -122,6 +135,7 @@ export function SpaceWorkspace({
             onSubpage={() => void create(page.id)}
             onDirty={onDirty}
             onSaved={saved}
+            onDeleted={deleted}
             onRefresh={onRefresh}
             onSchedule={onSchedule}
             onThread={onThread}

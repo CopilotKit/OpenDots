@@ -269,6 +269,117 @@ it('restores review receipts through the owner API with current thread and Space
   ws.updateDot(dot.id, { ...dot, spaceId: other.id, spaceIds: [other.id] });
   expect((await app.request(`${base}/call`, { headers })).status).toBe(403);
 });
+
+it('answers malformed JSON and invalid Space access with 400 on workspace routes', async () => {
+  const { ws, app } = fixture();
+  const dot = ws.dots()[0];
+  for (const path of ['/api/spaces', '/api/dots', '/api/conversations']) {
+    const response = await app.request(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{',
+    });
+    expect(response.status).toBe(400);
+  }
+  const body = {
+    name: dot.name,
+    instructions: dot.instructions,
+    researchAllowed: true,
+    memoryAllowed: true,
+  };
+  expect(
+    (
+      await app.request(
+        '/api/dots',
+        request({ ...body, spaceId: 'missing-space' }),
+      )
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await app.request(
+        `/api/dots/${dot.id}`,
+        request({ ...body, spaceIds: ['missing-space'] }, 'PUT'),
+      )
+    ).status,
+  ).toBe(400);
+});
+
+it('keeps upstream JSON parsing failures on workspace routes as 503', async () => {
+  const { ws, app } = fixture();
+  vi.spyOn(ws, 'createSpace').mockImplementation(() => {
+    throw new SyntaxError('Unexpected token in upstream response');
+  });
+  const response = await app.request(
+    '/api/spaces',
+    request({ name: 'Valid', description: '' }),
+  );
+  expect(response.status).toBe(503);
+});
+
+it('deletes pages through the API and returns 404 for missing pages or spaces', async () => {
+  const { ws, app } = fixture();
+  const space = ws.spaces()[0].id;
+  const page = ws.pages.create(space, { title: 'To Delete' });
+  const path = `/api/spaces/${space}/pages/${page.id}`;
+
+  const res = await app.request(path, request(undefined, 'DELETE'));
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ ok: true });
+  expect(ws.pages.list(space)).toHaveLength(0);
+
+  const missing = await app.request(path, request(undefined, 'DELETE'));
+  expect(missing.status).toBe(404);
+  expect(await missing.json()).toEqual({
+    error: 'Page not found in this Space.',
+  });
+
+  const missingSpace = await app.request(
+    `/api/spaces/missing-space/pages/${page.id}`,
+    request(undefined, 'DELETE'),
+  );
+  expect(missingSpace.status).toBe(404);
+  expect(await missingSpace.json()).toEqual({ error: 'Space not found.' });
+});
+
+it('reports a deleted reviewed page instead of failing or recreating it', async () => {
+  const { ws, app } = fixture();
+  const dot = ws.dots()[0];
+  ws.bindThread('review-deleted', dot.id, 'Review');
+  const base = '/api/conversations/review-deleted/reviewed-page';
+  const saved = ws.pages.createReviewed(
+    dot.spaceId,
+    { title: 'Saved', content: 'Evidence' },
+    'review-deleted',
+    'call',
+  );
+  expect(ws.pages.delete(dot.spaceId, saved.id)).toBe(true);
+  expect(await (await app.request(`${base}/call`)).json()).toEqual({
+    deleted: true,
+    pageId: saved.id,
+    spaceId: dot.spaceId,
+    reviewDraft: {
+      title: 'Saved',
+      content: 'Evidence',
+      spaceId: dot.spaceId,
+    },
+  });
+  const retry = await app.request(
+    base,
+    request(
+      {
+        title: 'Saved',
+        content: 'Evidence',
+        spaceId: dot.spaceId,
+        toolCallId: 'call',
+      },
+      'POST',
+    ),
+  );
+  expect(retry.status).toBe(404);
+  expect(ws.pages.list(dot.spaceId)).toHaveLength(0);
+});
+
 it.each([
   ['GET', '/reviewed-page/tool'],
   ['POST', '/reviewed-page'],
@@ -313,4 +424,18 @@ it('keeps real Intelligence failures as 503 without exposing details', async () 
     error:
       'Page operation could not complete. Check Intelligence setup or retry; your draft has not been discarded.',
   });
+});
+
+it('answers 404, not 503, for a conversation or call that does not exist', async () => {
+  const { app } = fixture();
+  for (const path of [
+    '/api/conversations/missing/capture',
+    '/api/voice/calls/missing',
+  ]) {
+    const response = await app.request(path);
+    expect(response.status).toBe(404);
+    expect(((await response.json()) as { error: string }).error).toMatch(
+      /not found|does not belong/,
+    );
+  }
 });

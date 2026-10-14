@@ -38,3 +38,10 @@ it('retains locally saved revisions while accepting newer remote pages', () => {
       .content,
   ).toBe('Latest');
 });
+
+it('ignores a stale poll that still lists a deleted page', () => {
+  const gone = { ...base, id: 'gone' };
+  expect(mergePageSnapshot([base], [base, gone], new Set(['gone']))).toEqual([
+    base,
+  ]);
+});

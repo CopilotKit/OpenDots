@@ -3,6 +3,7 @@ import type { Message } from '@ag-ui/core';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { voiceReceiptMessagePrefix } from '../shared/voice-receipt.js';
+import { scheduledTaskMessagePrefix } from '../shared/scheduled-message.js';
 
 export function currentTurnText(messages: Message[], error?: Error): string {
   if (error) throw error;
@@ -60,8 +61,14 @@ export async function runThreadTurn(
   signal.addEventListener('abort', stop, { once: true });
   try {
     signal.throwIfAborted();
+    const idPrefix =
+      metadata?.opendotsSource === 'voice_receipt'
+        ? voiceReceiptMessagePrefix
+        : metadata?.opendotsSource === 'scheduled_task'
+          ? scheduledTaskMessagePrefix
+          : '';
     agent.addMessage({
-      id: `${metadata?.opendotsSource === 'voice_receipt' ? voiceReceiptMessagePrefix : ''}${randomUUID()}`,
+      id: `${idPrefix}${randomUUID()}`,
       role: 'user',
       content: prompt,
       ...(metadata ? { metadata } : {}),

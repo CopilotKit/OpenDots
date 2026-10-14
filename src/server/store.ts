@@ -19,6 +19,7 @@ const defaults: Settings = {
   paused: false,
   researchAllowed: true,
   memoryAllowed: true,
+  appsAllowed: false,
 };
 export class Store {
   private db: DatabaseSync;
@@ -71,7 +72,7 @@ export class Store {
     const row = this.db
       .prepare('SELECT value FROM settings WHERE id=1')
       .get() as { value: string };
-    return JSON.parse(row.value) as Settings;
+    return { ...defaults, ...(JSON.parse(row.value) as Partial<Settings>) };
   }
   updateSettings(patch: Partial<Settings>): Settings {
     return this.transaction(() => {
@@ -83,7 +84,8 @@ export class Store {
       if (
         (!previous.paused && settings.paused) ||
         (previous.researchAllowed && !settings.researchAllowed) ||
-        (previous.memoryAllowed && !settings.memoryAllowed)
+        (previous.memoryAllowed && !settings.memoryAllowed) ||
+        (previous.appsAllowed && !settings.appsAllowed)
       ) {
         const running = this.tasks().filter((t) => t.status === 'running');
         for (const task of running) {
@@ -115,7 +117,7 @@ export class Store {
         "INSERT INTO tasks VALUES (?, ?, 'queued', ?, NULL, ?, ?, NULL, NULL, NULL)",
       )
       .run(id, prompt, intervalSeconds, now, now);
-    this.event(id, null, 'Task added to the research queue.');
+    this.event(id, null, 'Task added to the queue.');
     return this.task(id)!;
   }
   detail(id: string): Detail | undefined {
@@ -234,7 +236,7 @@ export class Store {
           "INSERT INTO runs VALUES (?, ?, 'running', ?, NULL, NULL, NULL)",
         )
         .run(lease, task.id, now);
-      this.event(task.id, lease, 'Research worker started.');
+      this.event(task.id, lease, 'Run started.');
       return { ...this.task(task.id)!, lease };
     });
   }
@@ -263,9 +265,7 @@ export class Store {
       this.event(
         claim.id,
         claim.lease,
-        result.sample
-          ? 'Fictional sample brief ready.'
-          : 'Research brief ready.',
+        result.sample ? 'Fictional sample brief ready.' : 'Run completed.',
       );
       return true;
     });

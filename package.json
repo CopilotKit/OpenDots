@@ -26,6 +26,7 @@
   "dependencies": {
     "@ag-ui/client": "^0.0.59",
     "@ag-ui/core": "^0.0.59",
+    "@composio/core": "^0.22.0",
     "@copilotkit/channels": "^0.11.0",
     "@copilotkit/core": "^1.75.0",
     "@copilotkit/react-core": "^1.75.0",
@@ -65,6 +66,7 @@
     "cross-env": "^10.1.0",
     "eslint": "^10.11.0",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "postcss": "^8.5.28",
     "prettier": "^3.9.9",
     "react-test-renderer": "^19.3.0",
     "tsx": "^4.23.15",

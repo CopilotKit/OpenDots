@@ -41,6 +41,7 @@ const config: PlatformConfig = {
   parallelApiKey: process.env.PARALLEL_API_KEY,
   browserUrl: process.env.BROWSER_URL,
   browserSecret: process.env.BROWSER_SECRET,
+  composioApiKey: process.env.COMPOSIO_API_KEY || undefined,
   computerSupervisorUrl: process.env.COMPUTER_SUPERVISOR_URL,
   computerSupervisorToken: process.env.COMPUTER_SUPERVISOR_TOKEN,
   computerToken: process.env.COMPUTER_TOKEN,
@@ -79,7 +80,9 @@ const runner = new Runner(
         'This legacy task has no Intelligence conversation. Create a new scheduled task from a conversation.',
       );
     progress('Running this task in its Intelligence conversation.');
-    const text = await platform.turn(threadId, claim.prompt, signal);
+    const text = await platform.turn(threadId, claim.prompt, signal, {
+      opendotsSource: 'scheduled_task',
+    });
     return { text, sources: [], sample: false };
   },
 );

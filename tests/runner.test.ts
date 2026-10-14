@@ -11,6 +11,35 @@ const config: Config = {
   baseUrl: 'https://model.example/v1',
 };
 afterEach(() => vi.unstubAllGlobals());
+it('records generic scheduled runs without research wording', async () => {
+  const store = new Store(':memory:');
+  const prompt = 'Draft a welcome email.';
+  const result = {
+    text: 'A concise welcome email.',
+    sources: [],
+    sample: false,
+  };
+  const execute = vi.fn(async () => result);
+  const runner = new Runner(store, config, execute);
+  const task = store.createTask(prompt);
+
+  try {
+    await runner.tick();
+
+    const detail = store.detail(task.id)!;
+    expect(detail.task.prompt).toBe(prompt);
+    expect(detail.runs[0].result).toEqual(result);
+    expect(detail.events.map((event) => event.text)).toEqual([
+      'Task added to the queue.',
+      'Run started.',
+      'Run completed.',
+    ]);
+    expect(execute).toHaveBeenCalledOnce();
+  } finally {
+    runner.stop();
+    store.close();
+  }
+});
 it('aborts research when permissions are revoked outside the runner instance', async () => {
   const store = new Store(':memory:');
   const runner = new Runner(store, config);
@@ -67,11 +96,19 @@ it('omits stored memories from research when memory permission is disabled', asy
   store.updateSettings({ memoryAllowed: false });
   const task = store.createTask('Read this sample');
   const runner = new Runner(store, { mode: 'sample', baseUrl: '' });
-  await runner.tick();
-  expect(store.detail(task.id)?.runs[0].result?.text).not.toContain(
-    'Sensitive preference',
-  );
-  store.close();
+  try {
+    await runner.tick();
+    expect(store.detail(task.id)?.runs[0].result?.text).not.toContain(
+      'Sensitive preference',
+    );
+    expect(store.detail(task.id)?.runs[0].result?.sample).toBe(true);
+    expect(store.detail(task.id)?.events.at(-1)?.text).toBe(
+      'Fictional sample brief ready.',
+    );
+  } finally {
+    runner.stop();
+    store.close();
+  }
 });
 it('holds active work for review on graceful shutdown', async () => {
   const store = new Store(':memory:');
