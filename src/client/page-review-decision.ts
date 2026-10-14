@@ -1,5 +1,6 @@
 import { pageReviewSchema, type PageReviewDraft } from '../shared/page-review';
 import type { ReviewedPage } from '../server/pages';
+import { t } from './i18n';
 import { api } from './api';
 
 const reviewPath = (threadId: string) =>
@@ -47,9 +48,7 @@ export async function decidePageReview(
   const previous = await restorePageReview(threadId, toolCallId);
   if (previous) {
     if (!matchesReviewedDraft(previous, args))
-      throw new Error(
-        'This review was saved with a different draft. Start a new review for the changed draft.',
-      );
+      throw new Error(t('review.changedDraft'));
     return previous;
   }
   if (!approved) return null;

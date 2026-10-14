@@ -3,6 +3,7 @@ import { MarkdownManager } from '@tiptap/markdown';
 import { TableKit } from '@tiptap/extension-table';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
+import { t } from '../i18n';
 export const documentExtensions = () => [
   StarterKit.configure({
     underline: false,
@@ -49,8 +50,7 @@ export function inspectMarkdown(source: string): {
     )
       return {
         supported: false,
-        reason:
-          'This document contains extended Markdown. Source mode preserves it exactly.',
+        reason: t('editor.markdownExtended'),
       };
     const tokens = markdownManager.instance.lexer(source);
     let unsupported = false;
@@ -73,22 +73,20 @@ export function inspectMarkdown(source: string): {
     if (unsupported)
       return {
         supported: false,
-        reason:
-          'This document contains images, HTML, or formatting that needs Markdown source mode. Nothing has been changed.',
+        reason: t('editor.markdownUnsupported'),
       };
     const parsed = markdownManager.parse(source);
     const restored = markdownManager.parse(markdownManager.serialize(parsed));
     if (JSON.stringify(parsed) !== JSON.stringify(restored))
       return {
         supported: false,
-        reason:
-          'Some formatting cannot be safely round-tripped. Source mode keeps the original document intact.',
+        reason: t('editor.markdownRoundTrip'),
       };
     return { supported: true };
   } catch {
     return {
       supported: false,
-      reason: 'This Markdown needs source mode to preserve its contents.',
+      reason: t('editor.markdownFallback'),
     };
   }
 }

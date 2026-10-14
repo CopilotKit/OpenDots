@@ -6,6 +6,7 @@ import { api } from './api';
 import { SpaceLibrary } from './SpaceLibrary';
 import { PageDocument } from './PageDocument';
 import { PageOutline } from './PageOutline';
+import { t } from './i18n';
 export function SpaceWorkspace({
   space,
   pageId,
@@ -50,7 +51,7 @@ export function SpaceWorkspace({
         }
       } catch (e) {
         if (active)
-          setError(e instanceof Error ? e.message : 'Could not load pages.');
+          setError(e instanceof Error ? e.message : t('pages.loadError'));
       }
     };
     void load();
@@ -83,19 +84,19 @@ export function SpaceWorkspace({
   const create = async (parentId: string | null) => {
     try {
       const next = await api<Page>(`/spaces/${space.id}/pages`, 'POST', {
-        title: 'Untitled page',
+        title: t('pages.untitled'),
         content: '',
         parentId,
       });
       setPages((previous) => [...previous, next]);
       onPage(next.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not create page.');
+      setError(e instanceof Error ? e.message : t('pages.createError'));
     }
   };
   return (
     <main
-      aria-label="Space documents"
+      aria-label={t('pages.documents')}
       className={`spaces-surface ${pageId ? 'writing' : 'library'}`}
     >
       {error && (
@@ -145,10 +146,10 @@ export function SpaceWorkspace({
         </div>
       ) : (
         <div className="library-empty">
-          <h2>{loaded ? 'Page not found' : 'Loading page…'}</h2>
+          <h2>{loaded ? t('pages.notFound') : t('pages.loading')}</h2>
           {loaded && (
             <button className="document-primary" onClick={() => onPage()}>
-              Back to all pages
+              {t('pages.backToAll')}
             </button>
           )}
         </div>

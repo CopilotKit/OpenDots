@@ -9,13 +9,18 @@ import {
 } from 'lucide-react';
 import type { Page } from '../server/pages';
 import type { Space } from '../shared/types';
+import {
+  localizedStarterSpaceDescription,
+  localizedStarterSpaceName,
+  t,
+} from './i18n';
 export function pageExcerpt(content: string) {
   return content
     .replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '')
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<[^>]+>/g, ' ')
     .replace(/^\s*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/gm, '')
-    .replace(/```[\s\S]*?```/g, 'Code block')
+    .replace(/```[\s\S]*?```/g, t('editor.codeBlock'))
     .replace(/!?\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/[#>*_`|~]/g, '')
     .replace(/\s+/g, ' ')
@@ -33,6 +38,8 @@ export function SpaceLibrary({
   onPage: (id: string) => void;
   onNew: () => void;
 }) {
+  const spaceName = localizedStarterSpaceName(space.name);
+  const spaceDescription = localizedStarterSpaceDescription(space.description);
   const [query, setQuery] = useState('');
   const [layout, setLayout] = useState<'grid' | 'list'>('grid');
   const [sort, setSort] = useState('recent');
@@ -54,53 +61,53 @@ export function SpaceLibrary({
   return (
     <section
       className="space-library"
-      aria-label={`${space.name} page library`}
+      aria-label={t('pages.libraryLabel').replace('{name}', spaceName)}
     >
       <header className="library-heading">
         <div>
-          <span className="library-eyebrow">SPACE</span>
-          <h1>{space.name}</h1>
-          {space.description && <p>{space.description}</p>}
+          <span className="library-eyebrow">{t('pages.space')}</span>
+          <h1>{spaceName}</h1>
+          {spaceDescription && <p>{spaceDescription}</p>}
         </div>
         <button className="document-primary" onClick={onNew}>
-          <Plus size={17} /> New page
+          <Plus size={17} /> {t('pages.new')}
         </button>
       </header>
       <div className="library-tools">
         <label className="library-search">
           <Search size={17} />
           <input
-            aria-label="Search pages"
-            placeholder="Search pages"
+            aria-label={t('pages.search')}
+            placeholder={t('pages.search')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </label>
         <label className="library-sort">
-          <span className="sr-only">Sort pages</span>
+          <span className="sr-only">{t('pages.sort')}</span>
           <select
-            aria-label="Sort pages"
+            aria-label={t('pages.sort')}
             value={sort}
             onChange={(e) => setSort(e.target.value)}
           >
-            <option value="recent">Recently edited</option>
-            <option value="name">Name A–Z</option>
+            <option value="recent">{t('pages.recentlyEdited')}</option>
+            <option value="name">{t('pages.nameAZ')}</option>
           </select>
         </label>
         <div
           className="library-view-toggle"
           role="group"
-          aria-label="Library view"
+          aria-label={t('pages.libraryView')}
         >
           <button
-            aria-label="Grid view"
+            aria-label={t('pages.gridView')}
             aria-pressed={layout === 'grid'}
             onClick={() => setLayout('grid')}
           >
             <LayoutGrid size={17} />
           </button>
           <button
-            aria-label="List view"
+            aria-label={t('pages.listView')}
             aria-pressed={layout === 'list'}
             onClick={() => setLayout('list')}
           >
@@ -109,9 +116,12 @@ export function SpaceLibrary({
         </div>
       </div>
       <div className="library-section-label">
-        <h2>{query ? 'Search results' : 'All pages'}</h2>
+        <h2>{query ? t('pages.results') : t('pages.all')}</h2>
         <span>
-          {filtered.length} {filtered.length === 1 ? 'page' : 'pages'}
+          {filtered.length}{' '}
+          {filtered.length === 1
+            ? t('pages.pageSingular')
+            : t('pages.pagePlural')}
         </span>
       </div>
       {filtered.length ? (
@@ -127,14 +137,11 @@ export function SpaceLibrary({
               </span>
               <div className="library-card-body">
                 <h3>{page.title}</h3>
-                <p>
-                  {pageExcerpt(page.content) ||
-                    'An empty page, ready to write.'}
-                </p>
+                <p>{pageExcerpt(page.content) || t('pages.empty')}</p>
                 <div className="library-page-meta">
                   <span title={new Date(page.updatedAt).toLocaleString()}>
-                    Edited{' '}
-                    {new Date(page.updatedAt).toLocaleDateString(undefined, {
+                    {t('pages.edited')}{' '}
+                    {new Date(page.updatedAt).toLocaleDateString('pt-BR', {
                       month: 'short',
                       day: 'numeric',
                     })}
@@ -156,15 +163,11 @@ export function SpaceLibrary({
       ) : (
         <div className="library-empty">
           <FileText size={30} strokeWidth={1.3} />
-          <h2>{query ? 'No matching pages' : 'No pages yet'}</h2>
-          <p>
-            {query
-              ? 'Try a different title or phrase.'
-              : 'Create your first page to start organizing this Space.'}
-          </p>
+          <h2>{query ? t('pages.noneFound') : t('pages.noneYet')}</h2>
+          <p>{query ? t('pages.tryAnotherSearch') : t('pages.firstPage')}</p>
           {!query && (
             <button className="document-primary" onClick={onNew}>
-              <Plus size={16} /> New page
+              <Plus size={16} /> {t('pages.new')}
             </button>
           )}
         </div>

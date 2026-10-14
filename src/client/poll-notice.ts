@@ -10,7 +10,9 @@ export interface PollFailure {
   message: string;
 }
 
-const TRANSPORT_MESSAGES = new Set(['Server returned an unreadable response.']);
+const TRANSPORT_MESSAGES = new Set([
+  'O servidor retornou uma resposta ilegível.',
+]);
 
 // A failure that carries no HTTP status did not come from the API, so it is a
 // network failure (fetch throws a TypeError whose text differs by browser).
