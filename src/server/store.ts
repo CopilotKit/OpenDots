@@ -19,6 +19,7 @@ const defaults: Settings = {
   paused: false,
   researchAllowed: true,
   memoryAllowed: true,
+  appsAllowed: false,
 };
 export class Store {
   private db: DatabaseSync;
@@ -71,7 +72,7 @@ export class Store {
     const row = this.db
       .prepare('SELECT value FROM settings WHERE id=1')
       .get() as { value: string };
-    return JSON.parse(row.value) as Settings;
+    return { ...defaults, ...(JSON.parse(row.value) as Partial<Settings>) };
   }
   updateSettings(patch: Partial<Settings>): Settings {
     return this.transaction(() => {
@@ -83,7 +84,8 @@ export class Store {
       if (
         (!previous.paused && settings.paused) ||
         (previous.researchAllowed && !settings.researchAllowed) ||
-        (previous.memoryAllowed && !settings.memoryAllowed)
+        (previous.memoryAllowed && !settings.memoryAllowed) ||
+        (previous.appsAllowed && !settings.appsAllowed)
       ) {
         const running = this.tasks().filter((t) => t.status === 'running');
         for (const task of running) {

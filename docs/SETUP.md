@@ -110,6 +110,18 @@ npm run browser
 
 Use the same secret on the app and browser processes. Browser navigation is read-only with JavaScript disabled. Private addresses, redirects, and authenticated pages are unsupported; provide a canonical public URL. This is a bounded research tool, not a general desktop or shell.
 
+## Composio
+
+Set `COMPOSIO_API_KEY` to let Dots use the owner’s connected apps. Restart OpenDots, enable Connected apps in the global settings and for a Dot, then optionally restrict that Dot to comma-separated toolkit slugs such as `gmail` or `google_calendar`. Leaving the toolkit list blank lets the Dot search every toolkit available to the Composio project.
+
+Connected apps remain disabled when you add the API key. Composio tools can read and change data in real accounts, and a blank toolkit list permits every toolkit available to the Composio project. The global and per-Dot switches require the owner to grant that access explicitly.
+
+OpenDots uses the stable `OWNER_ID` as the Composio user identity. Do not change it after connecting accounts. When a tool needs authentication, open the HTTPS Connect link shown in chat and finish the provider’s sign-in flow. Disabling either permission prevents new app calls and stops active work. Without `COMPOSIO_API_KEY`, no Composio client or tools are created and the controls stay hidden.
+
+To test the integration, configure a working model, limit a Dot to one toolkit, and start with a read-only request such as listing recent messages or calendar events. Complete the Connect flow when prompted, then repeat the request. Test write actions only with an account where an accidental change is safe.
+
+Tool arguments and results pass through Composio and the connected app provider. Keep credentials in the server environment and review [Composio’s documentation](https://docs.composio.dev) and each provider’s privacy and retention terms.
+
 ## Persistent Dot computers
 
 For a separate browser, persistent files, and optional shell for each specialist, follow [Computer setup](COMPUTERS.md). This uses pinned OpenBot computer/supervisor services and per-Dot permissions. Parallel research tools remain available alongside configured computer tools. With the browser provider selected, Dots use their computer tools in place of the read-only public-page tool; enable each Dot's required capabilities before use.

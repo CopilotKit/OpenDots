@@ -47,6 +47,7 @@ export interface PlatformConfig extends WebConfig {
   computerNamespace?: string;
   browserUrl?: string;
   browserSecret?: string;
+  composioApiKey?: string;
   voiceKey?: string;
   voiceModel?: string;
   voiceName: string;
@@ -84,6 +85,7 @@ export function setupStatus(
     model: !!(config.apiKey && config.model),
     browser: !!(config.browserUrl && config.browserSecret),
     voice: !!(config.voiceKey && config.voiceModel && !missing.length),
+    composio: !!config.composioApiKey,
     slack,
     missing,
   };

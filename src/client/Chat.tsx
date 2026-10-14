@@ -137,7 +137,7 @@ export function Chat({
     setError('');
     setRunning(true);
     agent.addMessage({
-      id: crypto.randomUUID(),
+      id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
       role: 'user',
       content: contextualMessage(text, pageContext),
     });
@@ -237,6 +237,7 @@ export function Chat({
           message.toolCalls?.some(
             (call) =>
               call.function.name.startsWith('computer_') ||
+              call.function.name === 'COMPOSIO_MANAGE_CONNECTIONS' ||
               call.function.name === pageReviewTool.name ||
               call.function.name === connectionActionTool.name,
           ))),
