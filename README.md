@@ -122,6 +122,10 @@ https://github.com/user-attachments/assets/27d03a6c-a9e0-4c29-8d96-fafe0fbae20f
 
 Bring your agents into Slack with [Channels SDK](https://github.com/CopilotKit/channels-sdk). See the [managed Channels documentation](https://docs.copilotkit.ai/intelligence/channels) to connect them through CopilotKit Intelligence.
 
+### Text messages
+
+Text a Dot over iMessage or SMS through a [Sendblue](https://www.sendblue.com) line. Sendblue hosts the iMessage line, so the machine running OpenDots doesn't need to be a Mac or have the Messages app; it can run on Linux, in Docker, or on any server. Each allowlisted phone number gets its own persistent conversation with the selected Dot, which you can also open in the web app; texting `/new` starts a fresh one. See [text message setup](docs/SETUP.md#text-messages-sendblue).
+
 ## Architecture
 
 ### AG-UI connects the agent to the interface
@@ -197,6 +201,7 @@ CopilotKit SDK telemetry collects usage metadata separately from conversation pe
 | Pages                      | Searchable library, visual editor, slash commands, autosave, and revision checks                                                        |
 | Conversations              | React SDK chat and Threads integration, page-specific conversations, and source links                                                   |
 | Slack                      | Managed Channels SDK declaration with workspace and user allowlists                                                                     |
+| Text messages              | Optional Sendblue iMessage/SMS webhook, no Mac required, with a phone-number allowlist and one persistent conversation per number       |
 | Calls                      | WebRTC speech, delegated compute, bounded sessions, hangup, and timeline receipts                                                       |
 | Background work            | Scheduled server-side turns in their original conversation, with pause and retry controls                                               |
 | Browser                    | Separate read-only public-page service with page capture and navigation limits                                                          |
@@ -209,7 +214,7 @@ CopilotKit SDK telemetry collects usage metadata separately from conversation pe
 
 Scheduled tasks run in their original conversation. If a worker stops or its lease expires during a run, OpenDots marks that run **Interrupted** and waits for an explicit retry. Review its pages and computer actions, then use **Retry after review** when appropriate. Completed effects may already be present even when a run has no final result.
 
-Local checks cover setup, persistence, permissions, SDK failure handling, and browser isolation. Automated tests use service fixtures. **Live Intelligence, model responses, and page-context chat were verified on September 29, 2026.** Live OpenBot computer browsing, file creation, shell verification, and file persistence across stop/start were also verified locally. Live Realtime speech, call controls, and receipt persistence were verified locally on September 30, 2026. Slack and spoken compute delegation still need connected-service verification. See [recording notes](docs/demos/README.md) for the demonstrated flows and limits.
+Local checks cover setup, persistence, permissions, SDK failure handling, and browser isolation. Automated tests use service fixtures. **Live Intelligence, model responses, and page-context chat were verified on September 29, 2026.** Live OpenBot computer browsing, file creation, shell verification, and file persistence across stop/start were also verified locally. Live Realtime speech, call controls, and receipt persistence were verified locally on September 30, 2026. Slack, Sendblue text messages, and spoken compute delegation still need connected-service verification. See [recording notes](docs/demos/README.md) for the demonstrated flows and limits.
 
 Automatic Learning routing and skill delivery are configured locally. Cloud schedules, eligible-thread counts, and published-skill delivery still need connected-service verification. Skills require review and publication in Intelligence; existing conversations without a container are not enrolled retroactively.
 

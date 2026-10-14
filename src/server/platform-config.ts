@@ -1,5 +1,6 @@
 import type { WebConfig } from './parallel.js';
 import type { SetupStatus } from '../shared/types.js';
+import { sendblueProblems, type SendblueConfig } from './sendblue.js';
 
 // `copilotkit project select` writes the CLI name and deletes the template name.
 const INTELLIGENCE_API_KEY_ENV_NAMES = [
@@ -55,6 +56,7 @@ export interface PlatformConfig extends WebConfig {
   slackTeam?: string;
   slackUsers: string[];
   slackDotId?: string;
+  sendblue?: SendblueConfig;
   runtimeUrl: string;
   ownerToken?: string;
 }
@@ -62,6 +64,7 @@ export function setupStatus(
   config: PlatformConfig,
   slack = 'not_configured',
   activationFailed = false,
+  sendblue = 'setup_required',
 ): SetupStatus {
   const missing = [
     !config.intelligenceKey && INTELLIGENCE_KEY_MISSING_LABEL,
@@ -87,6 +90,11 @@ export function setupStatus(
     voice: !!(config.voiceKey && config.voiceModel && !missing.length),
     composio: !!config.composioApiKey,
     slack,
+    sendblue: !config.sendblue
+      ? 'not_configured'
+      : sendblueProblems(config.sendblue).length
+        ? 'setup_required'
+        : sendblue,
     missing,
   };
 }

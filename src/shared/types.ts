@@ -119,6 +119,7 @@ export interface SetupStatus {
   voice: boolean;
   composio: boolean;
   slack: string;
+  sendblue: string;
   missing: string[];
 }
 export interface WorkspaceState {

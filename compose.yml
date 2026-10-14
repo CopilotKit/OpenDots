@@ -5,6 +5,7 @@ services:
       target: app
     ports:
       - '127.0.0.1:4310:4310'
+      - '127.0.0.1:4313:4313'
     environment:
       OWNER_TOKEN: ${OWNER_TOKEN:?Set a 24+ character OWNER_TOKEN in .env}
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:4310}
@@ -25,6 +26,12 @@ services:
       SLACK_TEAM_ID: ${SLACK_TEAM_ID:-}
       SLACK_USER_IDS: ${SLACK_USER_IDS:-}
       SLACK_DOT_ID: ${SLACK_DOT_ID:-}
+      SENDBLUE_API_KEY: ${SENDBLUE_API_KEY:-}
+      SENDBLUE_API_SECRET: ${SENDBLUE_API_SECRET:-}
+      SENDBLUE_FROM_NUMBER: ${SENDBLUE_FROM_NUMBER:-}
+      SENDBLUE_WEBHOOK_SECRET: ${SENDBLUE_WEBHOOK_SECRET:-}
+      SENDBLUE_ALLOWED_NUMBERS: ${SENDBLUE_ALLOWED_NUMBERS:-}
+      SENDBLUE_DOT_ID: ${SENDBLUE_DOT_ID:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
