@@ -14,17 +14,21 @@ it('passes Composio JSON Schema through and returns only safe execution failures
     .fn()
     .mockResolvedValueOnce({ data: { ok: true }, error: null })
     .mockRejectedValueOnce(new Error('provider secret'));
+  const tools = vi.fn().mockResolvedValue([
+    {
+      type: 'function',
+      function: { name: 'COMPOSIO_TEST', description: 'Test', parameters },
+    },
+  ]);
   const session = {
-    tools: vi.fn().mockResolvedValue([
-      {
-        type: 'function',
-        function: { name: 'COMPOSIO_TEST', description: 'Test', parameters },
-      },
-    ]),
+    tools,
     execute,
   } as unknown as Session;
   const check = vi.fn();
-  const [tool] = await composioTools(session, check);
+  const signal = new AbortController().signal;
+  const [tool] = await composioTools(session, check, signal);
+
+  expect(tools).toHaveBeenCalledWith(undefined, { signal });
 
   expect(tool.parameters).toBe(parameters);
   await expect(tool.execute?.({ query: 'one' })).resolves.toEqual({
@@ -35,5 +39,11 @@ it('passes Composio JSON Schema through and returns only safe execution failures
     data: {},
     error: 'Composio tool failed: Error.',
   });
-  expect(check).toHaveBeenCalledTimes(2);
+  expect(execute).toHaveBeenCalledWith(
+    'COMPOSIO_TEST',
+    expect.anything(),
+    undefined,
+    { signal },
+  );
+  expect(check).toHaveBeenCalledTimes(3);
 });

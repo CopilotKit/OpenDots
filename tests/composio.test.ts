@@ -42,24 +42,36 @@ it('creates a non-Instant session and reuses it while the policy is unchanged', 
   const created = { sessionId: 'session-one' };
   sdk.create.mockResolvedValue(created);
   sdk.use.mockResolvedValue(created);
+  const signal = new AbortController().signal;
 
   await expect(
-    composioSession(config, workspace, workspace.dot(original.id)!, 'owner'),
+    composioSession(
+      config,
+      workspace,
+      workspace.dot(original.id)!,
+      'owner',
+      signal,
+    ),
   ).resolves.toBe(created);
-  expect(sdk.create).toHaveBeenCalledWith('owner', {
-    toolkits: ['gmail'],
-    manageConnections: true,
-    instant: false,
-  });
+  expect(sdk.create).toHaveBeenCalledWith(
+    'owner',
+    {
+      toolkits: ['gmail'],
+      manageConnections: true,
+      instant: false,
+    },
+    { signal },
+  );
 
   await composioSession(
     config,
     workspace,
     workspace.dot(original.id)!,
     'owner',
+    signal,
   );
   expect(sdk.create).toHaveBeenCalledTimes(1);
-  expect(sdk.use).toHaveBeenCalledWith('session-one');
+  expect(sdk.use).toHaveBeenCalledWith('session-one', undefined, { signal });
 });
 
 it('creates a new session when the toolkit policy changes', async () => {

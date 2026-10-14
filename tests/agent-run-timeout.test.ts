@@ -13,6 +13,11 @@ import { Runner } from '../src/server/runner.js';
 import { Store } from '../src/server/store.js';
 import { WorkspaceStore } from '../src/server/workspace.js';
 
+const composio = vi.hoisted(() => ({ session: vi.fn() }));
+vi.mock('../src/server/composio.js', () => ({
+  composioSession: composio.session,
+}));
+
 const resources: Array<{ close(): void }> = [];
 function sharedStores() {
   const dir = mkdtempSync(join(tmpdir(), 'opendots-timeout-'));
@@ -26,6 +31,7 @@ function sharedStores() {
 }
 afterEach(() => {
   vi.restoreAllMocks();
+  composio.session.mockReset();
   vi.useRealTimers();
   resources.splice(0).forEach((resource) => resource.close());
 });
@@ -44,12 +50,14 @@ it('rejects invalid timeout overrides at startup', () => {
     ).toThrow(/AGENT_RUN_TIMEOUT_MS/);
 });
 
-it('uses the configured timeout for interactive Dot turns', async () => {
+it('finishes an interactive turn when Composio startup stalls', async () => {
   vi.useFakeTimers();
   const store = new Store(':memory:');
   const workspace = new WorkspaceStore(':memory:', 'owner');
   resources.push(store, workspace);
   const dot = workspace.dots()[0];
+  store.updateSettings({ appsAllowed: true });
+  workspace.updateDot(dot.id, { ...dot, appsAllowed: true });
   workspace.bindThread('thread', dot.id, 'Timeout test');
   const agent = new DotAgent(
     store,
@@ -58,6 +66,7 @@ it('uses the configured timeout for interactive Dot turns', async () => {
       intelligenceKey: 'fixture',
       apiKey: 'fixture',
       model: 'custom-model',
+      composioApiKey: 'fixture',
       baseUrl: 'https://unused.invalid/v1',
       runtimeUrl: '',
       voiceName: 'marin',
@@ -75,27 +84,73 @@ it('uses the configured timeout for interactive Dot turns', async () => {
     tools: [],
     forwardedProps: {},
   };
-  vi.spyOn(globalThis, 'fetch').mockImplementation(
-    (_url, init) =>
-      new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener(
-          'abort',
-          () => reject(init.signal?.reason),
-          { once: true },
-        );
-      }),
-  );
+  composio.session.mockReturnValue(new Promise(() => {}));
+
   const finished = lastValueFrom(agent.run(input).pipe(toArray()));
   await vi.advanceTimersByTimeAsync(1_251);
   const events = await finished;
-  expect(events).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        type: EventType.RUN_ERROR,
-        message: expect.stringContaining('1.25 second time limit'),
-      }),
-    ]),
+
+  expect(events).toEqual([
+    expect.objectContaining({
+      type: EventType.RUN_ERROR,
+      message: expect.stringContaining('1.25 second time limit'),
+    }),
+  ]);
+  const signal = composio.session.mock.calls[0][4] as AbortSignal;
+  expect(signal.aborted).toBe(true);
+});
+
+it('does not start the inner agent after Composio startup is cancelled', async () => {
+  const store = new Store(':memory:');
+  const workspace = new WorkspaceStore(':memory:', 'owner');
+  resources.push(store, workspace);
+  const dot = workspace.dots()[0];
+  store.updateSettings({ appsAllowed: true });
+  workspace.updateDot(dot.id, { ...dot, appsAllowed: true });
+  workspace.bindThread('thread', dot.id, 'Cancellation test');
+  const agent = new DotAgent(
+    store,
+    workspace,
+    {
+      intelligenceKey: 'fixture',
+      apiKey: 'fixture',
+      model: 'custom-model',
+      composioApiKey: 'fixture',
+      baseUrl: 'https://unused.invalid/v1',
+      runtimeUrl: '',
+      voiceName: 'marin',
+      slackUsers: [],
+    },
+    dot.id,
   );
+  let resolveSession!: (session: unknown) => void;
+  composio.session.mockReturnValue(
+    new Promise((resolve) => {
+      resolveSession = resolve;
+    }),
+  );
+  const network = vi.spyOn(globalThis, 'fetch');
+  const finished = lastValueFrom(
+    agent
+      .run({
+        threadId: 'thread',
+        runId: 'run',
+        state: {},
+        context: [],
+        messages: [{ id: 'user', role: 'user', content: 'Keep working.' }],
+        tools: [],
+        forwardedProps: {},
+      })
+      .pipe(toArray()),
+  );
+
+  const tools = vi.fn().mockResolvedValue([]);
+  agent.abortRun();
+  resolveSession({ tools });
+  await finished;
+
+  expect(tools).not.toHaveBeenCalled();
+  expect(network).not.toHaveBeenCalled();
 });
 
 it('uses the configured timeout for scheduled/background runs', async () => {

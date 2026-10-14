@@ -20,6 +20,7 @@ export async function composioSession(
   workspace: WorkspaceStore,
   dot: Dot,
   ownerId: string,
+  signal?: AbortSignal,
 ) {
   if (!config.composioApiKey) throw new Error('Composio is not configured.');
   const toolkits = [...new Set(dot.composioToolkits)].sort();
@@ -29,12 +30,16 @@ export async function composioSession(
     .digest('hex');
   const composio = composioClient(config.composioApiKey);
   if (dot.composioSessionId && dot.composioPolicyHash === policyHash)
-    return composio.sessions.use(dot.composioSessionId);
-  const session = await composio.sessions.create(ownerId, {
-    ...(toolkits.length ? { toolkits } : {}),
-    manageConnections: true,
-    instant: false,
-  });
+    return composio.sessions.use(dot.composioSessionId, undefined, { signal });
+  const session = await composio.sessions.create(
+    ownerId,
+    {
+      ...(toolkits.length ? { toolkits } : {}),
+      manageConnections: true,
+      instant: false,
+    },
+    { signal },
+  );
   workspace.saveComposioSession(dot.id, session.sessionId, policyHash);
   return session;
 }

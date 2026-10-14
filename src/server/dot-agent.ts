@@ -67,7 +67,6 @@ export class DotAgent extends AbstractAgent {
       this.controller = controller;
       let subscription: { unsubscribe(): void } | undefined;
       let watcher: ReturnType<typeof setInterval> | undefined;
-      let timedOut = false;
       let finished = false;
       let configurationFailure = false;
       const turnTimeLimitMs =
@@ -75,16 +74,17 @@ export class DotAgent extends AbstractAgent {
       const observe = answerObserver((event) =>
         this.setupTelemetry?.capture(event),
       );
-      const timeout = setTimeout(() => {
-        timedOut = true;
-        observe({ type: EventType.RUN_ERROR });
-        this.abortRun();
-      }, turnTimeLimitMs);
       const timeLimitError = () => ({
         type: EventType.RUN_ERROR,
         message: `This turn reached the ${turnTimeLimitMs / 1000} second time limit and was stopped. Try a smaller request.`,
       });
+      const timeout = setTimeout(() => {
+        observe({ type: EventType.RUN_ERROR });
+        subscriber.next(this.channel ? channelError() : timeLimitError());
+        subscriber.complete();
+      }, turnTimeLimitMs);
       const fail = (error: unknown) => {
+        if (subscriber.closed) return;
         if (!configurationFailure) observe({ type: EventType.RUN_ERROR });
         subscriber.next(
           this.channel
@@ -346,8 +346,10 @@ export class DotAgent extends AbstractAgent {
                     this.workspace,
                     dot,
                     this.workspace.ownerId,
+                    controller.signal,
                   ),
                   check,
+                  controller.signal,
                 )
               : [];
           check();
@@ -444,20 +446,11 @@ export class DotAgent extends AbstractAgent {
                 if (this.channel) {
                   subscriber.next(channelError());
                   subscriber.complete();
-                } else if (timedOut && !finished) {
-                  subscriber.next(timeLimitError());
-                  subscriber.complete();
                 } else subscriber.error(error);
               },
               complete: () => {
                 if (controller.signal.aborted && !finished)
                   observe({ type: EventType.RUN_ERROR });
-                if (timedOut && !finished) {
-                  observe({ type: EventType.RUN_ERROR });
-                  subscriber.next(
-                    this.channel ? channelError() : timeLimitError(),
-                  );
-                }
                 subscriber.complete();
               },
             });
