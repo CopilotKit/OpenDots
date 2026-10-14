@@ -191,21 +191,21 @@ CopilotKit SDK telemetry collects usage metadata separately from conversation pe
 
 ## Features
 
-| Area                       | Included                                                                                                                                |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Spaces and Specialist Dots | Saved names, role instructions, and per-Dot research and memory permissions                                                             |
-| Pages                      | Searchable library, visual editor, slash commands, autosave, and revision checks                                                        |
-| Conversations              | React SDK chat and Threads integration, page-specific conversations, and source links                                                   |
-| Slack                      | Managed Channels SDK declaration with workspace and user allowlists                                                                     |
-| Calls                      | WebRTC speech, delegated compute, bounded sessions, hangup, and timeline receipts                                                       |
-| Background work            | Scheduled server-side turns in their original conversation, with pause and retry controls                                               |
-| Browser                    | Separate read-only public-page service with page capture and navigation limits                                                          |
-| Dot computers              | Per-Dot browser profiles, files, shell, takeover, permissions, and action records through OpenBot                                       |
-| Connections                | Per-Dot MCP servers, per-tool access, and owner approval for non-read-only actions                                                      |
-| Appearance                 | System, light, and dark themes; dark colors are derived at build time from the light styles                                             |
-| Memory                     | User-managed preferences that permitted Dots can use                                                                                    |
-| Automatic Learning         | Per-Dot Learning containers, conversation evidence routing, and published-skill delivery; see [setup](docs/SETUP.md#automatic-learning) |
-| Deployment                 | Local Node setup and separate application/browser containers                                                                            |
+| Area                       | Included                                                                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Spaces and Specialist Dots | Saved names, role instructions, and per-Dot research and memory permissions                                                                                        |
+| Pages                      | Searchable library, visual editor, slash commands, autosave, revision checks, version history with restore, Trash with restore/purge, and Space JSON export/import |
+| Conversations              | React SDK chat and Threads integration, page-specific conversations, and source links                                                                              |
+| Slack                      | Managed Channels SDK declaration with workspace and user allowlists                                                                                                |
+| Calls                      | WebRTC speech, delegated compute, bounded sessions, hangup, and timeline receipts                                                                                  |
+| Background work            | Scheduled server-side turns in their original conversation, with pause and retry controls                                                                          |
+| Browser                    | Separate read-only public-page service with page capture and navigation limits                                                                                     |
+| Dot computers              | Per-Dot browser profiles, files, shell, takeover, permissions, and action records through OpenBot                                                                  |
+| Connections                | Per-Dot MCP servers, per-tool access, and owner approval for non-read-only actions                                                                                 |
+| Appearance                 | System, light, and dark themes; dark colors are derived at build time from the light styles                                                                        |
+| Memory                     | User-managed preferences that permitted Dots can use                                                                                                               |
+| Automatic Learning         | Per-Dot Learning containers, conversation evidence routing, and published-skill delivery; see [setup](docs/SETUP.md#automatic-learning)                            |
+| Deployment                 | Local Node setup and separate application/browser containers                                                                                                       |
 
 Scheduled tasks run in their original conversation. If a worker stops or its lease expires during a run, OpenDots marks that run **Interrupted** and waits for an explicit retry. Review its pages and computer actions, then use **Retry after review** when appropriate. Completed effects may already be present even when a run has no final result.
 

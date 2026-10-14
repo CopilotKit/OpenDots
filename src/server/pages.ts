@@ -20,6 +20,31 @@ export const pagePatch = z
     expectedRevision: z.number().int().positive(),
   })
   .strict();
+export const pageVersionRestoreInput = z
+  .object({
+    versionId: z.string().min(1),
+    expectedRevision: z.number().int().positive(),
+  })
+  .strict();
+
+export const pageImportInput = z
+  .object({
+    pages: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1).max(200).optional(),
+            title: z.string().trim().min(1).max(160),
+            content: z.string().max(100000).default(''),
+            parentId: z.string().min(1).nullable().default(null),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(200),
+  })
+  .strict();
+
 export interface Page {
   id: string;
   spaceId: string;
@@ -30,7 +55,21 @@ export interface Page {
   createdAt: number;
   updatedAt: number;
   sourceThreadId: string | null;
+  deletedAt?: number | null;
 }
+
+export interface PageVersion {
+  id: string;
+  pageId: string;
+  spaceId: string;
+  revision: number;
+  title: string;
+  content: string;
+  createdAt: number;
+  reason: string;
+}
+
+const MAX_VERSIONS_PER_PAGE = 50;
 export type ReviewedPage = Page & {
   reviewDraft: PageReviewDraft | null;
 };
@@ -58,7 +97,16 @@ export class Pages {
     )
       db.exec('ALTER TABLE page_reviews ADD COLUMN draft TEXT');
     db.exec(`CREATE TABLE IF NOT EXISTS pages(id TEXT PRIMARY KEY, spaceId TEXT NOT NULL, parentId TEXT, title TEXT NOT NULL, content TEXT NOT NULL, revision INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, sourceThreadId TEXT);
- CREATE TABLE IF NOT EXISTS page_threads(pageId TEXT NOT NULL,dotId TEXT NOT NULL,threadId TEXT NOT NULL UNIQUE,ready INTEGER NOT NULL DEFAULT 0, leaseUntil INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(pageId,dotId));`);
+ CREATE TABLE IF NOT EXISTS page_threads(pageId TEXT NOT NULL,dotId TEXT NOT NULL,threadId TEXT NOT NULL UNIQUE,ready INTEGER NOT NULL DEFAULT 0, leaseUntil INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(pageId,dotId));
+ CREATE TABLE IF NOT EXISTS page_versions(id TEXT PRIMARY KEY, pageId TEXT NOT NULL, spaceId TEXT NOT NULL, revision INTEGER NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL, createdAt INTEGER NOT NULL, reason TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS idx_page_versions_page ON page_versions(pageId, createdAt DESC);`);
+    if (
+      !db
+        .prepare('PRAGMA table_info(pages)')
+        .all()
+        .some((row) => row.name === 'deletedAt')
+    )
+      db.exec('ALTER TABLE pages ADD COLUMN deletedAt INTEGER');
     if (
       !db
         .prepare('PRAGMA table_info(page_threads)')
@@ -76,16 +124,30 @@ export class Pages {
   exists(spaceId: string, id: string): boolean {
     this.requireSpace(spaceId);
     return !!this.db
-      .prepare('SELECT 1 FROM pages WHERE id=? AND spaceId=?')
+      .prepare(
+        'SELECT 1 FROM pages WHERE id=? AND spaceId=? AND deletedAt IS NULL',
+      )
       .get(id, spaceId);
   }
   list(spaceId: string): Page[] {
     this.requireSpace(spaceId);
     return this.db
-      .prepare('SELECT * FROM pages WHERE spaceId=? ORDER BY createdAt,id')
+      .prepare(
+        'SELECT * FROM pages WHERE spaceId=? AND deletedAt IS NULL ORDER BY createdAt,id',
+      )
       .all(spaceId) as unknown as Page[];
   }
   get(spaceId: string, id: string): Page {
+    this.requireSpace(spaceId);
+    const row = this.db
+      .prepare(
+        'SELECT * FROM pages WHERE id=? AND spaceId=? AND deletedAt IS NULL',
+      )
+      .get(id, spaceId);
+    if (!row) throw new PageError('Page not found in this Space.', 404);
+    return row as unknown as Page;
+  }
+  private getIncludingDeleted(spaceId: string, id: string): Page {
     this.requireSpace(spaceId);
     const row = this.db
       .prepare('SELECT * FROM pages WHERE id=? AND spaceId=?')
@@ -121,7 +183,9 @@ export class Pages {
     const id = randomUUID(),
       now = Date.now();
     this.db
-      .prepare('INSERT INTO pages VALUES (?,?,?,?,?,1,?,?,?)')
+      .prepare(
+        'INSERT INTO pages(id, spaceId, parentId, title, content, revision, createdAt, updatedAt, sourceThreadId, deletedAt) VALUES (?,?,?,?,?,1,?,?,?,NULL)',
+      )
       .run(
         id,
         spaceId,
@@ -217,20 +281,289 @@ export class Pages {
       const parent =
         data.parentId === undefined ? page.parentId : data.parentId;
       this.parent(spaceId, parent, id);
+      const nextTitle = data.title ?? page.title;
+      const nextContent = data.content ?? page.content;
+      const nextParent = parent;
+      const contentChanged =
+        nextTitle !== page.title ||
+        nextContent !== page.content ||
+        nextParent !== page.parentId;
+      if (contentChanged) this.snapshot(page, 'edit');
       this.db
         .prepare(
-          'UPDATE pages SET title=?,content=?,parentId=?,revision=revision+1,updatedAt=? WHERE id=? AND revision=?',
+          'UPDATE pages SET title=?,content=?,parentId=?,revision=revision+1,updatedAt=? WHERE id=? AND revision=? AND deletedAt IS NULL',
         )
         .run(
-          data.title ?? page.title,
-          data.content ?? page.content,
-          parent,
+          nextTitle,
+          nextContent,
+          nextParent,
           Date.now(),
           id,
           data.expectedRevision,
         );
+      if (contentChanged) this.pruneVersions(id);
       this.db.exec('COMMIT');
       return this.get(spaceId, id);
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  private snapshot(page: Page, reason: string) {
+    this.db
+      .prepare(
+        'INSERT INTO page_versions(id, pageId, spaceId, revision, title, content, createdAt, reason) VALUES (?,?,?,?,?,?,?,?)',
+      )
+      .run(
+        randomUUID(),
+        page.id,
+        page.spaceId,
+        page.revision,
+        page.title,
+        page.content,
+        Date.now(),
+        reason,
+      );
+  }
+
+  private pruneVersions(pageId: string) {
+    this.db
+      .prepare(
+        'DELETE FROM page_versions WHERE pageId=? AND id NOT IN (SELECT id FROM page_versions WHERE pageId=? ORDER BY createdAt DESC, rowid DESC LIMIT ?)',
+      )
+      .run(pageId, pageId, MAX_VERSIONS_PER_PAGE);
+  }
+
+  versions(spaceId: string, pageId: string): PageVersion[] {
+    this.get(spaceId, pageId);
+    return this.db
+      .prepare(
+        'SELECT * FROM page_versions WHERE spaceId=? AND pageId=? ORDER BY revision DESC, createdAt DESC',
+      )
+      .all(spaceId, pageId) as unknown as PageVersion[];
+  }
+
+  restoreVersion(
+    spaceId: string,
+    pageId: string,
+    input: z.input<typeof pageVersionRestoreInput>,
+  ): Page {
+    const parsed = pageVersionRestoreInput.safeParse(input);
+    if (!parsed.success)
+      throw new PageError('A valid version and expectedRevision are required.');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const page = this.get(spaceId, pageId);
+      if (page.revision !== parsed.data.expectedRevision)
+        throw new PageError(
+          'This page changed. Reload the latest revision before restoring.',
+          409,
+        );
+      const version = this.db
+        .prepare(
+          'SELECT * FROM page_versions WHERE id=? AND pageId=? AND spaceId=?',
+        )
+        .get(parsed.data.versionId, pageId, spaceId) as unknown | undefined;
+      if (!version)
+        throw new PageError(
+          'That version is not available for this page.',
+          404,
+        );
+      const snapshot = version as PageVersion;
+      this.snapshot(page, 'restore');
+      this.db
+        .prepare(
+          'UPDATE pages SET title=?,content=?,revision=revision+1,updatedAt=? WHERE id=? AND revision=? AND deletedAt IS NULL',
+        )
+        .run(
+          snapshot.title,
+          snapshot.content,
+          Date.now(),
+          pageId,
+          parsed.data.expectedRevision,
+        );
+      this.pruneVersions(pageId);
+      this.db.exec('COMMIT');
+      return this.get(spaceId, pageId);
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  trash(spaceId: string): Page[] {
+    this.requireSpace(spaceId);
+    return this.db
+      .prepare(
+        'SELECT * FROM pages WHERE spaceId=? AND deletedAt IS NOT NULL ORDER BY deletedAt DESC, updatedAt DESC',
+      )
+      .all(spaceId) as unknown as Page[];
+  }
+
+  restoreDeleted(spaceId: string, id: string): Page {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const page = this.getIncludingDeleted(spaceId, id);
+      if (page.deletedAt === null || page.deletedAt === undefined) {
+        this.db.exec('COMMIT');
+        return page;
+      }
+      let parentId = page.parentId;
+      if (parentId) {
+        const parent = this.db
+          .prepare(
+            'SELECT id FROM pages WHERE id=? AND spaceId=? AND deletedAt IS NULL',
+          )
+          .get(parentId, spaceId);
+        if (!parent) parentId = null;
+        else {
+          // Guard against restoring under one of its own (deleted) descendants.
+          const descendants = new Set<string>([id]);
+          let cursor: string | null = parentId;
+          let depth = 0;
+          while (cursor && depth < 500) {
+            if (descendants.has(cursor)) {
+              parentId = null;
+              break;
+            }
+            descendants.add(cursor);
+            const row = this.db
+              .prepare('SELECT parentId FROM pages WHERE id=? AND spaceId=?')
+              .get(cursor, spaceId) as { parentId: string | null } | undefined;
+            cursor = row?.parentId ?? null;
+            depth += 1;
+          }
+        }
+      }
+      this.db
+        .prepare(
+          'UPDATE pages SET parentId=?, deletedAt=NULL, revision=revision+1, updatedAt=? WHERE id=? AND spaceId=?',
+        )
+        .run(parentId, Date.now(), id, spaceId);
+      this.db.exec('COMMIT');
+      return this.get(spaceId, id);
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  purge(spaceId: string, id: string): boolean {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const row = this.db
+        .prepare('SELECT id FROM pages WHERE id=? AND spaceId=?')
+        .get(id, spaceId);
+      if (!row) {
+        this.db.exec('COMMIT');
+        return false;
+      }
+      this.db.prepare('DELETE FROM page_threads WHERE pageId=?').run(id);
+      this.db.prepare('DELETE FROM page_versions WHERE pageId=?').run(id);
+      this.db
+        .prepare('DELETE FROM pages WHERE id=? AND spaceId=?')
+        .run(id, spaceId);
+      this.db.exec('COMMIT');
+      return true;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  exportSpace(spaceId: string): {
+    version: number;
+    exportedAt: number;
+    spaceId: string;
+    pages: Pick<
+      Page,
+      | 'id'
+      | 'parentId'
+      | 'title'
+      | 'content'
+      | 'revision'
+      | 'createdAt'
+      | 'updatedAt'
+    >[];
+  } {
+    this.requireSpace(spaceId);
+    const pages = this.list(spaceId).map((page) => ({
+      id: page.id,
+      parentId: page.parentId,
+      title: page.title,
+      content: page.content,
+      revision: page.revision,
+      createdAt: page.createdAt,
+      updatedAt: page.updatedAt,
+    }));
+    return { version: 1, exportedAt: Date.now(), spaceId, pages };
+  }
+
+  importSpace(spaceId: string, input: z.input<typeof pageImportInput>): Page[] {
+    const parsed = pageImportInput.safeParse(input);
+    if (!parsed.success)
+      throw new PageError(
+        'Import requires 1 to 200 pages with a title up to 160 characters and content up to 100,000 characters.',
+      );
+    this.requireSpace(spaceId);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      // Remap old export ids (and positional "0"/"1" aliases for hand-written
+      // payloads) to fresh ids so hierarchy survives a backup round-trip.
+      const now = Date.now();
+      const staged = parsed.data.pages.map((entry, index) => ({
+        id: randomUUID(),
+        entry,
+        index,
+        createdAt: now + index,
+      }));
+      const oldToNew = new Map<string, string>();
+      for (const item of staged) {
+        if (item.entry.id) oldToNew.set(item.entry.id, item.id);
+        oldToNew.set(String(item.index), item.id);
+      }
+      const pendingParent = new Map<string, string | null>();
+      for (const item of staged) {
+        const rawParent = item.entry.parentId;
+        let parentId: string | null = null;
+        if (rawParent) parentId = oldToNew.get(rawParent) ?? null;
+        pendingParent.set(item.id, parentId);
+      }
+      for (const item of staged) {
+        this.db
+          .prepare(
+            'INSERT INTO pages(id, spaceId, parentId, title, content, revision, createdAt, updatedAt, sourceThreadId, deletedAt) VALUES (?,?,?,?,?,1,?,?,NULL,NULL)',
+          )
+          .run(
+            item.id,
+            spaceId,
+            pendingParent.get(item.id) ?? null,
+            item.entry.title,
+            item.entry.content,
+            item.createdAt,
+            item.createdAt,
+          );
+      }
+      // Validate hierarchy after insert: no cycles, parents in-space.
+      const rows = this.db
+        .prepare(
+          'SELECT id, parentId FROM pages WHERE spaceId=? AND deletedAt IS NULL',
+        )
+        .all(spaceId) as { id: string; parentId: string | null }[];
+      const byId = new Map(rows.map((row) => [row.id, row.parentId]));
+      for (const item of staged) {
+        const seen = new Set<string>([item.id]);
+        let cursor = byId.get(item.id);
+        while (cursor) {
+          if (seen.has(cursor))
+            throw new PageError('Imported pages cannot form a parent cycle.');
+          seen.add(cursor);
+          cursor = byId.get(cursor) ?? null;
+        }
+      }
+      this.db.exec('COMMIT');
+      return staged.map((item) => this.get(spaceId, item.id));
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;
@@ -287,23 +620,28 @@ export class Pages {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const page = this.db
-        .prepare('SELECT parentId FROM pages WHERE id=? AND spaceId=?')
-        .get(id, spaceId) as { parentId: string | null } | undefined;
-      if (!page) {
+        .prepare(
+          'SELECT parentId, deletedAt FROM pages WHERE id=? AND spaceId=?',
+        )
+        .get(id, spaceId) as
+        { parentId: string | null; deletedAt: number | null } | undefined;
+      if (!page || page.deletedAt != null) {
         this.db.exec('COMMIT');
         return false;
       }
       const now = Date.now();
       this.db
         .prepare(
-          'UPDATE pages SET parentId=?, revision=revision+1, updatedAt=? WHERE spaceId=? AND parentId=?',
+          'UPDATE pages SET parentId=?, revision=revision+1, updatedAt=? WHERE spaceId=? AND parentId=? AND deletedAt IS NULL',
         )
         .run(page.parentId, now, spaceId, id);
       // page_reviews rows stay: a retried approval must not recreate this page.
       this.db.prepare('DELETE FROM page_threads WHERE pageId=?').run(id);
       this.db
-        .prepare('DELETE FROM pages WHERE id=? AND spaceId=?')
-        .run(id, spaceId);
+        .prepare(
+          'UPDATE pages SET deletedAt=?, revision=revision+1, updatedAt=? WHERE id=? AND spaceId=?',
+        )
+        .run(now, now, id, spaceId);
       this.db.exec('COMMIT');
       return true;
     } catch (error) {
