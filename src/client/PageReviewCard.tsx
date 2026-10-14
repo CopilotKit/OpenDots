@@ -7,6 +7,7 @@ import {
   decidePageReview,
   fetchReviewTarget,
   isDeletedReview,
+  isReviewTargetIdentified,
   matchesReviewedDraft,
   restorePageReview,
   type DeletedReview,
@@ -59,7 +60,18 @@ export function PageReviewCard({
   // An update approval is only allowed once the page it would overwrite has
   // been identified; a pending or failed lookup must not leave an enabled
   // approve button behind an unidentified "Updates an existing page." card.
-  const targetGated = !!targetPageId && targetStatus !== 'identified';
+  // The identification must also belong to the CURRENT args: after the target
+  // changes, the previous lookup's state survives one committed render, so a
+  // stale "identified" would otherwise ungate the new target's approval and
+  // label it with the old page. Derive the gate synchronously from the
+  // identified target's page/Space matching the current args.
+  const targetIdentified = isReviewTargetIdentified(
+    targetStatus,
+    target,
+    targetPageId,
+    targetSpaceId,
+  );
+  const targetGated = !!targetPageId && !targetIdentified;
   useEffect(() => {
     if (!targetPageId || !targetSpaceId) {
       setTarget(null);
@@ -191,7 +203,7 @@ export function PageReviewCard({
       <div className="page-review-body">
         {targetPageId && (
           <p className="page-review-target">
-            {targetStatus === 'identified' && target
+            {targetIdentified && target
               ? `Updates existing page "${target.title}"${
                   target.spaceName ? ` in ${target.spaceName}` : ''
                 }.`

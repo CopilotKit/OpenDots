@@ -71,6 +71,25 @@ export interface ReviewTarget {
   spaceName: string | null;
 }
 
+// An update approval may proceed only when the lookup for the CURRENT
+// target args has identified that exact page and Space. The lookup state
+// survives one committed render after the args change, so a status left
+// over from the previous target must not ungate the new target's approval
+// or label it with the old page.
+export function isReviewTargetIdentified(
+  status: 'idle' | 'pending' | 'identified' | 'failed',
+  target: ReviewTarget | null,
+  pageId: string | null,
+  spaceId: string | null,
+): boolean {
+  return (
+    status === 'identified' &&
+    !!target &&
+    target.pageId === pageId &&
+    target.spaceId === spaceId
+  );
+}
+
 // The approval card must identify which existing page an update would
 // overwrite before the owner approves: identical drafts targeting
 // different pages otherwise render identical cards.

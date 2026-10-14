@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const api = vi.hoisted(() => vi.fn());
 vi.mock('../src/client/api', () => ({ api }));
 import { PageReviewCard } from '../src/client/PageReviewCard';
+import { isReviewTargetIdentified } from '../src/client/page-review-decision';
 
 const draft = { title: 'Brief', content: 'Evidence', spaceId: 'space' };
 const text = (node: unknown): string =>
@@ -251,4 +252,83 @@ it('keeps continuing a saved review available while the target lookup is pending
   // The saved-receipt continuation stays independent of the target lookup.
   const cont = buttonWithText(root, 'Continue conversation');
   expect(cont.props.disabled).toBeFalsy();
+});
+
+it('re-gates approval when an identified target changes', async () => {
+  const pageB = deferred<unknown>();
+  api.mockImplementation((path: string) => {
+    if (path === '/conversations/thread/reviewed-page/call')
+      return Promise.resolve(null);
+    if (path === '/spaces/space/pages/page-a')
+      return Promise.resolve({ id: 'page-a', title: 'Onboarding' });
+    if (path === '/spaces/space/pages/page-b') return pageB.promise;
+    if (path === '/workspace')
+      return Promise.resolve({ spaces: [{ id: 'space', name: 'Handbook' }] });
+    throw new Error(`unexpected path ${path}`);
+  });
+  const root = await mountCard(updateDraft);
+  let view = text(root.toJSON());
+  expect(view).toContain('Updates existing page "Onboarding" in Handbook.');
+  expect(buttonWithText(root, 'Approve & update page').props.disabled).toBe(
+    false,
+  );
+  await act(async () => {
+    root.update(
+      createElement(PageReviewCard, {
+        args: { ...updateDraft, pageId: 'page-b' },
+        status: 'executing',
+        respond: async () => {},
+        threadId: 'thread',
+        toolCallId: 'call',
+        onSaved: () => {},
+      }),
+    );
+  });
+  view = text(root.toJSON());
+  expect(view).not.toContain('Onboarding');
+  expect(view).toContain('Identifying the page this would update');
+  const gated = buttonWithText(root, 'Approve & update page');
+  expect(gated.props.disabled).toBe(true);
+  const callsBefore = api.mock.calls.length;
+  await act(async () => {
+    await gated.props.onClick();
+  });
+  expect(api.mock.calls.length).toBe(callsBefore);
+  await act(async () => {
+    pageB.resolve({ id: 'page-b', title: 'Release plan' });
+  });
+  view = text(root.toJSON());
+  expect(view).toContain('Updates existing page "Release plan" in Handbook.');
+  expect(buttonWithText(root, 'Approve & update page').props.disabled).toBe(
+    false,
+  );
+});
+
+it('gates an update approval on the identified target matching current args', () => {
+  const targetA = {
+    pageId: 'page-a',
+    title: 'Onboarding',
+    spaceId: 'space',
+    spaceName: 'Handbook',
+  };
+  // The state left over from target A after args switched to target B: this
+  // exact combination enabled B's approval under A's identity.
+  expect(
+    isReviewTargetIdentified('identified', targetA, 'page-b', 'space'),
+  ).toBe(false);
+  expect(
+    isReviewTargetIdentified('identified', targetA, 'page-a', 'space-b'),
+  ).toBe(false);
+  expect(
+    isReviewTargetIdentified('identified', targetA, 'page-a', 'space'),
+  ).toBe(true);
+  expect(isReviewTargetIdentified('pending', null, 'page-a', 'space')).toBe(
+    false,
+  );
+  expect(isReviewTargetIdentified('failed', null, 'page-a', 'space')).toBe(
+    false,
+  );
+  expect(isReviewTargetIdentified('identified', null, 'page-a', 'space')).toBe(
+    false,
+  );
 });
