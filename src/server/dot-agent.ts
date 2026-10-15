@@ -69,6 +69,7 @@ export class DotAgent extends AbstractAgent {
       let watcher: ReturnType<typeof setInterval> | undefined;
       let timedOut = false;
       let finished = false;
+      let startupPending = true;
       let configurationFailure = false;
       const turnTimeLimitMs =
         this.config.agentRunTimeoutMs ?? DEFAULT_AGENT_RUN_TIMEOUT_MS;
@@ -85,7 +86,9 @@ export class DotAgent extends AbstractAgent {
         message: `This turn reached the ${turnTimeLimitMs / 1000} second time limit and was stopped. Try a smaller request.`,
       });
       const fail = (error: unknown) => {
+        if (subscriber.closed) return;
         if (!configurationFailure) observe({ type: EventType.RUN_ERROR });
+        finished = true;
         subscriber.next(
           this.channel
             ? channelError()
@@ -99,6 +102,18 @@ export class DotAgent extends AbstractAgent {
         );
         subscriber.complete();
       };
+      controller.signal.addEventListener(
+        'abort',
+        () => {
+          if (!startupPending || subscriber.closed) return;
+          if (timedOut) {
+            finished = true;
+            subscriber.next(this.channel ? channelError() : timeLimitError());
+            subscriber.complete();
+          } else fail(controller.signal.reason);
+        },
+        { once: true },
+      );
       try {
         const dot = this.workspace.dot(this.dotId);
         if (!dot) throw new Error('Specialist Dot not found.');
@@ -336,20 +351,22 @@ export class DotAgent extends AbstractAgent {
           maxRetries: 1,
         });
         const start = async () => {
-          const appTools =
+          let appTools: ToolDefinition[] = [];
+          if (
             this.config.composioApiKey &&
             initialSettings.appsAllowed &&
             dot.appsAllowed
-              ? await composioTools(
-                  await composioSession(
-                    this.config,
-                    this.workspace,
-                    dot,
-                    this.workspace.ownerId,
-                  ),
-                  check,
-                )
-              : [];
+          ) {
+            const session = await composioSession(
+              this.config,
+              this.workspace,
+              dot,
+              this.workspace.ownerId,
+              controller.signal,
+            );
+            check();
+            appTools = await composioTools(session, check, controller.signal);
+          }
           check();
           const serverTools = [
             ...tools,
@@ -461,6 +478,7 @@ export class DotAgent extends AbstractAgent {
                 subscriber.complete();
               },
             });
+          startupPending = false;
         };
         void start().catch(fail);
       } catch (error) {

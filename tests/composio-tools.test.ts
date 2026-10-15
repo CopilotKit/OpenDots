@@ -24,8 +24,10 @@ it('passes Composio JSON Schema through and returns only safe execution failures
     execute,
   } as unknown as Session;
   const check = vi.fn();
-  const [tool] = await composioTools(session, check);
+  const signal = new AbortController().signal;
+  const [tool] = await composioTools(session, check, signal);
 
+  expect(session.tools).toHaveBeenCalledWith(undefined, { signal });
   expect(tool.parameters).toBe(parameters);
   await expect(tool.execute?.({ query: 'one' })).resolves.toEqual({
     data: { ok: true },

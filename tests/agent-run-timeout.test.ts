@@ -13,6 +13,17 @@ import { Runner } from '../src/server/runner.js';
 import { Store } from '../src/server/store.js';
 import { WorkspaceStore } from '../src/server/workspace.js';
 
+const composio = vi.hoisted(() => ({
+  session: vi.fn(),
+  tools: vi.fn(),
+}));
+vi.mock('../src/server/composio.js', () => ({
+  composioSession: composio.session,
+}));
+vi.mock('../src/server/composio-tools.js', () => ({
+  composioTools: composio.tools,
+}));
+
 const resources: Array<{ close(): void }> = [];
 function sharedStores() {
   const dir = mkdtempSync(join(tmpdir(), 'opendots-timeout-'));
@@ -27,6 +38,8 @@ function sharedStores() {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
+  composio.session.mockReset();
+  composio.tools.mockReset();
   resources.splice(0).forEach((resource) => resource.close());
 });
 
@@ -96,6 +109,179 @@ it('uses the configured timeout for interactive Dot turns', async () => {
       }),
     ]),
   );
+});
+
+it('completes a timed-out turn while Composio session startup is stalled', async () => {
+  vi.useFakeTimers();
+  const store = new Store(':memory:');
+  const workspace = new WorkspaceStore(':memory:', 'owner');
+  resources.push(store, workspace);
+  store.updateSettings({ appsAllowed: true });
+  const dot = workspace.dots()[0];
+  workspace.updateDot(dot.id, {
+    ...dot,
+    appsAllowed: true,
+    composioToolkits: ['gmail'],
+  });
+  workspace.bindThread('thread', dot.id, 'Composio timeout');
+  const agent = new DotAgent(
+    store,
+    workspace,
+    {
+      intelligenceKey: 'fixture',
+      apiKey: 'fixture',
+      model: 'custom-model',
+      baseUrl: 'https://unused.invalid/v1',
+      runtimeUrl: '',
+      voiceName: 'marin',
+      slackUsers: [],
+      composioApiKey: 'composio-fixture',
+    },
+    dot.id,
+  );
+  const input: RunAgentInput = {
+    threadId: 'thread',
+    runId: 'run',
+    state: {},
+    context: [],
+    messages: [{ id: 'user', role: 'user', content: 'Use Gmail.' }],
+    tools: [],
+    forwardedProps: {},
+  };
+  composio.session.mockImplementation(() => new Promise(() => {}));
+
+  const pending = lastValueFrom(agent.run(input).pipe(toArray()));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(composio.session).toHaveBeenCalledWith(
+    expect.anything(),
+    workspace,
+    expect.objectContaining({ id: dot.id }),
+    'owner',
+    expect.any(AbortSignal),
+  );
+
+  await vi.advanceTimersByTimeAsync(91_000);
+  const events = await pending;
+  expect(events).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: EventType.RUN_ERROR,
+        message: expect.stringContaining('90 second time limit'),
+      }),
+    ]),
+  );
+  expect(
+    events.filter((event) => event.type === EventType.RUN_ERROR),
+  ).toHaveLength(1);
+  expect(composio.tools).not.toHaveBeenCalled();
+});
+
+it('completes a timed-out turn while Composio tool discovery is stalled', async () => {
+  vi.useFakeTimers();
+  const store = new Store(':memory:');
+  const workspace = new WorkspaceStore(':memory:', 'owner');
+  resources.push(store, workspace);
+  store.updateSettings({ appsAllowed: true });
+  const dot = workspace.dots()[0];
+  workspace.updateDot(dot.id, { ...dot, appsAllowed: true });
+  workspace.bindThread('thread', dot.id, 'Composio tools timeout');
+  const agent = new DotAgent(
+    store,
+    workspace,
+    {
+      intelligenceKey: 'fixture',
+      apiKey: 'fixture',
+      model: 'custom-model',
+      baseUrl: 'https://unused.invalid/v1',
+      runtimeUrl: '',
+      voiceName: 'marin',
+      slackUsers: [],
+      composioApiKey: 'composio-fixture',
+    },
+    dot.id,
+  );
+  const input: RunAgentInput = {
+    threadId: 'thread',
+    runId: 'run',
+    state: {},
+    context: [],
+    messages: [{ id: 'user', role: 'user', content: 'Use Gmail.' }],
+    tools: [],
+    forwardedProps: {},
+  };
+  composio.session.mockResolvedValue({});
+  composio.tools.mockImplementation(() => new Promise(() => {}));
+
+  const pending = lastValueFrom(agent.run(input).pipe(toArray()));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(composio.tools).toHaveBeenCalledTimes(1);
+  const signal = composio.tools.mock.calls[0][2] as AbortSignal;
+  await vi.advanceTimersByTimeAsync(91_000);
+
+  const events = await pending;
+  expect(signal.aborted).toBe(true);
+  expect(events).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: EventType.RUN_ERROR,
+        message: expect.stringContaining('90 second time limit'),
+      }),
+    ]),
+  );
+  expect(
+    events.filter((event) => event.type === EventType.RUN_ERROR),
+  ).toHaveLength(1);
+});
+
+it('does not continue Composio startup when cancellation precedes session resolution', async () => {
+  vi.useFakeTimers();
+  const store = new Store(':memory:');
+  const workspace = new WorkspaceStore(':memory:', 'owner');
+  resources.push(store, workspace);
+  store.updateSettings({ appsAllowed: true });
+  const dot = workspace.dots()[0];
+  workspace.updateDot(dot.id, { ...dot, appsAllowed: true });
+  workspace.bindThread('thread', dot.id, 'Composio cancellation');
+  const agent = new DotAgent(
+    store,
+    workspace,
+    {
+      intelligenceKey: 'fixture',
+      apiKey: 'fixture',
+      model: 'custom-model',
+      baseUrl: 'https://unused.invalid/v1',
+      runtimeUrl: '',
+      voiceName: 'marin',
+      slackUsers: [],
+      composioApiKey: 'composio-fixture',
+    },
+    dot.id,
+  );
+  const input: RunAgentInput = {
+    threadId: 'thread',
+    runId: 'run',
+    state: {},
+    context: [],
+    messages: [{ id: 'user', role: 'user', content: 'Use Gmail.' }],
+    tools: [],
+    forwardedProps: {},
+  };
+  let resolveSession!: (value: unknown) => void;
+  composio.session.mockImplementation(
+    () => new Promise((resolve) => (resolveSession = resolve)),
+  );
+
+  const pending = lastValueFrom(agent.run(input).pipe(toArray()));
+  expect(composio.session).toHaveBeenCalledTimes(1);
+  const signal = composio.session.mock.calls[0][4] as AbortSignal;
+  agent.abortRun();
+  const events = await pending;
+  expect(signal.aborted).toBe(true);
+  expect(events.at(-1)?.type).toBe(EventType.RUN_ERROR);
+
+  resolveSession({});
+  await vi.advanceTimersByTimeAsync(0);
+  expect(composio.tools).not.toHaveBeenCalled();
 });
 
 it('uses the configured timeout for scheduled/background runs', async () => {
