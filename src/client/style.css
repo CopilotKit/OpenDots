@@ -3753,6 +3753,15 @@ h3 {
   font-size: 13px;
   line-height: 1.65;
 }
+.page-review-target {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 176, 32, 0.12);
+  border: 1px solid rgba(255, 176, 32, 0.35);
+  font-size: 12.5px;
+  font-weight: 600;
+}
 .page-review-body h3 {
   font-size: 20px;
   margin: 0 0 12px;

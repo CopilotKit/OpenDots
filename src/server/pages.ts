@@ -155,11 +155,21 @@ export class Pages {
   }
   createReviewed(
     spaceId: string,
-    input: Pick<PageReviewDraft, 'title' | 'content'>,
+    input: Pick<
+      PageReviewDraft,
+      'title' | 'content' | 'pageId' | 'expectedRevision'
+    >,
     threadId: string,
     toolCallId: string,
   ): ReviewedPage {
-    const draft = pageReviewSchema.parse({ ...input, spaceId });
+    // Strict tool schemas send omitted optional fields as null.
+    const parsed = pageReviewSchema.parse({ ...input, spaceId });
+    const { pageId, expectedRevision, ...rest } = parsed;
+    const draft: PageReviewDraft = {
+      ...rest,
+      ...(pageId ? { pageId } : {}),
+      ...(expectedRevision ? { expectedRevision } : {}),
+    };
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const previous = this.reviewReceipt(threadId, toolCallId);
@@ -172,7 +182,9 @@ export class Pages {
         if (
           previous.draft &&
           (previous.draft.title !== draft.title ||
-            previous.draft.content !== draft.content)
+            previous.draft.content !== draft.content ||
+            previous.draft.pageId !== draft.pageId ||
+            previous.draft.expectedRevision !== draft.expectedRevision)
         )
           throw new PageError(
             'This review was already saved with a different draft. Start a new review for the changed draft.',
@@ -182,11 +194,27 @@ export class Pages {
         this.db.exec('COMMIT');
         return { ...page, reviewDraft: previous.draft };
       }
-      const page = this.create(
-        spaceId,
-        { title: draft.title, content: draft.content },
-        threadId,
-      );
+      if (draft.pageId && draft.expectedRevision === undefined)
+        throw new PageError(
+          'Revising an existing page needs the revision the draft was based on.',
+          400,
+        );
+      if (!draft.pageId && draft.expectedRevision !== undefined)
+        throw new PageError(
+          'A revision can only be given together with the page to revise.',
+          400,
+        );
+      const page = draft.pageId
+        ? this.applyUpdate(spaceId, draft.pageId, {
+            title: draft.title,
+            content: draft.content,
+            expectedRevision: draft.expectedRevision!,
+          })
+        : this.create(
+            spaceId,
+            { title: draft.title, content: draft.content },
+            threadId,
+          );
       this.db
         .prepare(
           'INSERT INTO page_reviews (threadId,toolCallId,pageId,spaceId,draft) VALUES (?,?,?,?,?)',
@@ -205,36 +233,42 @@ export class Pages {
       throw new PageError(
         'A valid page patch and expectedRevision are required.',
       );
-    const data = parsed.data;
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const page = this.get(spaceId, id);
-      if (page.revision !== data.expectedRevision)
-        throw new PageError(
-          'This page changed. Reload the latest revision before saving your draft.',
-          409,
-        );
-      const parent =
-        data.parentId === undefined ? page.parentId : data.parentId;
-      this.parent(spaceId, parent, id);
-      this.db
-        .prepare(
-          'UPDATE pages SET title=?,content=?,parentId=?,revision=revision+1,updatedAt=? WHERE id=? AND revision=?',
-        )
-        .run(
-          data.title ?? page.title,
-          data.content ?? page.content,
-          parent,
-          Date.now(),
-          id,
-          data.expectedRevision,
-        );
+      const page = this.applyUpdate(spaceId, id, parsed.data);
       this.db.exec('COMMIT');
-      return this.get(spaceId, id);
+      return page;
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;
     }
+  }
+  private applyUpdate(
+    spaceId: string,
+    id: string,
+    data: z.output<typeof pagePatch>,
+  ): Page {
+    const page = this.get(spaceId, id);
+    if (page.revision !== data.expectedRevision)
+      throw new PageError(
+        'This page changed. Reload the latest revision before saving your draft.',
+        409,
+      );
+    const parent = data.parentId === undefined ? page.parentId : data.parentId;
+    this.parent(spaceId, parent, id);
+    this.db
+      .prepare(
+        'UPDATE pages SET title=?,content=?,parentId=?,revision=revision+1,updatedAt=? WHERE id=? AND revision=?',
+      )
+      .run(
+        data.title ?? page.title,
+        data.content ?? page.content,
+        parent,
+        Date.now(),
+        id,
+        data.expectedRevision,
+      );
+    return this.get(spaceId, id);
   }
   thread(pageId: string, dotId: string) {
     const row = this.db
