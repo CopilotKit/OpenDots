@@ -155,6 +155,18 @@ export class ConnectionStore {
       createdAt: Number(row.createdAt),
     };
   }
+  // Looks up what an approval was already claimed for, so one approval can
+  // never run its stored request twice under different tool call ids.
+  actionForApproval(approvalId: string) {
+    const row = this.db
+      .prepare(
+        'SELECT threadId, toolCallId FROM mcp_actions WHERE approvalId=?',
+      )
+      .get(approvalId);
+    return row
+      ? { threadId: String(row.threadId), toolCallId: String(row.toolCallId) }
+      : undefined;
+  }
   // Claim an approved action once. Returns false if it was already claimed,
   // so a double click or a retried request never executes twice. A
   // result-less claim older than `ttlMs` was interrupted before it could

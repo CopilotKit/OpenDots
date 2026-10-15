@@ -46,6 +46,16 @@ export function WorkspaceDialog({
       ? (dialog.dot?.memoryAllowed ?? true)
       : state.settings.memoryAllowed,
   );
+  const [apps, setApps] = useState(
+    dialog.type === 'dot'
+      ? (dialog.dot?.appsAllowed ?? false)
+      : state.settings.appsAllowed,
+  );
+  const [composioToolkits, setComposioToolkits] = useState(
+    dialog.type === 'dot'
+      ? (dialog.dot?.composioToolkits ?? []).join(', ')
+      : '',
+  );
   const [spaceIds, setSpaceIds] = useState(
     dialog.type === 'dot' ? (dialog.dot?.spaceIds ?? [dialog.spaceId]) : [],
   );
@@ -147,6 +157,11 @@ export function WorkspaceDialog({
                 instructions: text,
                 researchAllowed: research,
                 memoryAllowed: memory,
+                appsAllowed: apps,
+                composioToolkits: composioToolkits
+                  .split(',')
+                  .map((slug) => slug.trim())
+                  .filter(Boolean),
                 learningContainerId: learningContainer.trim() || null,
                 skillDeliveryEnabled: skillDelivery,
               };
@@ -154,7 +169,11 @@ export function WorkspaceDialog({
             if (dialog.type === 'settings') {
               path = '/settings';
               method = 'PATCH';
-              body = { researchAllowed: research, memoryAllowed: memory };
+              body = {
+                researchAllowed: research,
+                memoryAllowed: memory,
+                appsAllowed: apps,
+              };
             }
             if (dialog.type === 'memory') {
               path = dialog.memory
@@ -292,7 +311,43 @@ export function WorkspaceDialog({
                   </small>
                 </span>
               </label>
+              {workspace.setup.composio && (
+                <label className="permission-row">
+                  <input
+                    type="checkbox"
+                    checked={apps}
+                    onChange={(event) => setApps(event.target.checked)}
+                  />
+                  <span>
+                    <strong>Connected apps</strong>
+                    <small>
+                      Allow access to the owner’s apps through Composio. Global
+                      settings always take precedence.
+                    </small>
+                  </span>
+                </label>
+              )}
             </>
+          )}
+          {dialog.type === 'dot' && workspace.setup.composio && (
+            <fieldset className="space-access-fields">
+              <legend>Connected apps</legend>
+              <label className="field-label" htmlFor="composio-toolkits">
+                Toolkit slugs
+              </label>
+              <input
+                id="composio-toolkits"
+                value={composioToolkits}
+                pattern="[a-z0-9_]+(, *[a-z0-9_]+)*"
+                placeholder="gmail, google_calendar"
+                aria-describedby="composio-toolkits-help"
+                onChange={(event) => setComposioToolkits(event.target.value)}
+              />
+              <p className="muted" id="composio-toolkits-help">
+                Optional comma-separated Composio toolkit slugs. Leave blank to
+                let the Dot search all available toolkits.
+              </p>
+            </fieldset>
           )}
           {dialog.type === 'dot' && (
             <fieldset className="space-access-fields">

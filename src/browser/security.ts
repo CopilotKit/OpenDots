@@ -21,6 +21,7 @@ export function isPublicAddress(address: string): boolean {
     const normalized = new URL(`http://[${ip}]`).hostname.slice(1, -1);
     const second = Number.parseInt(normalized.split(':')[1] || '0', 16);
     if (normalized.startsWith('2001:') && second < 0x200) return false;
+    if (normalized.startsWith('3fff:') && second < 0x1000) return false;
     return (
       /^[23][0-9a-f]{3}:/.test(normalized) &&
       !/^(2001:(0:|db8:|10:|20:)|2002:)/.test(normalized)

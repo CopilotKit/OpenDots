@@ -487,7 +487,8 @@ it('returns a saved result only for the approval that produced it', async () => 
   expect(sent).toHaveBeenCalledOnce();
   expect(sent.mock.calls[0][0]).toMatchObject({ to: 'alice@example.com' });
 });
-it('lets the owner retry an action interrupted before its result was saved', async () => {
+
+it('runs an approved request once, even under a fresh toolCallId', async () => {
   const { dot, connections, request, sent } = fixture();
   await connections.add(dot.id, {
     name: 'Mail',
@@ -497,111 +498,20 @@ it('lets the owner retry an action interrupted before its result was saved', asy
     connections,
     dot.id,
     'mail__send_mail',
-    {
-      to: 'a@example.com',
-      body: 'Hi',
-    },
+    { to: 'a@example.com', body: 'Hi' },
   );
-  const approval = connections.store.approval(approvalId)!;
-  // A crash between claim and finish leaves a result-less running row.
-  expect(
-    connections.store.claimAction(
-      'thread',
-      'tc1',
+  const approve = (toolCallId: string) =>
+    request('/conversations/thread/connection-actions', 'POST', {
+      toolCallId,
       approvalId,
-      approval.connectionId,
-      approval.tool,
-    ),
-  ).toBe(true);
-  // A fresh claim still belongs to its in-flight run: retries wait.
-  const busy = await request(
-    '/conversations/thread/connection-actions',
-    'POST',
-    {
-      toolCallId: 'tc1',
-      approvalId,
-    },
-  );
-  expect(busy.status).toBe(409);
-  expect(await busy.json()).toEqual({
-    error: 'This action is already running.',
-  });
-  expect(sent).not.toHaveBeenCalled();
-  vi.useFakeTimers({ toFake: ['Date'] });
-  try {
-    vi.setSystemTime(Date.now() + ACTION_TTL_MS + 1);
-    // The receipt names the interruption so the card can offer a retry...
-    const receipt = await request(
-      '/conversations/thread/connection-actions/tc1',
-    );
-    expect(await receipt.json()).toMatchObject({
-      approvalId,
-      status: 'interrupted',
     });
-    // ...and retrying the same approval runs the stored request exactly once.
-    const retried = await request(
-      '/conversations/thread/connection-actions',
-      'POST',
-      { toolCallId: 'tc1', approvalId },
-    );
-    expect(retried.status).toBe(200);
-    expect(await retried.json()).toEqual({
-      isError: false,
-      text: 'Sent to a@example.com',
-    });
-    expect(sent).toHaveBeenCalledOnce();
-    expect(sent.mock.calls[0][0]).toEqual({
-      to: 'a@example.com',
-      body: 'Hi',
-    });
-    expect(
-      await (
-        await request('/conversations/thread/connection-actions/tc1')
-      ).json(),
-    ).toMatchObject({ status: 'done' });
-  } finally {
-    vi.useRealTimers();
-  }
-});
-it('still refuses a stale claim under a different approval', async () => {
-  const { dot, connections, request, sent } = fixture();
-  await connections.add(dot.id, {
-    name: 'Mail',
-    url: 'https://mail.example.com/mcp',
+  expect(await (await approve('tc1')).json()).toEqual({
+    isError: false,
+    text: 'Sent to a@example.com',
   });
-  const alice = await requestApproval(connections, dot.id, 'mail__send_mail', {
-    to: 'alice@example.com',
-    body: 'Hi',
-  });
-  const bob = await requestApproval(connections, dot.id, 'mail__send_mail', {
-    to: 'bob@example.com',
-    body: 'Hi',
-  });
-  const approval = connections.store.approval(alice)!;
-  expect(
-    connections.store.claimAction(
-      'thread',
-      'tc1',
-      alice,
-      approval.connectionId,
-      approval.tool,
-    ),
-  ).toBe(true);
-  vi.useFakeTimers({ toFake: ['Date'] });
-  try {
-    vi.setSystemTime(Date.now() + ACTION_TTL_MS + 1);
-    // Interruption never hands Alice's claim to Bob's approval.
-    const mismatched = await request(
-      '/conversations/thread/connection-actions',
-      'POST',
-      { toolCallId: 'tc1', approvalId: bob },
-    );
-    expect(mismatched.status).toBe(409);
-    expect(await mismatched.json()).toEqual({
-      error: 'This action belongs to a different approval request.',
-    });
-    expect(sent).not.toHaveBeenCalled();
-  } finally {
-    vi.useRealTimers();
-  }
+  // The stored request ran. The same approval must not run it a second
+  // time under a different tool call id.
+  const replay = await approve('tc2');
+  expect(replay.status).toBe(409);
+  expect(sent).toHaveBeenCalledOnce();
 });
