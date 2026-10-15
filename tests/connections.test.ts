@@ -11,6 +11,7 @@ import {
 } from '../src/server/connections.js';
 import { connectionTools } from '../src/server/connection-tools.js';
 import { connectionRoutes } from '../src/server/connection-routes.js';
+import { ACTION_TTL_MS } from '../src/shared/connection-types.js';
 import type { Connection } from '../src/shared/connection-types.js';
 const resources: (() => void)[] = [];
 afterEach(() => resources.splice(0).forEach((close) => close()));
