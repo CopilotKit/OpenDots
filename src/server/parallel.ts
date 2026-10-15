@@ -195,6 +195,11 @@ export async function parallelSources(
       throw new Error('Parallel could not extract usable source evidence.');
     return pages;
   } finally {
-    await client.close().catch(() => {});
+    await client.close().catch((error: unknown) => {
+      console.error(
+        'Failed to close MCP client:',
+        error instanceof Error ? error.message : error,
+      );
+    });
   }
 }

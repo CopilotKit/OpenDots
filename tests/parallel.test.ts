@@ -108,6 +108,22 @@ describe('Parallel research', () => {
       ),
     ).toHaveLength(1);
   });
+  it('logs MCP client close failures instead of swallowing them', async () => {
+    mcp.callTool.mockResolvedValue(result(page()));
+    mcp.close.mockRejectedValueOnce(new Error('transport gone'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const sources = await parallelSources(
+      { objective: 'Read', urls: ['https://example.com'] },
+      {},
+      signal,
+    );
+    expect(sources).toHaveLength(1);
+    expect(error).toHaveBeenCalledWith(
+      'Failed to close MCP client:',
+      'transport gone',
+    );
+    error.mockRestore();
+  });
   it('surfaces provider errors and closes the client', async () => {
     mcp.callTool.mockResolvedValue({
       isError: true,
