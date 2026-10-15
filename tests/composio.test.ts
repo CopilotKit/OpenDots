@@ -40,26 +40,38 @@ it('creates a non-Instant session and reuses it while the policy is unchanged', 
     composioToolkits: ['gmail'],
   });
   const created = { sessionId: 'session-one' };
+  const signal = new AbortController().signal;
   sdk.create.mockResolvedValue(created);
   sdk.use.mockResolvedValue(created);
 
   await expect(
-    composioSession(config, workspace, workspace.dot(original.id)!, 'owner'),
+    composioSession(
+      config,
+      workspace,
+      workspace.dot(original.id)!,
+      'owner',
+      signal,
+    ),
   ).resolves.toBe(created);
-  expect(sdk.create).toHaveBeenCalledWith('owner', {
-    toolkits: ['gmail'],
-    manageConnections: true,
-    instant: false,
-  });
+  expect(sdk.create).toHaveBeenCalledWith(
+    'owner',
+    {
+      toolkits: ['gmail'],
+      manageConnections: true,
+      instant: false,
+    },
+    { signal },
+  );
 
   await composioSession(
     config,
     workspace,
     workspace.dot(original.id)!,
     'owner',
+    signal,
   );
   expect(sdk.create).toHaveBeenCalledTimes(1);
-  expect(sdk.use).toHaveBeenCalledWith('session-one');
+  expect(sdk.use).toHaveBeenCalledWith('session-one', undefined, { signal });
 });
 
 it('creates a new session when the toolkit policy changes', async () => {
@@ -67,16 +79,23 @@ it('creates a new session when the toolkit policy changes', async () => {
   const workspace = new WorkspaceStore(':memory:', 'owner');
   stores.push(workspace);
   const dot = workspace.dots()[0];
+  const signal = new AbortController().signal;
   sdk.create
     .mockResolvedValueOnce({ sessionId: 'session-one' })
     .mockResolvedValueOnce({ sessionId: 'session-two' });
 
-  await composioSession(config, workspace, dot, 'owner');
+  await composioSession(config, workspace, dot, 'owner', signal);
   workspace.updateDot(dot.id, {
     ...workspace.dot(dot.id)!,
     composioToolkits: ['gmail'],
   });
-  await composioSession(config, workspace, workspace.dot(dot.id)!, 'owner');
+  await composioSession(
+    config,
+    workspace,
+    workspace.dot(dot.id)!,
+    'owner',
+    signal,
+  );
 
   expect(sdk.create).toHaveBeenCalledTimes(2);
   expect(sdk.use).not.toHaveBeenCalled();
@@ -89,4 +108,5 @@ it('keeps Composio optional in setup status', async () => {
   expect(without.composio).toBe(false);
   expect(without.missing).not.toContain('COMPOSIO_API_KEY');
   expect(setupStatus(config).composio).toBe(true);
+  expect(setupStatus({ ...config, composioApiKey: '' }).composio).toBe(false);
 });
