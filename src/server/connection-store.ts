@@ -9,19 +9,26 @@ type Row = Omit<Connection, 'hasToken' | 'tools'> & {
   token: string | null;
   tools: string;
 };
+// MCP calls are bounded to 60 seconds. Keep a generous margin before treating
+// a result-less claim as interrupted, so a slow but live call cannot be run twice.
+export const INTERRUPTED_ACTION_THRESHOLD_MS = 5 * 60_000;
+
 export class ConnectionStore {
   constructor(private db: DatabaseSync) {
     db.exec(`CREATE TABLE IF NOT EXISTS mcp_connections(id TEXT PRIMARY KEY, dotId TEXT NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL, token TEXT, tools TEXT NOT NULL, error TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS mcp_approvals(id TEXT PRIMARY KEY, threadId TEXT NOT NULL, dotId TEXT NOT NULL, connectionId TEXT NOT NULL, tool TEXT NOT NULL, arguments TEXT NOT NULL, createdAt INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS mcp_actions(threadId TEXT NOT NULL, toolCallId TEXT NOT NULL, connectionId TEXT NOT NULL, tool TEXT NOT NULL, status TEXT NOT NULL, result TEXT, createdAt INTEGER NOT NULL, PRIMARY KEY(threadId, toolCallId));`);
+      CREATE TABLE IF NOT EXISTS mcp_actions(threadId TEXT NOT NULL, toolCallId TEXT NOT NULL, connectionId TEXT NOT NULL, tool TEXT NOT NULL, status TEXT NOT NULL, result TEXT, createdAt INTEGER NOT NULL, claimedAt INTEGER, approvalId TEXT, PRIMARY KEY(threadId, toolCallId));`);
     // A receipt belongs to the approval that produced it.
-    if (
-      !db
-        .prepare('PRAGMA table_info(mcp_actions)')
-        .all()
-        .some((column) => column.name === 'approvalId')
-    )
+    const actionColumns = db
+      .prepare('PRAGMA table_info(mcp_actions)')
+      .all()
+      .map((column) => column.name);
+    if (!actionColumns.includes('approvalId'))
       db.exec('ALTER TABLE mcp_actions ADD COLUMN approvalId TEXT');
+    // claimedAt tracks the most recent execution attempt. Older rows fall
+    // back to createdAt, which was their original claim time.
+    if (!actionColumns.includes('claimedAt'))
+      db.exec('ALTER TABLE mcp_actions ADD COLUMN claimedAt INTEGER');
   }
   private rows(dotId?: string) {
     return this.db
@@ -140,13 +147,20 @@ export class ConnectionStore {
   action(threadId: string, toolCallId: string) {
     const row = this.db
       .prepare(
-        'SELECT status, result, approvalId FROM mcp_actions WHERE threadId=? AND toolCallId=?',
+        'SELECT status, result, approvalId, createdAt, claimedAt FROM mcp_actions WHERE threadId=? AND toolCallId=?',
       )
       .get(threadId, toolCallId);
     if (!row) return undefined;
+    const claimedAt = Number(row.claimedAt ?? row.createdAt);
+    const status = String(row.status) as 'running' | 'done';
     return {
       approvalId: typeof row.approvalId === 'string' ? row.approvalId : null,
-      status: String(row.status) as 'running' | 'done',
+      status:
+        status === 'running' &&
+        row.result === null &&
+        Date.now() - claimedAt >= INTERRUPTED_ACTION_THRESHOLD_MS
+          ? ('interrupted' as const)
+          : status,
       result:
         typeof row.result === 'string'
           ? (JSON.parse(row.result) as ConnectionActionResult)
@@ -174,13 +188,36 @@ export class ConnectionStore {
     connectionId: string,
     tool: string,
   ) {
+    const now = Date.now();
     return (
       this.db
         .prepare(
-          "INSERT OR IGNORE INTO mcp_actions (threadId, toolCallId, connectionId, tool, status, result, createdAt, approvalId) VALUES (?, ?, ?, ?, 'running', NULL, ?, ?)",
+          "INSERT OR IGNORE INTO mcp_actions (threadId, toolCallId, connectionId, tool, status, result, createdAt, claimedAt, approvalId) VALUES (?, ?, ?, ?, 'running', NULL, ?, ?, ?)",
         )
-        .run(threadId, toolCallId, connectionId, tool, Date.now(), approvalId)
+        .run(threadId, toolCallId, connectionId, tool, now, now, approvalId)
         .changes > 0
+    );
+  }
+  // Reclaim only this approval's stale, result-less claim. The conditional
+  // update makes concurrent retries race safely: only one can refresh claimedAt.
+  reclaimInterruptedAction(
+    threadId: string,
+    toolCallId: string,
+    approvalId: string,
+  ) {
+    const now = Date.now();
+    return (
+      this.db
+        .prepare(
+          "UPDATE mcp_actions SET claimedAt=? WHERE threadId=? AND toolCallId=? AND approvalId=? AND status='running' AND result IS NULL AND COALESCE(claimedAt, createdAt)<=?",
+        )
+        .run(
+          now,
+          threadId,
+          toolCallId,
+          approvalId,
+          now - INTERRUPTED_ACTION_THRESHOLD_MS,
+        ).changes > 0
     );
   }
   finishAction(
