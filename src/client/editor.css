@@ -397,6 +397,14 @@
   margin-bottom: 24px;
   outline: none;
   border-radius: 0;
+  /* A textarea so long titles wrap; it is resized to its content, not by the reader. */
+  font-family: inherit;
+  display: block;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  field-sizing: content;
 }
 .document-title::placeholder {
   color: #747c70;
