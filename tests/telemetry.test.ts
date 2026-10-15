@@ -130,6 +130,7 @@ it('forwards the CLI identity and both opt-outs into the Docker app', async () =
   expect(compose).toContain(
     'COPILOTKIT_TELEMETRY_DISABLED: ${COPILOTKIT_TELEMETRY_DISABLED:-false}',
   );
+  expect(compose).toContain('COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}');
 });
 
 it('hands the persistent installation fallback to the installed runtime when CLI identity is absent', async () => {
