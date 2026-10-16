@@ -1,0 +1,21 @@
+# Same as opendots-gateway-lan.service, but for the Tailscale address, so a
+# browser reaching the app over the tailnet can open ws://<TAILSCALE-IP>:40231.
+#
+# Install:
+#   sudo cp deployment/local/opendots-gateway-ts.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now opendots-gateway-ts.service
+#
+# Replace 100.94.106.70 with your Tailscale IP.
+[Unit]
+Description=OpenDots: forward Tailscale traffic on the realtime gateway port to loopback
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+ExecStart=/usr/bin/socat TCP-LISTEN:40231,bind=100.94.106.70,fork,reuseaddr TCP:127.0.0.1:40231
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
