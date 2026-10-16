@@ -10,6 +10,18 @@ Connections give a Dot tools from remote [MCP](https://modelcontextprotocol.io) 
 
 Use **Refresh** after the server adds or changes tools. Your choices for existing tools are kept.
 
+## Signing in (OAuth)
+
+Many services ask you to sign in with your account instead of pasting a token. Add the server without a token. If it requires sign-in, the connection shows **needs sign-in**.
+
+1. Select **Sign in**. A new tab opens the service's sign-in and consent page.
+2. Approve access. The tab returns to OpenDots and says you're signed in.
+3. The settings update on their own and list the service's tools.
+
+OpenDots follows the MCP authorization spec through the official SDK: discovery, dynamic client registration, PKCE and refresh tokens. Access tokens refresh automatically. If the service stops accepting them, the connection asks you to sign in again, and its tools are hidden from the Dot until you do. **Sign out** forgets the tokens and stops the Dot's active turn.
+
+Set `PUBLIC_URL` when OpenDots runs behind a proxy or on a hosted domain. The service sends you back to `PUBLIC_URL/oauth/mcp/callback`; without `PUBLIC_URL`, OpenDots uses the address your browser is on. A sign-in link works once and expires after 10 minutes.
+
 ## Approvals
 
 Every tool starts enabled. A tool the server marks as read-only (`readOnlyHint`) runs on its own. Every other tool starts with **Ask first** on.
@@ -24,7 +36,6 @@ Changing a Dot's connections or tool settings stops that Dot's active turn.
 
 ## Security notes
 
-- Tokens are stored in the server's SQLite database and are never sent to the browser. Protect `DATABASE_PATH` the way you protect `.env`.
+- Tokens, OAuth tokens and OAuth client registrations are stored in the server's SQLite database and are never sent to the browser. Protect `DATABASE_PATH` the way you protect `.env`.
 - Tool results are passed to the model as untrusted data.
 - Endpoints must use `http` or `https` and cannot contain credentials in the URL. Local addresses are allowed, so you can run MCP servers on the same machine. Only add servers you trust.
-- OAuth-only servers are not supported yet. Use a server that accepts a bearer token, or put a token-authenticated proxy in front of it.

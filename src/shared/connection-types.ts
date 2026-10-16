@@ -15,6 +15,9 @@ export interface Connection {
   name: string;
   url: string;
   hasToken: boolean;
+  // token: optional bearer token; oauth: the owner signs in to the service.
+  authMode: 'token' | 'oauth';
+  signedIn: boolean;
   tools: ConnectionTool[];
   error: string | null;
   createdAt: number;

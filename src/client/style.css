@@ -4069,6 +4069,23 @@ h3 {
   font-size: 11px;
 }
 
+.connection-signin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.connection-signin:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Polish: one ink accent everywhere, readable secondary text (WCAG AA), and
    disabled controls that look disabled. Later compact-chrome layers moved
    the app to ink; these older lavender surfaces now follow it. */
