@@ -1,0 +1,28 @@
+{
+  "name": "ploop-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "The ploop desktop app for macOS: ploop's chat plus a login vault it can sign in with.",
+  "author": "ploop",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "npm run build && electron .",
+    "dist": "npm run build && node scripts/prepare-server.mjs && electron-builder --mac",
+    "prepare:server": "node scripts/prepare-server.mjs",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/jsdom": "21.1.7",
+    "@types/node": "^24.19.2",
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
+    "electron-updater": "6.8.9",
+    "esbuild": "^0.28.2",
+    "jsdom": "^24.1.3",
+    "typescript": "6.0.3",
+    "vitest": "^4.1.11",
+    "zod": "3.25.76"
+  }
+}
