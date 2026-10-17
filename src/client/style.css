@@ -4304,3 +4304,90 @@ h3 {
   overflow-wrap: anywhere;
   font-size: 11px;
 }
+
+/* The login vault and keys, shown only in the ploop Mac app. */
+.vault .vault-section {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 22px;
+  margin-bottom: 18px;
+  max-width: 760px;
+}
+.vault-section h2 {
+  font-size: 16px;
+  margin: 0 0 6px;
+}
+.vault-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.vault-form {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0;
+}
+.vault-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.vault-form input,
+.vault-form textarea {
+  font-size: 13px;
+}
+.vault-check {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.vault-check input {
+  width: auto;
+}
+.vault-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.vault-list {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+  display: grid;
+  gap: 10px;
+}
+.vault-list > li {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+}
+.vault-login {
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+}
+.vault-password {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: var(--lavender);
+  font-size: 13px;
+  word-break: break-all;
+}
+.vault-empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+button.danger {
+  color: #b42318;
+  border-color: #f3c7c1;
+}
+.vault-login strong + .muted {
+  display: block;
+}

@@ -1,5 +1,6 @@
 import type { WebConfig } from './parallel.js';
 import type { SshTarget } from './ssh-computer.js';
+import type { DesktopBridge } from './desktop-bridge.js';
 import type { SetupStatus } from '../shared/types.js';
 
 // `copilotkit project select` writes the CLI name and deletes the template name.
@@ -91,6 +92,7 @@ export interface PlatformConfig extends WebConfig {
   computerToken?: string;
   computerNamespace?: string;
   sshComputer?: SshTarget;
+  desktopBridge?: DesktopBridge;
   browserUrl?: string;
   browserSecret?: string;
   composioApiKey?: string;

@@ -8,6 +8,8 @@
 
 ploop talks to [OpenRouter](https://openrouter.ai) by default: put `OPENROUTER_API_KEY` in `.env` and pick a model with `PLOOP_MODEL` (default `anthropic/claude-opus-4`). Provider failures show up in chat as plain sentences with a **Try again** button.
 
+On a Mac, ploop also comes as an app with a **login vault**: save a site's username and password, and a Dot can sign in to it for you after you allow it, without ever seeing the password. See [the Mac app](desktop/README.md).
+
 ---
 
 ## About OpenDots
@@ -219,6 +221,7 @@ CopilotKit SDK telemetry collects usage metadata separately from conversation pe
 | Background work            | Scheduled server-side turns in their original conversation, with pause and retry controls                                               |
 | Browser                    | Separate read-only public-page service with page capture and navigation limits                                                          |
 | Dot computers              | Per-Dot browser profiles, files, shell, takeover, permissions, and action records through OpenBot                                       |
+| Mac app and login vault    | Encrypted logins a Dot can sign in with after the owner allows it; passwords never reach the model; see [desktop](desktop/README.md)    |
 | Connections                | Per-Dot MCP servers, Composio connected apps, per-tool access, and owner approval for MCP write actions                                 |
 | Appearance                 | System, light, and dark themes; dark colors are derived at build time from the light styles                                             |
 | Memory                     | User-managed preferences that permitted Dots can use                                                                                    |

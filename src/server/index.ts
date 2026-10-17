@@ -10,6 +10,7 @@ import { resolveAppOrigins } from './app-origin.js';
 import { WorkspaceStore } from './workspace.js';
 import { Platform } from './platform.js';
 import { sshTargetFromEnv } from './ssh-computer.js';
+import { desktopBridgeFromEnv } from './desktop-bridge.js';
 import {
   agentRunTimeoutMsFromEnv,
   intelligenceApiKeyFromEnv,
@@ -49,6 +50,7 @@ const config: PlatformConfig = {
   computerToken: process.env.COMPUTER_TOKEN,
   computerNamespace: process.env.COMPUTER_NAMESPACE,
   sshComputer: sshTargetFromEnv(process.env),
+  desktopBridge: desktopBridgeFromEnv(process.env),
   voiceKey: process.env.VOICE_API_KEY,
   voiceModel: process.env.VOICE_MODEL,
   voiceName: process.env.VOICE_NAME ?? 'marin',
