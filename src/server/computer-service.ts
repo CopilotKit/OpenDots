@@ -9,6 +9,7 @@ import {
 } from '../shared/computer-types.js';
 import type { WorkspaceStore } from './workspace.js';
 import type { PlatformConfig } from './platform-config.js';
+import { runOverSsh, SshComputer, type SshRun } from './ssh-computer.js';
 const stateSchema = z.object({
   botId: z.string(),
   container: z.string(),
@@ -30,13 +31,29 @@ export class ComputerService {
     private paused: () => boolean,
     private transport: typeof fetch = fetch,
     private deadlineMs = 70000,
-  ) {}
-  get configured() {
+    sshRun: SshRun = runOverSsh,
+  ) {
+    // OpenBot computers win when both are set up; an SSH computer is ploop's
+    // simpler option for owners who only have a Linux machine to log in to.
+    if (config.sshComputer && !this.openbot)
+      this.ssh = new SshComputer(config.sshComputer, sshRun);
+  }
+  private ssh?: SshComputer;
+  private get openbot() {
     return !!(
       this.config.computerSupervisorUrl?.trim() &&
       this.config.computerSupervisorToken?.trim() &&
       this.config.computerToken?.trim()
     );
+  }
+  get configured() {
+    return this.openbot || !!this.ssh;
+  }
+  get hasBrowser() {
+    return this.openbot;
+  }
+  get link() {
+    return this.ssh?.description;
   }
   private token(id: string) {
     return createHmac('sha256', this.config.computerToken!.trim())
@@ -203,6 +220,8 @@ export class ComputerService {
       audit: this.workspace.computers.audit(id),
     };
     if (!this.configured) return { ...base, state: 'not_configured' };
+    if (this.ssh)
+      return { ...base, state: 'running', link: this.ssh.description };
     try {
       const state = await this.existing(id);
       if (!state || state.status !== 'running')
@@ -254,6 +273,7 @@ export class ComputerService {
   async start(id: string) {
     await this.audited(id, 'start', 'owner', async () => {
       this.allowed(id, undefined, 'owner');
+      if (this.ssh) return this.ssh.prepare(id);
       this.endpoint(id, await this.supervisor(`/computers/${id}/ensure`, {}));
     });
     return this.status(id);
@@ -262,6 +282,8 @@ export class ComputerService {
     await this.audited(id, 'stop', 'owner', async () => {
       if (!this.configured)
         throw new Error('Computer service is not configured.');
+      // An SSH computer is the owner's own machine; ploop never shuts it down.
+      if (this.ssh) return;
       await this.supervisor(`/computers/${id}/stop`, {});
     });
     return this.status(id);
@@ -270,6 +292,8 @@ export class ComputerService {
     await this.audited(id, verb, 'owner', async () => {
       if (!this.configured)
         throw new Error('Computer service is not configured.');
+      if (this.ssh)
+        throw new Error('This computer is linked over SSH and has no browser.');
       if (verb === 'take') this.allowed(id, 'browser', 'owner');
       const url = await this.running(id);
       if (verb === 'take') this.allowed(id, 'browser', 'owner');
@@ -353,6 +377,16 @@ export class ComputerService {
         }
       }, 50);
       try {
+        if (this.ssh) {
+          const result = await this.ssh.action(
+            id,
+            action,
+            parsed as Record<string, unknown>,
+            activeSignal,
+          );
+          this.allowed(id, kind, actor);
+          return result;
+        }
         const url = await this.running(id, activeSignal);
         this.allowed(id, kind, actor);
         activeSignal.throwIfAborted();

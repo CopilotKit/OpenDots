@@ -42,7 +42,7 @@ export function connectionTools(
           : {
               status: 'unavailable',
               message:
-                'This action needs owner approval in the OpenDots web app. Ask the owner to continue there.',
+                'This action needs owner approval in the ploop web app. Ask the owner to continue there.',
             };
       const result = await connections.call(current, input, signal);
       check();

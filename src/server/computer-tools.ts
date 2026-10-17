@@ -8,7 +8,11 @@ export function computerTools(
   signal: AbortSignal,
 ) {
   return Object.entries(computerInputs)
-    .filter(([name]) => !name.startsWith('human_'))
+    .filter(
+      ([name]) =>
+        !name.startsWith('human_') &&
+        (service.hasBrowser || name === 'exec' || name.startsWith('files_')),
+    )
     .map(([name, parameters]) =>
       defineTool({
         name: `computer_${name}`,
