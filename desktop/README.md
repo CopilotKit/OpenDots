@@ -7,7 +7,26 @@ The ploop desktop app: ploop's chat (the server and web app at the root of this 
 1. Open the [latest release](https://github.com/rednosebrew1-ux/ploopAgent2/releases/latest) and download the `.dmg` for your Mac: `arm64` for Apple Silicon (M1 and later), `x64` for Intel.
 2. Drag **ploop** into Applications and open it.
 3. These builds aren't signed with an Apple Developer ID yet, so macOS will refuse the first launch. Right-click ploop, choose **Open**, then **Open** again. If macOS says the app is damaged, run `xattr -cr /Applications/ploop.app` once.
-4. On first launch ploop opens **Vault & keys**. Paste your OpenRouter API key and your CopilotKit Intelligence key (ploop keeps its conversations in Intelligence; `npx copilotkit@latest project select` gets you one). The model and a computer over SSH are optional.
+4. On first launch ploop opens **Vault & keys**. Paste your OpenRouter API key, then connect CopilotKit Intelligence, where ploop keeps its conversations (see below). The model and a computer over SSH are optional.
+
+### Connect CopilotKit Intelligence
+
+In Terminal, in any folder:
+
+```sh
+npx copilotkit@latest login
+npx copilotkit@latest project select          # hosted Intelligence
+```
+
+Or, to run Intelligence on this Mac in Docker Desktop (the local evaluation preview: 4 CPUs, 12 GiB RAM and 40 GiB free):
+
+```sh
+npx copilotkit@latest login
+npx copilotkit@latest local setup
+npx copilotkit@latest local connect --approve-connection
+```
+
+Either one writes a `.env` file in that folder. In ploop, open **Vault & keys** and choose **Import from the CLI's .env file**, then pick that file. ploop takes only the Intelligence key, telemetry ID and (for local Intelligence) the API and gateway addresses from it, and restarts. Importing a hosted project later clears the local addresses again. You can also type the values in by hand.
 
 Updates: ploop checks GitHub Releases at startup (and under **ploop > Check for Updates**). An unsigned build tells you a new version exists and opens the download page. A build signed with a Developer ID (see below) downloads and installs the update itself, after you agree.
 

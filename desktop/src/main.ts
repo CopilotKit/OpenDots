@@ -13,13 +13,14 @@ import {
 } from 'electron';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 import { confirmPresence } from './auth';
 import { startBridge, type BridgeService } from './bridge';
 import { LoginService, LoginServiceError } from './login-service';
-import { SettingsStore } from './settings';
+import { intelligenceFromEnvFile, SettingsStore } from './settings';
 import { SiteWindows } from './site-windows';
 import { startServer, type RunningServer } from './server-process';
 import { createUpdater } from './updater';
@@ -39,6 +40,18 @@ const loginPatch = loginInput.partial();
 const settingsPatch = z.object({
   openrouterApiKey: z.string().optional(),
   intelligenceApiKey: z.string().optional(),
+  intelligenceApiUrl: z
+    .string()
+    .regex(/^(https?:\/\/\S+)?$/, 'The Intelligence API address must start with http.')
+    .optional(),
+  intelligenceWsUrl: z
+    .string()
+    .regex(/^(wss?:\/\/\S+)?$/, 'The Intelligence gateway address must start with ws.')
+    .optional(),
+  telemetryId: z
+    .string()
+    .regex(/^[\w-]*$/, 'That telemetry ID doesn’t look right.')
+    .optional(),
   model: z
     .string()
     .regex(/^([\w.:/-]+)?$/, 'That model name doesn’t look right.')
@@ -331,6 +344,30 @@ async function main() {
     await settings.save(settingsPatch.parse(patch));
     // Restart after replying, so the page gets its answer first.
     setTimeout(() => void restartServer(), 100);
+  });
+  // Reads the Intelligence connection from the .env file the CopilotKit CLI
+  // wrote, so nobody has to copy keys by hand.
+  handle('settings:import-intelligence', async () => {
+    if (mainWindow == null) throw new Error('Not allowed.');
+    const picked = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose the .env file the CopilotKit CLI wrote',
+      defaultPath: app.getPath('home'),
+      properties: ['openFile', 'showHiddenFiles'],
+    });
+    const file = picked.filePaths[0];
+    if (picked.canceled || file == null) return { imported: false };
+    if ((await stat(file)).size > 256 * 1024) {
+      throw new Error('That file is too large to be a .env file.');
+    }
+    const patch = settingsPatch.parse(
+      intelligenceFromEnvFile(await readFile(file, 'utf8')),
+    );
+    await settings.save(patch);
+    setTimeout(() => void restartServer(), 100);
+    return {
+      imported: true,
+      local: Boolean(patch.intelligenceApiUrl || patch.intelligenceWsUrl),
+    };
   });
   handle('app:info', async () => ({
     version: app.getVersion(),

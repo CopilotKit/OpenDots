@@ -28,6 +28,9 @@ export interface PloopSignInResult {
 export interface PloopSettingsStatus {
   openrouterApiKey: boolean;
   intelligenceApiKey: boolean;
+  intelligenceApiUrl: string;
+  intelligenceWsUrl: string;
+  telemetryId: string;
   model: string;
   sshHost: string;
   sshUser: string;
@@ -38,6 +41,9 @@ export type PloopSettingsPatch = Partial<
   Record<
     | 'openrouterApiKey'
     | 'intelligenceApiKey'
+    | 'intelligenceApiUrl'
+    | 'intelligenceWsUrl'
+    | 'telemetryId'
     | 'model'
     | 'sshHost'
     | 'sshUser'
@@ -60,6 +66,9 @@ export interface PloopDesktopApi {
   settings: {
     status(): Promise<PloopSettingsStatus>;
     save(patch: PloopSettingsPatch): Promise<void>;
+    // Reads the Intelligence connection from the .env file the CopilotKit CLI
+    // wrote, then restarts the server.
+    importIntelligence(): Promise<{ imported: boolean; local?: boolean }>;
   };
   app: {
     info(): Promise<{ version: string; signed: boolean }>;

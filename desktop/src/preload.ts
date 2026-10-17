@@ -22,6 +22,7 @@ const api: PloopDesktopApi = {
   settings: {
     status: () => call('settings:status'),
     save: patch => call('settings:save', patch),
+    importIntelligence: () => call('settings:import-intelligence'),
   },
   app: {
     info: () => call('app:info'),

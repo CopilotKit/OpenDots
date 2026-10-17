@@ -327,11 +327,6 @@ const keyFields = [
     label: 'OpenRouter API key',
     hint: 'ploop thinks with models on OpenRouter. Create a key at openrouter.ai.',
   },
-  {
-    key: 'intelligenceApiKey',
-    label: 'CopilotKit Intelligence key',
-    hint: 'ploop keeps its conversations in CopilotKit Intelligence. Run `npx copilotkit@latest project select` to get one.',
-  },
 ] as const;
 
 function Settings({ api }: { api: PloopDesktopApi }) {
@@ -349,6 +344,15 @@ function Settings({ api }: { api: PloopDesktopApi }) {
     patch[key] ?? fallback;
   const set = (key: keyof PloopSettingsPatch, value: string) =>
     setPatch((current) => ({ ...current, [key]: value }));
+  const importIntelligence = async () => {
+    setError('');
+    try {
+      // On success the app restarts ploop's server with it and reloads.
+      if ((await api.settings.importIntelligence()).imported) setSaving(true);
+    } catch (caught) {
+      setError(message(caught));
+    }
+  };
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -393,6 +397,62 @@ function Settings({ api }: { api: PloopDesktopApi }) {
             value={field('model', status.model)}
             onChange={(e) => set('model', e.target.value)}
             placeholder="anthropic/claude-opus-4"
+          />
+        </label>
+      </div>
+      <h2 id="intelligence">CopilotKit Intelligence</h2>
+      <p className="muted">
+        ploop keeps its conversations in CopilotKit Intelligence. In Terminal,
+        run <code>npx copilotkit@latest login</code>, then{' '}
+        <code>npx copilotkit@latest project select</code> for hosted
+        Intelligence, or <code>local setup</code> and{' '}
+        <code>local connect --approve-connection</code> to run it on this Mac
+        with Docker. Then import the <code>.env</code> file it wrote.
+      </p>
+      <div className="vault-actions">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => void importIntelligence()}
+        >
+          Import from the CLI’s .env file
+        </button>
+      </div>
+      <div className="vault-form">
+        <label>
+          Project key {status.intelligenceApiKey ? '(saved)' : '(not set)'}
+          <input
+            type="password"
+            autoComplete="off"
+            value={field('intelligenceApiKey')}
+            onChange={(e) => set('intelligenceApiKey', e.target.value)}
+          />
+          <small className="muted">
+            Or paste the CPK_INTELLIGENCE_API_KEY value here.
+          </small>
+        </label>
+        <label>
+          Telemetry ID
+          <input
+            value={field('telemetryId', status.telemetryId)}
+            onChange={(e) => set('telemetryId', e.target.value)}
+            placeholder="CPK_TELEMETRY_ID, kept with the key"
+          />
+        </label>
+        <label>
+          API address (Intelligence on this Mac only)
+          <input
+            value={field('intelligenceApiUrl', status.intelligenceApiUrl)}
+            onChange={(e) => set('intelligenceApiUrl', e.target.value)}
+            placeholder="Leave empty for hosted Intelligence"
+          />
+        </label>
+        <label>
+          Gateway address (Intelligence on this Mac only)
+          <input
+            value={field('intelligenceWsUrl', status.intelligenceWsUrl)}
+            onChange={(e) => set('intelligenceWsUrl', e.target.value)}
+            placeholder="ws://…, leave empty for hosted Intelligence"
           />
         </label>
       </div>

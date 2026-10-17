@@ -19,6 +19,9 @@ export type PloopDesktopApi = {
   settings: {
     status(): Promise<SettingsStatus>;
     save(patch: SettingsPatch): Promise<void>;
+    // Asks for the .env file the CopilotKit CLI wrote, saves its Intelligence
+    // connection and restarts the server. Resolves without importing if cancelled.
+    importIntelligence(): Promise<{ imported: boolean; local?: boolean }>;
   };
   app: {
     info(): Promise<{ version: string; signed: boolean }>;
