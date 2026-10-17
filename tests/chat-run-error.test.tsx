@@ -408,3 +408,31 @@ it('does not treat an interrupted run as a successful recovery', async () => {
   });
   expect(alertText()).toContain('Previous run failed');
 });
+
+it('answers the failed message again when Try again is pressed', async () => {
+  const messages = harness.agent.messages as unknown[];
+  messages.push({ id: 'question', role: 'user', content: 'Hello' });
+  harness.copilotkit.runAgent.mockClear();
+  harness.agent.addMessage.mockClear();
+  harness.copilotkit.runAgent.mockResolvedValueOnce({
+    newMessages: [{ role: 'assistant' }],
+  } as never);
+  try {
+    await mountChat();
+    await act(async () => {
+      harness.copilotkit.emitError(
+        'OpenRouter is rate limiting this key. Wait a moment and try again.',
+        CopilotKitCoreErrorCode.AGENT_RUN_FAILED,
+      );
+    });
+    const retry = root.root.find(
+      (node) => node.type === 'button' && node.children[0] === 'Try again',
+    );
+    await act(async () => retry.props.onClick());
+    expect(harness.copilotkit.runAgent).toHaveBeenCalledTimes(1);
+    expect(harness.agent.addMessage).not.toHaveBeenCalled();
+    expect(alertText()).toEqual([]);
+  } finally {
+    messages.length = 0;
+  }
+});

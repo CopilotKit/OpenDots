@@ -75,7 +75,7 @@ export function slackHandlers(options: {
     if (options.paused()) {
       await notice(
         thread,
-        'OpenDots is paused. Resume it in the app before asking me to continue.',
+        'ploop is paused. Resume it in the app before asking me to continue.',
       );
       return;
     }
@@ -85,7 +85,7 @@ export function slackHandlers(options: {
       const runError = safeFailure(error);
       try {
         await thread.post(
-          'I couldn’t complete that request. Please check OpenDots and send a new message when you’re ready to try again.',
+          'I couldn’t complete that request. Please check ploop and send a new message when you’re ready to try again.',
         );
       } catch (postError) {
         const replyError = safeFailure(postError);

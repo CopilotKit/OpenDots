@@ -1,6 +1,8 @@
 import { openPageLink } from './page-navigation';
 import { SpaceNav } from './SpaceNav';
 import { SpaceWorkspace } from './SpaceWorkspace';
+import { VaultView } from './VaultView';
+import { desktopApi } from './desktop';
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { CopilotKitProvider } from '@copilotkit/react-core/v2';
 import {
@@ -20,6 +22,7 @@ import {
   Plus,
   Search,
   Settings2,
+  KeyRound,
   Trash2,
   X,
 } from 'lucide-react';
@@ -62,9 +65,11 @@ export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceState>();
   const [selectedDot, setSelectedDot] = useState('');
   const [selectedThread, setSelectedThread] = useState<string>();
-  const [view, rawSetView] = useState<'chat' | 'tasks' | 'memories' | 'space'>(
-    'chat',
-  );
+  // Only the ploop Mac app has a vault.
+  const [desktop] = useState(desktopApi);
+  const [view, rawSetView] = useState<
+    'chat' | 'tasks' | 'memories' | 'space' | 'vault'
+  >('chat');
   const dirtyPage = useRef(false);
   const [spaceId, setSpaceId] = useState('');
   const [pageId, setPageId] = useState<string>();
@@ -76,12 +81,30 @@ export function App() {
       return;
     dirtyPage.current = false;
     if (next !== 'space')
-      history.replaceState(null, '', location.pathname + location.search);
+      history.replaceState(
+        null,
+        '',
+        location.pathname +
+          location.search +
+          (next === 'vault' ? '#vault' : ''),
+      );
     rawSetView(next);
   };
   useEffect(() => {
     let acceptedHash = location.hash;
     const navigate = () => {
+      if (location.hash === '#vault' && desktopApi()) {
+        if (
+          dirtyPage.current &&
+          !window.confirm('Leave your unsaved page draft?')
+        )
+          return;
+        dirtyPage.current = false;
+        acceptedHash = location.hash;
+        rawSetView('vault');
+        setMobile(false);
+        return;
+      }
       const match = location.hash.match(
         /^#\/spaces\/([^/]+)(?:\/pages\/([^/]+))?$/,
       );
@@ -280,7 +303,7 @@ export function App() {
             onChange={(e) => setAuth(e.target.value)}
             required
           />
-          <button className="primary">Unlock OpenDots</button>
+          <button className="primary">Unlock ploop</button>
         </form>
         {error && (
           <p className="chat-error" role="alert">
@@ -308,13 +331,13 @@ export function App() {
       <nav className="icon-rail" aria-label="Workspace navigation">
         <button
           className="rail-brand"
-          aria-label="OpenDots home"
+          aria-label="ploop home"
           onClick={() => {
             setView('chat');
             setSelectedThread(undefined);
           }}
         >
-          o<span>·</span>
+          <img className="ploop-logo" src="/ploop-logo.svg" alt="" />
         </button>
         <button
           aria-label={navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -375,13 +398,8 @@ export function App() {
             setSelectedThread(undefined);
           }}
         >
-          <span className="dotted-logo">
-            <i />
-            <i />
-            <i />
-            <i />
-          </span>
-          OpenDots<span className="wordmark-dot">•</span>
+          <img className="ploop-logo" src="/ploop-logo.svg" alt="" />
+          ploop
         </button>
         <button
           className="new-chat nav-item"
@@ -496,6 +514,18 @@ export function App() {
               <small>{state.memories.length}</small>
             )}
           </button>
+          {desktop && (
+            <button
+              className={`nav-item ${view === 'vault' ? 'active' : ''}`}
+              onClick={() => {
+                setView('vault');
+                setMobile(false);
+              }}
+            >
+              <KeyRound size={17} />
+              <span>Vault & keys</span>
+            </button>
+          )}
           <button
             className="nav-item"
             onClick={() => setDialog({ type: 'settings' })}
@@ -505,7 +535,7 @@ export function App() {
           </button>
           <a
             className="nav-item"
-            href="https://github.com/CopilotKit/OpenDots"
+            href="https://github.com/rednosebrew1-ux/ploopAgent2"
             target="_blank"
             rel="noreferrer"
           >
@@ -541,7 +571,9 @@ export function App() {
                   ? 'Activity'
                   : view === 'space'
                     ? 'Pages'
-                    : 'Memories'}
+                    : view === 'vault'
+                      ? 'Vault'
+                      : 'Memories'}
             </strong>
           </div>
           <div className="top-actions">
@@ -589,7 +621,9 @@ export function App() {
             All Dots are paused. Active compute stops and scheduled tasks wait.
           </div>
         )}
-        {view === 'space' ? (
+        {view === 'vault' && desktop ? (
+          <VaultView api={desktop} />
+        ) : view === 'space' ? (
           <SpaceWorkspace
             key={spaceId}
             space={

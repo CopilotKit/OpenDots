@@ -1,0 +1,39 @@
+appId: dev.ploop.desktop
+productName: ploop
+copyright: ploop contributors
+
+directories:
+  output: release
+  buildResources: resources
+
+# The main process is bundled into dist/, so no node_modules ship in the app.
+files:
+  - dist/**
+  - package.json
+
+# ploop's server (built by scripts/prepare-server.mjs) is copied into the app
+# by this hook, because extraResources drops folders named node_modules.
+afterPack: scripts/after-pack.mjs
+
+npmRebuild: false
+
+mac:
+  category: public.app-category.productivity
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  icon: resources/icon.png
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  target:
+    # The zip is what the in-app updater downloads; the dmg is what you install.
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+
+publish:
+  provider: github
+  owner: rednosebrew1-ux
+  repo: ploopAgent2
+  releaseType: prerelease

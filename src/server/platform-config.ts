@@ -1,4 +1,6 @@
 import type { WebConfig } from './parallel.js';
+import type { SshTarget } from './ssh-computer.js';
+import type { DesktopBridge } from './desktop-bridge.js';
 import type { SetupStatus } from '../shared/types.js';
 
 // `copilotkit project select` writes the CLI name and deletes the template name.
@@ -38,6 +40,34 @@ export function agentRunTimeoutMsFromEnv(
   return value;
 }
 
+export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+export const DEFAULT_OPENROUTER_MODEL = 'anthropic/claude-opus-4';
+
+// ploop talks to OpenRouter by default: OPENROUTER_API_KEY alone is enough.
+// OPENAI_API_KEY keeps the template's original OpenAI-compatible setup and
+// wins when both are set, so an existing deployment does not switch provider.
+export function modelConfigFromEnv(env: Record<string, string | undefined>): {
+  apiKey?: string;
+  model?: string;
+  baseUrl: string;
+} {
+  const openaiKey = env.OPENAI_API_KEY?.trim();
+  const openrouterKey = env.OPENROUTER_API_KEY?.trim();
+  if (!openaiKey && openrouterKey)
+    return {
+      apiKey: openrouterKey,
+      model:
+        firstNonEmptyEnvValue(env, ['PLOOP_MODEL', 'OPENAI_MODEL']) ??
+        DEFAULT_OPENROUTER_MODEL,
+      baseUrl: env.OPENROUTER_BASE_URL?.trim() || OPENROUTER_BASE_URL,
+    };
+  return {
+    apiKey: openaiKey || undefined,
+    model: env.OPENAI_MODEL?.trim() || undefined,
+    baseUrl: env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1',
+  };
+}
+
 function firstNonEmptyEnvValue(
   env: Record<string, string | undefined>,
   names: readonly string[],
@@ -61,6 +91,8 @@ export interface PlatformConfig extends WebConfig {
   computerSupervisorToken?: string;
   computerToken?: string;
   computerNamespace?: string;
+  sshComputer?: SshTarget;
+  desktopBridge?: DesktopBridge;
   browserUrl?: string;
   browserSecret?: string;
   composioApiKey?: string;
@@ -81,7 +113,7 @@ export function setupStatus(
 ): SetupStatus {
   const missing = [
     !config.intelligenceKey && INTELLIGENCE_KEY_MISSING_LABEL,
-    !config.apiKey && 'OPENAI_API_KEY',
+    !config.apiKey && 'OPENROUTER_API_KEY (or OPENAI_API_KEY)',
     !config.model && 'OPENAI_MODEL',
   ].filter((item): item is string => !!item);
   const declaredSlack = !!(

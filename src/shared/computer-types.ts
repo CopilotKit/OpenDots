@@ -28,6 +28,8 @@ export interface ComputerStatus {
   permissions: ComputerPermissions;
   audit: ComputerAudit[];
   control?: ComputerControl;
+  // Set when the computer is a machine ploop reaches over SSH, e.g. `ploop@host over SSH`.
+  link?: string;
   error?: string;
 }
 const path = z
