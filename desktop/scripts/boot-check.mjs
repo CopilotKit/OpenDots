@@ -8,6 +8,8 @@ import path from 'node:path';
 // `runtime` is the program to run it with: this Node by default, or the
 // packaged app's own Electron binary, which then acts as Node.
 export async function bootCheck(serverDir, runtime = process.execPath) {
+  // The server runs from its own folder, so a relative path would point nowhere.
+  runtime = path.resolve(runtime);
   // Fails early, and says which Node it is, if the runtime can't act as Node.
   const version = execFileSync(runtime, ['-p', 'process.versions.node'], {
     env: { ELECTRON_RUN_AS_NODE: '1' },
@@ -36,6 +38,7 @@ export async function bootCheck(serverDir, runtime = process.execPath) {
   server.stderr.on('data', chunk => (output += chunk));
   let exited;
   server.once('exit', (code, signal) => (exited = signal ?? `code ${code}`));
+  server.once('error', error => (exited = error.message));
 
   try {
     const base = `http://127.0.0.1:${port}`;
