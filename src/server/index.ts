@@ -13,6 +13,7 @@ import {
   agentRunTimeoutMsFromEnv,
   intelligenceApiKeyFromEnv,
   intelligenceWsUrlFromEnv,
+  modelConfigFromEnv,
   type PlatformConfig,
 } from './platform-config.js';
 const host = process.env.HOST ?? '127.0.0.1';
@@ -35,9 +36,7 @@ const config: PlatformConfig = {
   intelligenceKey: intelligenceApiKeyFromEnv(process.env),
   intelligenceApiUrl: process.env.INTELLIGENCE_API_URL || undefined,
   intelligenceWsUrl: intelligenceWsUrlFromEnv(process.env),
-  apiKey: process.env.OPENAI_API_KEY,
-  model: process.env.OPENAI_MODEL,
-  baseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
+  ...modelConfigFromEnv(process.env),
   agentRunTimeoutMs: agentRunTimeoutMsFromEnv(process.env),
   webSearchProvider: webSearchProvider(process.env.WEB_SEARCH_PROVIDER),
   parallelApiKey: process.env.PARALLEL_API_KEY,
@@ -113,7 +112,7 @@ app.get('/api/*', (c) => c.json({ error: 'Not found.' }, 404));
 app.use('/*', serveStatic({ root: './dist/client' }));
 app.get('*', serveStatic({ path: './dist/client/index.html' }));
 const server = serve({ fetch: app.fetch, hostname: host, port }, (info) => {
-  console.log(`OpenDots template listening on http://${host}:${info.port}`);
+  console.log(`ploop listening on http://${host}:${info.port}`);
   runner.start();
   void platform
     .start()

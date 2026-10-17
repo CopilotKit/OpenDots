@@ -1,6 +1,16 @@
 <div align="center">
 
-# OpenDots
+<img src="public/ploop-logo.svg" alt="" width="96" height="96" />
+
+# ploop
+
+**ploop is an open-source AI agent with its own computer, built on [OpenDots](https://github.com/CopilotKit/OpenDots).**
+
+ploop talks to [OpenRouter](https://openrouter.ai) by default: put `OPENROUTER_API_KEY` in `.env` and pick a model with `PLOOP_MODEL` (default `anthropic/claude-opus-4`). Provider failures show up in chat as plain sentences with a **Try again** button.
+
+---
+
+## About OpenDots
 
 ### Always-on AI coworkers that move between text, calls, and Slack.
 

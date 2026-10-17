@@ -280,7 +280,7 @@ export function App() {
             onChange={(e) => setAuth(e.target.value)}
             required
           />
-          <button className="primary">Unlock OpenDots</button>
+          <button className="primary">Unlock ploop</button>
         </form>
         {error && (
           <p className="chat-error" role="alert">
@@ -308,13 +308,13 @@ export function App() {
       <nav className="icon-rail" aria-label="Workspace navigation">
         <button
           className="rail-brand"
-          aria-label="OpenDots home"
+          aria-label="ploop home"
           onClick={() => {
             setView('chat');
             setSelectedThread(undefined);
           }}
         >
-          o<span>·</span>
+          <img className="ploop-logo" src="/ploop-logo.svg" alt="" />
         </button>
         <button
           aria-label={navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -375,13 +375,8 @@ export function App() {
             setSelectedThread(undefined);
           }}
         >
-          <span className="dotted-logo">
-            <i />
-            <i />
-            <i />
-            <i />
-          </span>
-          OpenDots<span className="wordmark-dot">•</span>
+          <img className="ploop-logo" src="/ploop-logo.svg" alt="" />
+          ploop
         </button>
         <button
           className="new-chat nav-item"
@@ -505,7 +500,7 @@ export function App() {
           </button>
           <a
             className="nav-item"
-            href="https://github.com/CopilotKit/OpenDots"
+            href="https://github.com/rednosebrew1-ux/ploopAgent2"
             target="_blank"
             rel="noreferrer"
           >

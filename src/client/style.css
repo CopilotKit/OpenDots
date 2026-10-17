@@ -1,16 +1,40 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #333641;
-  background: #f8f7f4;
+  /* ploop logo colors: navy eyes, robin-egg head, pink tile, rainbow arms. */
+  color: #0b1b3a;
+  background: #fff1f5;
   font-synthesis: none;
   font-weight: 400;
   font-size: 14px;
-  --ink: #333641;
-  --muted: #8c8d97;
-  --line: #e9e8e6;
-  --blue: #7285d5;
-  --blue-dark: #5269bb;
-  --lavender: #eeeffa;
+  --ink: #0b1b3a;
+  --muted: #5a6179;
+  --line: #f6d2de;
+  --blue: #1f746f;
+  --blue-dark: #165a56;
+  --lavender: #e3f6f4;
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto;
+  height: 4px;
+  z-index: 100;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    #e84848 0 16.66%,
+    #f08828 0 33.33%,
+    #f0c030 0 50%,
+    #38b868 0 66.66%,
+    #3880f0 0 83.33%,
+    #8858f0 0
+  );
+}
+.ploop-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex-shrink: 0;
 }
 * {
   box-sizing: border-box;
