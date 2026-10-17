@@ -48,6 +48,7 @@ function fixture() {
         voice: true,
         intelligence: true,
         model: true,
+        modelProvider: 'openai',
         browser: false,
         composio: false,
         slack: 'not_configured',

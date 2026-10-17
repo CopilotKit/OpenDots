@@ -112,14 +112,31 @@ export interface CallReceipt {
   transcript: string;
   error: string | null;
 }
+export type ModelProvider = 'openai' | 'ollama';
 export interface SetupStatus {
   intelligence: boolean;
   model: boolean;
+  modelProvider: ModelProvider;
+  /** Present for Ollama so setup can show which local endpoint is used. */
+  modelBaseUrl?: string;
   browser: boolean;
   voice: boolean;
   composio: boolean;
   slack: string;
   missing: string[];
+}
+export interface ModelCheck {
+  ok: boolean;
+  provider: ModelProvider;
+  /**
+   * Sorted model IDs to offer: every listed model when the configured one is
+   * missing, otherwise the others. Capped for display.
+   */
+  models: string[];
+  /** One-sentence result. */
+  message: string;
+  /** One short next step when the check fails; `backticks` mark code. */
+  hint?: string;
 }
 export interface WorkspaceState {
   spaces: Space[];
