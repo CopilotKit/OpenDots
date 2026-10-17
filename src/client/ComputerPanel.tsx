@@ -191,7 +191,13 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
               </button>
             )}
             <span>
-              {busy ? 'Working…' : human ? 'You have control' : 'Dot control'}
+              {busy
+                ? 'Working…'
+                : status.link
+                  ? status.link
+                  : human
+                    ? 'You have control'
+                    : 'Dot control'}
             </span>
           </div>
           {!status.configured && (
@@ -200,7 +206,8 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
               <p>
                 This Dot does not have a computer service configured. Configure
                 the server’s computer service URL and token, then restart. Each
-                Dot gets its own browser and workspace.
+                Dot gets its own browser and workspace. Or link any Linux
+                machine you can log in to over SSH by setting PLOOP_SSH_HOST.
               </p>
               <a
                 href="https://github.com/CopilotKit/OpenDots/blob/main/docs/COMPUTERS.md"
@@ -240,225 +247,241 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                 className="computer-section computer-browser"
                 hidden={tab !== 'Browser'}
               >
-                {!status.permissions.browser && (
-                  <p>Enable Browser permission to use the screen.</p>
-                )}
-                <form
-                  className="computer-row"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void action('navigate', { url });
-                  }}
-                >
-                  <input
-                    type="url"
-                    aria-label="Browser URL"
-                    placeholder="https://example.com"
-                    value={url}
-                    onChange={(event) => setUrl(event.target.value)}
-                    required
-                    disabled={!browser || busy || human}
-                  />
-                  <button disabled={!browser || busy || human || !url.trim()}>
-                    Go
-                  </button>
-                </form>
-                {screenError && (
-                  <p className="computer-error" role="status">
-                    {screenError}
+                {status.link ? (
+                  <p>
+                    This computer is linked over SSH, so it has files and a
+                    terminal but no browser.
                   </p>
-                )}
-                {screen ? (
-                  <>
-                    <div className="computer-current-url" title={screen.url}>
-                      {screen.url || 'Browser screen'}
-                    </div>
-                    <button
-                      className="computer-screen"
-                      aria-label={
-                        human
-                          ? 'Click a point on the computer screen'
-                          : 'Computer screen; take control to interact'
-                      }
-                      disabled={!browser || !human || busy}
-                      onClick={(event) => {
-                        const rect =
-                          event.currentTarget.getBoundingClientRect();
-                        void action('human_click', {
-                          x: Math.min(
-                            screen.width - 1,
-                            Math.max(
-                              0,
-                              Math.floor(
-                                ((event.clientX - rect.left) / rect.width) *
-                                  screen.width,
-                              ),
-                            ),
-                          ),
-                          y: Math.min(
-                            screen.height - 1,
-                            Math.max(
-                              0,
-                              Math.floor(
-                                ((event.clientY - rect.top) / rect.height) *
-                                  screen.height,
-                              ),
-                            ),
-                          ),
-                        });
-                      }}
-                    >
-                      <img
-                        src={`data:image/png;base64,${screen.base64}`}
-                        alt={`Live browser screen for ${dot.name}`}
-                      />
-                    </button>
-                    <small>
-                      Refreshed{' '}
-                      {new Date(screen.capturedAt).toLocaleTimeString()}. Screen
-                      updates while this panel is open.
-                    </small>
-                  </>
                 ) : (
-                  <p className="computer-screen-empty">
-                    {running && status.permissions.browser
-                      ? 'Waiting for the browser screen…'
-                      : 'Start the computer with Browser permission to see its screen.'}
-                  </p>
-                )}
-                <div className="computer-control-pill">
-                  <span>
-                    {human ? 'You have control' : `${dot.name} has control`}
-                  </span>
-                  <button
-                    disabled={
-                      (!human && !browser) ||
-                      busy ||
-                      status.control?.transitioning
-                    }
-                    onClick={() => void run(human ? '/release' : '/take')}
-                  >
-                    {human ? 'Return control' : 'Take over'}
-                  </button>
-                </div>
-                {status.control?.transitioning && (
-                  <p role="status">Transferring control…</p>
-                )}
-                {human && (
-                  <details className="computer-human">
-                    <summary>Keyboard & precise controls</summary>
-                    <p>
-                      Click the screen or enter coordinates below. Text goes
-                      directly to this browser, outside chat. Return control
-                      when finished.
-                    </p>
+                  <>
+                    {!status.permissions.browser && (
+                      <p>Enable Browser permission to use the screen.</p>
+                    )}
                     <form
                       className="computer-row"
                       onSubmit={(event) => {
                         event.preventDefault();
-                        void action('human_click', point);
-                      }}
-                    >
-                      <label>
-                        X
-                        <input
-                          type="number"
-                          min="0"
-                          max={screen ? screen.width - 1 : undefined}
-                          value={point.x}
-                          onChange={(event) =>
-                            setPoint({
-                              ...point,
-                              x: Number(event.target.value),
-                            })
-                          }
-                        />
-                      </label>
-                      <label>
-                        Y
-                        <input
-                          type="number"
-                          min="0"
-                          max={screen ? screen.height - 1 : undefined}
-                          value={point.y}
-                          onChange={(event) =>
-                            setPoint({
-                              ...point,
-                              y: Number(event.target.value),
-                            })
-                          }
-                        />
-                      </label>
-                      <button disabled={busy || !browser || !screen}>
-                        Click
-                      </button>
-                    </form>
-                    <form
-                      className="computer-row"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        const value = text;
-                        setText('');
-                        void action('human_type', { text: value });
+                        void action('navigate', { url });
                       }}
                     >
                       <input
-                        type="password"
-                        aria-label="Text to type into computer"
-                        placeholder="Type into focused field"
-                        autoComplete="off"
-                        value={text}
-                        maxLength={20000}
-                        onChange={(event) => setText(event.target.value)}
+                        type="url"
+                        aria-label="Browser URL"
+                        placeholder="https://example.com"
+                        value={url}
+                        onChange={(event) => setUrl(event.target.value)}
+                        required
+                        disabled={!browser || busy || human}
                       />
-                      <button disabled={busy || !browser || !text}>Type</button>
-                    </form>
-                    <form
-                      className="computer-row"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void action('human_key', { key });
-                      }}
-                    >
-                      <select
-                        aria-label="Key to press"
-                        value={key}
-                        onChange={(event) => setKey(event.target.value)}
-                      >
-                        {[
-                          'Enter',
-                          'Tab',
-                          'Escape',
-                          'Backspace',
-                          'ArrowUp',
-                          'ArrowDown',
-                          'ArrowLeft',
-                          'ArrowRight',
-                        ].map((name) => (
-                          <option key={name}>{name}</option>
-                        ))}
-                      </select>
-                      <button disabled={busy || !browser}>Press key</button>
-                    </form>
-                    <div className="computer-actions">
                       <button
-                        disabled={busy || !browser}
-                        onClick={() =>
-                          void action('human_scroll', { deltaY: -500 })
-                        }
+                        disabled={!browser || busy || human || !url.trim()}
                       >
-                        Scroll up
+                        Go
                       </button>
+                    </form>
+                    {screenError && (
+                      <p className="computer-error" role="status">
+                        {screenError}
+                      </p>
+                    )}
+                    {screen ? (
+                      <>
+                        <div
+                          className="computer-current-url"
+                          title={screen.url}
+                        >
+                          {screen.url || 'Browser screen'}
+                        </div>
+                        <button
+                          className="computer-screen"
+                          aria-label={
+                            human
+                              ? 'Click a point on the computer screen'
+                              : 'Computer screen; take control to interact'
+                          }
+                          disabled={!browser || !human || busy}
+                          onClick={(event) => {
+                            const rect =
+                              event.currentTarget.getBoundingClientRect();
+                            void action('human_click', {
+                              x: Math.min(
+                                screen.width - 1,
+                                Math.max(
+                                  0,
+                                  Math.floor(
+                                    ((event.clientX - rect.left) / rect.width) *
+                                      screen.width,
+                                  ),
+                                ),
+                              ),
+                              y: Math.min(
+                                screen.height - 1,
+                                Math.max(
+                                  0,
+                                  Math.floor(
+                                    ((event.clientY - rect.top) / rect.height) *
+                                      screen.height,
+                                  ),
+                                ),
+                              ),
+                            });
+                          }}
+                        >
+                          <img
+                            src={`data:image/png;base64,${screen.base64}`}
+                            alt={`Live browser screen for ${dot.name}`}
+                          />
+                        </button>
+                        <small>
+                          Refreshed{' '}
+                          {new Date(screen.capturedAt).toLocaleTimeString()}.
+                          Screen updates while this panel is open.
+                        </small>
+                      </>
+                    ) : (
+                      <p className="computer-screen-empty">
+                        {running && status.permissions.browser
+                          ? 'Waiting for the browser screen…'
+                          : 'Start the computer with Browser permission to see its screen.'}
+                      </p>
+                    )}
+                    <div className="computer-control-pill">
+                      <span>
+                        {human ? 'You have control' : `${dot.name} has control`}
+                      </span>
                       <button
-                        disabled={busy || !browser}
-                        onClick={() =>
-                          void action('human_scroll', { deltaY: 500 })
+                        disabled={
+                          (!human && !browser) ||
+                          busy ||
+                          status.control?.transitioning
                         }
+                        onClick={() => void run(human ? '/release' : '/take')}
                       >
-                        Scroll down
+                        {human ? 'Return control' : 'Take over'}
                       </button>
                     </div>
-                  </details>
+                    {status.control?.transitioning && (
+                      <p role="status">Transferring control…</p>
+                    )}
+                    {human && (
+                      <details className="computer-human">
+                        <summary>Keyboard & precise controls</summary>
+                        <p>
+                          Click the screen or enter coordinates below. Text goes
+                          directly to this browser, outside chat. Return control
+                          when finished.
+                        </p>
+                        <form
+                          className="computer-row"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void action('human_click', point);
+                          }}
+                        >
+                          <label>
+                            X
+                            <input
+                              type="number"
+                              min="0"
+                              max={screen ? screen.width - 1 : undefined}
+                              value={point.x}
+                              onChange={(event) =>
+                                setPoint({
+                                  ...point,
+                                  x: Number(event.target.value),
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            Y
+                            <input
+                              type="number"
+                              min="0"
+                              max={screen ? screen.height - 1 : undefined}
+                              value={point.y}
+                              onChange={(event) =>
+                                setPoint({
+                                  ...point,
+                                  y: Number(event.target.value),
+                                })
+                              }
+                            />
+                          </label>
+                          <button disabled={busy || !browser || !screen}>
+                            Click
+                          </button>
+                        </form>
+                        <form
+                          className="computer-row"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            const value = text;
+                            setText('');
+                            void action('human_type', { text: value });
+                          }}
+                        >
+                          <input
+                            type="password"
+                            aria-label="Text to type into computer"
+                            placeholder="Type into focused field"
+                            autoComplete="off"
+                            value={text}
+                            maxLength={20000}
+                            onChange={(event) => setText(event.target.value)}
+                          />
+                          <button disabled={busy || !browser || !text}>
+                            Type
+                          </button>
+                        </form>
+                        <form
+                          className="computer-row"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void action('human_key', { key });
+                          }}
+                        >
+                          <select
+                            aria-label="Key to press"
+                            value={key}
+                            onChange={(event) => setKey(event.target.value)}
+                          >
+                            {[
+                              'Enter',
+                              'Tab',
+                              'Escape',
+                              'Backspace',
+                              'ArrowUp',
+                              'ArrowDown',
+                              'ArrowLeft',
+                              'ArrowRight',
+                            ].map((name) => (
+                              <option key={name}>{name}</option>
+                            ))}
+                          </select>
+                          <button disabled={busy || !browser}>Press key</button>
+                        </form>
+                        <div className="computer-actions">
+                          <button
+                            disabled={busy || !browser}
+                            onClick={() =>
+                              void action('human_scroll', { deltaY: -500 })
+                            }
+                          >
+                            Scroll up
+                          </button>
+                          <button
+                            disabled={busy || !browser}
+                            onClick={() =>
+                              void action('human_scroll', { deltaY: 500 })
+                            }
+                          >
+                            Scroll down
+                          </button>
+                        </div>
+                      </details>
+                    )}
+                  </>
                 )}
               </section>
               <details
@@ -663,28 +686,31 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                 ),
               )}
             </details>
-            <div className="computer-actions">
-              <button
-                disabled={
-                  busy ||
-                  !status.configured ||
-                  !status.permissions.enabled ||
-                  status.state === 'running'
-                }
-                onClick={() => void run('/start')}
-              >
-                Start computer
-              </button>
-              <button
-                disabled={busy || status.state !== 'running'}
-                onClick={() => void run('/stop')}
-              >
-                Stop computer
-              </button>
-            </div>
+            {!status.link && (
+              <div className="computer-actions">
+                <button
+                  disabled={
+                    busy ||
+                    !status.configured ||
+                    !status.permissions.enabled ||
+                    status.state === 'running'
+                  }
+                  onClick={() => void run('/start')}
+                >
+                  Start computer
+                </button>
+                <button
+                  disabled={busy || status.state !== 'running'}
+                  onClick={() => void run('/stop')}
+                >
+                  Stop computer
+                </button>
+              </div>
+            )}
             <p className="computer-hint">
-              Stopping retains this Dot’s workspace files. Browser sessions may
-              require signing in again.
+              {status.link
+                ? `This Dot works in the ploop folder on ${status.link}. ploop never shuts that machine down.`
+                : 'Stopping retains this Dot’s workspace files. Browser sessions may require signing in again.'}
             </p>
           </details>
         </>

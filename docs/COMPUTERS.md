@@ -63,3 +63,18 @@ A configured endpoint is not evidence that Docker successfully provisioned a com
 The source revision and the narrow per-Dot credential patch are documented in [deployment/computers](../deployment/computers/README.md). On a master-token or image change, the supervisor replaces owned computer containers on their next ensure request, retaining their profile and workspace volumes. This ends any in-flight activity; coordinate updates with active work.
 
 Automated tests use controlled service fixtures for policy, request, and lifecycle behavior. Live Docker, model, Slack, and voice checks must be recorded separately from those tests.
+
+## SSH computer (ploop)
+
+If you don't run the OpenBot services, ploop can use any Linux machine you can log in to over SSH instead: an always-free cloud VM, a spare computer, or a VM on your laptop. Set these on the server and restart:
+
+```sh
+PLOOP_SSH_HOST=203.0.113.10   # host name or address
+PLOOP_SSH_USER=ploop          # default ploop
+PLOOP_SSH_PORT=22             # default 22
+PLOOP_SSH_KEY_PATH=/home/you/.ssh/ploop   # full path to a private key on the server
+```
+
+ploop runs the server's own `ssh` program with `BatchMode=yes`, so it never prompts and never reads or stores the key. New hosts are trusted on first connection (`StrictHostKeyChecking=accept-new`). Each Dot works in `~/ploop/<dot id>` on that machine and gets the Workspace files and Terminal tools; there is no browser, so Browser permission has no effect and takeover is unavailable. ploop never stops or shuts down the machine. The per-Dot permissions in the Computer panel still apply. When the OpenBot variables are also set, OpenBot is used.
+
+Use a dedicated user with no sudo rights: anything that user can do, an authorized Dot can do.
