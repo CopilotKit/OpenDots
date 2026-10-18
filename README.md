@@ -183,7 +183,7 @@ npx copilotkit@latest login
 npx copilotkit@latest project select
 ```
 
-`project select` writes a project key to `.env` as `CPK_INTELLIGENCE_API_KEY`. Keep the generated `CPK_TELEMETRY_ID` with that key so SDK usage can resolve to your Intelligence account. Then add `OPENAI_API_KEY` and `OPENAI_MODEL` to `.env` and restart `npm run dev`.
+`project select` writes a project key to `.env` as `CPK_INTELLIGENCE_API_KEY`. Keep the generated `CPK_TELEMETRY_ID` with that key so SDK usage can resolve to your Intelligence account. Then add `OPENAI_API_KEY` and `OPENAI_MODEL` to `.env`, or [use a local Ollama model](docs/SETUP.md#ollama) with `MODEL_PROVIDER=ollama` and `OLLAMA_MODEL`, and restart `npm run dev`.
 
 Do not run `copilotkit onboard` in this folder. OpenDots already contains its CopilotKit integration, and onboarding adds a second, generic one.
 
@@ -193,7 +193,7 @@ See [Setup](docs/SETUP.md) for configuration, Slack, calls, the browser service,
 
 Conversation messages, tool calls, and run events are persisted in the configured Intelligence deployment. The hosted setup sends them to CopilotKit's cloud; the local evaluation setup uses Intelligence on your machine. OpenDots has no standalone SQLite conversation store. SQLite stores pages, workspace metadata, and thread bindings separately.
 
-The configured model provider receives conversation context, including authorized page content and tool results. Local Intelligence does not make a remote model local: configure the app's model and the Automatic Learning model separately. Public-web research sends queries and selected URLs to Parallel by default; set `WEB_SEARCH_PROVIDER=disabled` to disable those tools. When connected apps are enabled, tool arguments and results pass through Composio and the app provider. Speech and messaging integrations send data to their configured providers when used.
+The configured model provider receives conversation context, including authorized page content and tool results. Local Intelligence does not make a remote model local: configure the app's model and the Automatic Learning model separately. With `MODEL_PROVIDER=ollama`, the app's model requests go to your Ollama endpoint instead of a hosted provider. Public-web research sends queries and selected URLs to Parallel by default; set `WEB_SEARCH_PROVIDER=disabled` to disable those tools. When connected apps are enabled, tool arguments and results pass through Composio and the app provider. Speech and messaging integrations send data to their configured providers when used.
 
 CopilotKit SDK telemetry collects usage metadata separately from conversation persistence. OpenDots also records bounded browser setup stages and first successful assistant activation with a random installation ID; the same opt-out flags disable this tracking and purge pending setup events. See [browser setup telemetry](docs/SETUP-TELEMETRY.md). Runtime events are tagged `OpenDots`; see [signup and usage tracking](docs/TELEMETRY.md). Set `COPILOTKIT_TELEMETRY_DISABLED=true` or `DO_NOT_TRACK=1` to opt out; see [CopilotKit telemetry](https://docs.copilotkit.ai/telemetry). Review [CopilotKit's privacy policy](https://www.copilotkit.ai/privacy-policy) and the policies and retention settings of each service you configure. Installing or renewing local Intelligence still requires CopilotKit sign-in and internet access.
 

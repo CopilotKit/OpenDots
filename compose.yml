@@ -30,6 +30,9 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-openai}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-}
       WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-parallel}
       PARALLEL_API_KEY: ${PARALLEL_API_KEY:-}
       BROWSER_URL: http://browser:4311
