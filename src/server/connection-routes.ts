@@ -104,9 +104,18 @@ export function connectionRoutes(
   });
   app.get('/conversations/:id/connection-actions/:toolCallId', (c) => {
     const thread = workspace.requireThread(c.req.param('id'));
-    return c.json(
-      connections.store.action(thread.id, c.req.param('toolCallId')) ?? null,
+    const previous = connections.store.action(
+      thread.id,
+      c.req.param('toolCallId'),
     );
+    if (!previous) return c.json(null);
+    // Staleness is judged on the server clock: the reclaim path here uses the
+    // same comparison, so a skewed client clock never disagrees with it.
+    const stale =
+      previous.status === 'running' &&
+      !previous.result &&
+      Date.now() - previous.createdAt > ORPHANED_ACTION_TTL_MS;
+    return c.json({ ...previous, stale });
   });
   // The only path that runs an approval-gated tool: the owner approving a
   // stored request. It runs that request's connection, tool, and arguments,

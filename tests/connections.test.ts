@@ -317,6 +317,12 @@ it('reclaims a claim orphaned mid-flight and runs it for its approval', async ()
     'mail__send_mail',
   );
   clock.mockRestore();
+  // The receipt flags the orphaned claim as stale on the server clock.
+  const receipt = await request('/conversations/thread/connection-actions/tc1');
+  expect(await receipt.json()).toMatchObject({
+    status: 'running',
+    stale: true,
+  });
   // The same approval reclaims the orphan and the stored request runs.
   const approve = () =>
     request('/conversations/thread/connection-actions', 'POST', {
@@ -358,6 +364,13 @@ it("still refuses a fresh running claim and another approval's orphan", async ()
     'conn',
     'mail__send_mail',
   );
+  const liveReceipt = await request(
+    '/conversations/thread/connection-actions/tc1',
+  );
+  expect(await liveReceipt.json()).toMatchObject({
+    status: 'running',
+    stale: false,
+  });
   const running = await approve(alice);
   expect(running.status).toBe(409);
   expect(await running.json()).toEqual({
