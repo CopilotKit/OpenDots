@@ -182,6 +182,18 @@ export class Platform {
       .join('\n')
       .slice(-12000);
   }
+
+  async deleteConversation(threadId: string) {
+    this.requireReady();
+    const thread = this.workspace.requireThread(threadId);
+    await this.intelligence!.deleteThread({
+      threadId,
+      userId: this.workspace.ownerId,
+      agentId: thread.dotId,
+    });
+    this.workspace.deleteThread(threadId);
+  }
+  
   async handle(request: Request): Promise<Response> {
     if (!this.handler)
       return Response.json(

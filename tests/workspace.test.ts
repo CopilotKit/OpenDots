@@ -24,6 +24,21 @@ it('rejects a dot in a nonexistent space and does not rebind an existing thread'
   store.close();
 });
 
+it('deletes a thread binding and all thread-specific local records', () => {
+  const store = new WorkspaceStore(':memory:', 'owner');
+  const dot = store.dots()[0];
+  store.bindThread('deleted', dot.id, 'Delete me');
+  const call = store.createCall('deleted');
+  store.saveCapture('deleted', { value: true });
+  store.deleteThread('deleted');
+
+  expect(store.conversations()).toHaveLength(0);
+  expect(() => store.requireThread('deleted')).toThrow();
+  expect(() => store.call(call.id)).toThrow();
+  expect(() => store.capture('deleted')).toThrow();
+  store.close();
+});
+
 it('migrates legacy Space ownership once and never restores revoked access on restart', () => {
   const dir = mkdtempSync(join(tmpdir(), 'opendots-access-'));
   const path = join(dir, 'workspace.sqlite');

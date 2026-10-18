@@ -154,6 +154,12 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
       201,
     );
   });
+
+  app.delete('/conversations/:id', async (c) => {
+    await platform.deleteConversation(c.req.param('id'));
+    return c.json({ ok: true });
+  });
+  
   app.get('/conversations/:id/capture', (c) =>
     c.json(platform.workspace.capture(c.req.param('id'))),
   );
