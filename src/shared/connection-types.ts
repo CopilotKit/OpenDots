@@ -35,6 +35,10 @@ export interface PendingApproval {
   expiresAt: number;
 }
 export const APPROVAL_TTL_MS = 60 * 60_000;
+// MCP tool calls are bounded to 60s (ConnectionService timeout), so a claim
+// with no result older than this cannot belong to a live run - the server
+// stopped mid-flight and left it orphaned.
+export const ORPHANED_ACTION_TTL_MS = 5 * 60_000;
 export const connectionActionSchema = z
   .object({
     approvalId: z.string().min(1).max(64),

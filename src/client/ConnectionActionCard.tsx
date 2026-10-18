@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, PlugZap } from 'lucide-react';
 import {
   connectionActionSchema,
+  ORPHANED_ACTION_TTL_MS,
   type ConnectionActionResult,
   type PendingApproval,
 } from '../shared/connection-types';
@@ -9,6 +10,7 @@ import { api } from './api';
 import { computerToolResult } from './ComputerToolCard';
 type Receipt = {
   approvalId: string | null;
+  createdAt: number;
   status: 'running' | 'done';
   result: ConnectionActionResult | null;
 };
@@ -68,7 +70,12 @@ export function ConnectionActionCard({
   const mismatch = !!receipt && receipt.approvalId !== approvalId;
   const own = mismatch ? null : receipt;
   // A receipt that is still running is checked until the server finishes.
-  const running = own?.status === 'running';
+  // One whose claim outlived the orphan TTL was interrupted mid-flight: it
+  // stops counting as running so the owner can approve again to retry.
+  const interrupted =
+    own?.status === 'running' &&
+    Date.now() - own.createdAt > ORPHANED_ACTION_TTL_MS;
+  const running = own?.status === 'running' && !interrupted;
   useEffect(() => {
     let active = true;
     const load = () =>
@@ -118,7 +125,12 @@ export function ConnectionActionCard({
           'POST',
           { toolCallId, approvalId: action.data.approvalId },
         ));
-      setReceipt({ approvalId, status: 'done', result: value });
+      setReceipt({
+        approvalId,
+        createdAt: Date.now(),
+        status: 'done',
+        result: value,
+      });
       await respond({ approved: true, ...value });
     } catch (cause) {
       setError(
@@ -232,11 +244,13 @@ export function ConnectionActionCard({
           </>
         )}
         <small>
-          {running
-            ? 'This action is still running on the server.'
-            : approved || declined || finished
-              ? ''
-              : 'Nothing runs until you approve. These are the exact arguments.'}
+          {interrupted
+            ? 'The previous run was interrupted. Approve again to retry.'
+            : running
+              ? 'This action is still running on the server.'
+              : approved || declined || finished
+                ? ''
+                : 'Nothing runs until you approve. These are the exact arguments.'}
         </small>
       </footer>
     </section>

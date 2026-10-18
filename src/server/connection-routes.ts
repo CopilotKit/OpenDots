@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import {
   APPROVAL_TTL_MS,
+  ORPHANED_ACTION_TTL_MS,
   connectionActionSchema,
   type PendingApproval,
 } from '../shared/connection-types.js';
@@ -125,8 +126,11 @@ export function connectionRoutes(
           { error: 'This action belongs to a different approval request.' },
           409,
         );
-      return previous.result
-        ? c.json(previous.result)
+      if (previous.result) return c.json(previous.result);
+      // A result-less claim older than the orphan TTL belongs to a run that
+      // can no longer exist: fall through so the same approval reclaims it.
+      return Date.now() - previous.createdAt > ORPHANED_ACTION_TTL_MS
+        ? undefined
         : c.json({ error: 'This action is already running.' }, 409);
     };
     const earlier = recovered();
