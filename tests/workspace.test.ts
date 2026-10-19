@@ -54,3 +54,24 @@ it('migrates legacy Space ownership once and never restores revoked access on re
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it('deletes a dot and its dot-specific data without touching other dots', () => {
+  const store = new WorkspaceStore(':memory:', 'owner');
+  const space = store.createSpace('Design', 'Design decisions');
+  const keep = store.createDot(space.id, 'Keep', 'Be concise', true, true);
+  const remove = store.createDot(space.id, 'Remove', 'Be concise', true, true);
+  store.bindThread('thread-keep', keep.id, 'Keep me');
+  store.bindThread('thread-remove', remove.id, 'Remove me');
+  store.deleteDot(remove.id);
+  expect(store.dot(remove.id)).toBeUndefined();
+  const remaining = store.dots().map((dot) => dot.id);
+  expect(remaining).toContain(keep.id);
+  expect(remaining).not.toContain(remove.id);
+  expect(store.dot(keep.id)?.name).toBe('Keep');
+  expect(() => store.requireThread('thread-remove')).toThrow();
+  expect(store.requireThread('thread-keep', keep.id).title).toBe('Keep me');
+  expect(store.canAccessSpace(remove.id, space.id)).toBe(false);
+  expect(store.canAccessSpace(keep.id, space.id)).toBe(true);
+  expect(() => store.deleteDot('missing')).toThrow('Dot not found.');
+  store.close();
+});

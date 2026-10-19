@@ -71,6 +71,7 @@ export function WorkspaceDialog({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [theme, setTheme] = useState(themePreference);
   const container = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -506,6 +507,54 @@ export function WorkspaceDialog({
             <p className="chat-error" role="alert">
               {error}
             </p>
+          )}
+          {dialog.type === 'dot' && dialog.dot && !confirmingDelete && (
+            <button
+              type="button"
+              className="danger full"
+              disabled={busy}
+              onClick={() => setConfirmingDelete(true)}
+            >
+              Delete Dot
+            </button>
+          )}
+          {dialog.type === 'dot' && dialog.dot && confirmingDelete && (
+            <div className="delete-confirm">
+              <p>
+                Delete <strong>{dialog.dot.name}</strong>? Its conversations
+                and settings will be removed. This can&apos;t be undone.
+              </p>
+              <div className="row">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setConfirmingDelete(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  disabled={busy}
+                  onClick={() => {
+                    if (dialog.type !== 'dot' || !dialog.dot) return;
+                    const dotId = dialog.dot.id;
+                    setBusy(true);
+                    setError('');
+                    void mutate(`/dots/${dotId}`, 'DELETE').then((ok) => {
+                      setBusy(false);
+                      if (ok) onClose();
+                      else
+                        setError(
+                          'Could not delete. Review the workspace error and retry.',
+                        );
+                    });
+                  }}
+                >
+                  {busy ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
+            </div>
           )}
           <button className="primary full" disabled={busy}>
             {busy ? 'Saving…' : 'Save'}

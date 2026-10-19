@@ -252,6 +252,42 @@ export class WorkspaceStore {
     }
     return this.dot(id)!;
   }
+  deleteDot(id: string): void {
+    const current = this.dot(id);
+    if (!current) throw new Error('Dot not found.');
+    this.db.exec('BEGIN');
+    try {
+      const threads = this.db
+        .prepare('SELECT id FROM thread_bindings WHERE dotId=?')
+        .all(id) as { id: string }[];
+      for (const thread of threads) {
+        this.db
+          .prepare('DELETE FROM task_threads WHERE threadId=?')
+          .run(thread.id);
+        this.db.prepare('DELETE FROM calls WHERE threadId=?').run(thread.id);
+        this.db
+          .prepare('DELETE FROM captures WHERE threadId=?')
+          .run(thread.id);
+        this.db
+          .prepare('DELETE FROM mcp_approvals WHERE threadId=?')
+          .run(thread.id);
+      }
+      this.db.prepare('DELETE FROM thread_bindings WHERE dotId=?').run(id);
+      this.db.prepare('DELETE FROM dot_spaces WHERE dotId=?').run(id);
+      this.db
+        .prepare('DELETE FROM computer_permissions WHERE dotId=?')
+        .run(id);
+      this.db.prepare('DELETE FROM computer_audit WHERE dotId=?').run(id);
+      this.db.prepare('DELETE FROM mcp_connections WHERE dotId=?').run(id);
+      this.db.prepare('DELETE FROM mcp_approvals WHERE dotId=?').run(id);
+      this.db.prepare('DELETE FROM page_threads WHERE dotId=?').run(id);
+      this.db.prepare('DELETE FROM dots WHERE id=?').run(id);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
   saveComposioSession(id: string, sessionId: string, policyHash: string) {
     this.db
       .prepare(
