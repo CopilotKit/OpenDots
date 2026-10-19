@@ -673,6 +673,30 @@ h3 {
 .primary:hover:not(:disabled) {
   background: #6177c5;
 }
+.danger {
+  background: none;
+  color: #d36a6a;
+  border: 1px solid #d36a6a;
+  font-size: 12px;
+}
+.danger:hover:not(:disabled) {
+  background: #d36a6a;
+  color: white;
+}
+.delete-confirm {
+  border: 1px solid #d36a6a;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+.delete-confirm p {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.delete-confirm .row {
+  display: flex;
+  gap: 8px;
+}
 .full {
   width: 100%;
   margin-top: 15px;

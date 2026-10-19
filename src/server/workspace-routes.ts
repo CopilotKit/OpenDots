@@ -141,6 +141,12 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
     }
     return c.json(platform.workspace.updateDot(c.req.param('id'), data.data));
   });
+  app.delete('/dots/:id', (c) => {
+    const current = platform.workspace.dot(c.req.param('id'));
+    if (!current) return c.json({ error: 'Dot not found.' }, 404);
+    platform.workspace.deleteDot(c.req.param('id'));
+    return c.json({ ok: true });
+  });
   app.post('/conversations', async (c) => {
     const data = z
       .object({
