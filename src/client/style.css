@@ -4433,3 +4433,122 @@ h3 {
     box-shadow: 0 0 0 6px rgb(245 158 11 / 35%);
   }
 }
+
+/* Robinhood autopilot switch. */
+.autopilot {
+  position: relative;
+}
+.autopilot-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #fff;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.autopilot-dry_run {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+}
+.autopilot-live {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #fff;
+  animation: optionsAlertPulse 1.6s ease-in-out infinite;
+}
+.autopilot-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 900;
+  display: grid;
+  gap: 10px;
+  width: min(380px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  color: #1f2937;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
+  font-size: 13px;
+}
+.autopilot-panel p {
+  margin: 0;
+  line-height: 1.4;
+}
+.autopilot-panel form {
+  display: grid;
+  gap: 8px;
+}
+.autopilot-panel label {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.autopilot-disabled {
+  color: #9ca3af;
+}
+.autopilot-pin {
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 16px;
+  letter-spacing: 4px;
+}
+.autopilot-panel button[type='submit'],
+.autopilot-off {
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.autopilot-off {
+  background: #dc2626;
+}
+.autopilot-panel button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.autopilot-note,
+.autopilot-explain {
+  color: #4b5563;
+}
+.autopilot-note code {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  word-break: break-all;
+}
+.autopilot-error {
+  color: #dc2626;
+}
+.autopilot-record {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.autopilot-record caption {
+  margin-bottom: 4px;
+  color: #6b7280;
+  text-align: left;
+}
+.autopilot-record td {
+  padding: 3px 4px;
+  border-top: 1px solid #f3f4f6;
+}
+.autopilot-orders {
+  margin: 0;
+  padding-left: 16px;
+  color: #4b5563;
+  font-size: 12px;
+}

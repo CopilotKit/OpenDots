@@ -7,12 +7,18 @@ Edge Lab, Options Order Setup).
 
 ## The lines that never move
 
-- **The owner presses every order button on Robinhood** (Review order, Submit, Place, Confirm,
-  Swipe up). The Dots do everything up to it, then outline it (blinking) and rest the mouse on it.
+- **The Dots never press an order button on Robinhood** (Review order, Submit, Place, Confirm,
+  Swipe up). They do everything up to it, then outline it (blinking) and rest the mouse on it.
   This is enforced in `localtools/order_guard.py` with the site list in
   `localtools/browser-policy.json` (`ownerPressesOrders`). Both are protected: the Developer
   cannot edit them, and no change may work around them (for example by clicking with raw mouse
   events, pressing Enter on an order form, or calling a broker API).
+- **Only the owner turns on the autopilot**, with their PIN, from the app's Autopilot button.
+  When it is on, the autopilot process (not a Dot) presses order buttons after its own checks.
+  `localtools/autopilot.py` holds the PIN check, the signed on/off state, the minimum record
+  and every order check, and is protected. Its state lives in `C:\ProgramData\OpenDots\autopilot`,
+  outside the Dots' file tools. No change may let a Dot, the Developer or a tool turn it on,
+  skip a check, or press an order button another way.
 - **Pocket Option runs on the demo account.** New sites start on demo or paper (see
   `docs/SITE-MAPPING.md`).
 - **The owner's options rules:**
@@ -35,6 +41,8 @@ Edge Lab, Options Order Setup).
 | `localtools/options_eod.py` | End of day: saves the day's prices and scores suggestions. | |
 | `localtools/edge_lab.py` | Backtests signals on 60 days of 5-minute bars and writes `Edge Lab.md` to the vault. Re-run it weekly. | Add or tune a signal (`signals()`). A signal goes live only after it passes on unseen days, after costs. |
 | `src/client/OptionsAlerts.tsx`, route `GET /api/options/alerts` in `src/server/app.ts` | The alert banner, chime and phone notification. | |
+| `localtools/autopilot.py` (protected) | The autopilot. **Turning it on:** the owner's PIN, set once with `python localtools/autopilot.py set-pin`, with a lock after 5 wrong tries. **Modes:** dry_run (stops at the review screen) and live (submits; only for trade kinds with 20+ scored results, 80% wins and a positive profit per trade). **Checks before any press:** the rules, the order form read back (contracts, limit, strategy name, money at risk), the review screen (opening vs closing). It turns itself off at 4pm. | Ask the owner: this file is theirs. |
+| `src/client/AutopilotButton.tsx`, routes `GET/POST /api/autopilot` in `src/server/app.ts` | The Autopilot button: status, the minimum record, recent orders, on with the PIN, off without one. | |
 
 ### Browser, site maps and routines (all sites)
 

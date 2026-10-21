@@ -50,6 +50,8 @@ export const protectedPaths = [
   // 2026-10-21) except what decides what runs without asking or what reaches
   // files and commands. browser.py also holds the money guard: review it.
   'localtools/order_guard.py',
+  // The autopilot presses real order buttons: its checks and switch are the owner's.
+  'localtools/autopilot.py',
   'localtools/browser-policy.json',
   'localtools/confirmation_policy.py',
   'localtools/server.py',

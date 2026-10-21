@@ -85,10 +85,11 @@ async def add_row(page, strike: float):
 
 
 async def set_up(page, ticker: str, expiry: str, legs: list, qty: int = 1, limit: float | None = None,
-                 good_till: str = 'day', ensure=lambda: None) -> dict:
+                 good_till: str = 'day', ensure=lambda: None, at: str | None = None) -> dict:
     """Set up the order on this Robinhood page and stop at Review order (see the
     robinhood_options_set_up tool). ensure() is called between steps: it raises
-    when the owner has taken control."""
+    when the owner has taken control. at='bid' or 'ask' prices the order at the
+    live bid or ask instead of `limit` (exits that must fill)."""
     ensure()
     ticker = re.sub(r'[^A-Z.]', '', ticker.upper())[:6]
     if not ticker or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', expiry):
@@ -101,7 +102,15 @@ async def set_up(page, ticker: str, expiry: str, legs: list, qty: int = 1, limit
     await page.goto(CHAIN.format(ticker), wait_until='domcontentloaded', timeout=30000)
     await page.get_by_text('Strike price').first.wait_for(timeout=20000)
     await asyncio.sleep(1)
-    await page.locator('[data-testid=SelectExpirationDateDropdown]').click(timeout=5000)
+    dropdown = page.locator('[data-testid=SelectExpirationDateDropdown]')
+    for attempt in range(4):  # The chain animates in after a load; the dropdown moves until it settles.
+        try:
+            await dropdown.click(timeout=4000)
+            break
+        except Exception:
+            if attempt == 3:
+                raise
+            await asyncio.sleep(1.5)
     await asyncio.sleep(0.6)
     option = page.locator(f'[role=option][data-testid="{expiry}"]')
     if not await option.count():
@@ -129,6 +138,11 @@ async def set_up(page, ticker: str, expiry: str, legs: list, qty: int = 1, limit
     await box.fill(str(qty))
     price = page.locator('#OptionOrderForm-LimitPrice-FormField')
     mid = (await price.get_attribute('placeholder') or '').lstrip('$')
+    if at in ('bid', 'ask'):
+        live = re.search(r'Bid \$([\d.]+)\D+Ask \$([\d.]+)', await page.evaluate(PANEL))
+        if not live:
+            raise RuntimeError('Could not read the live bid and ask.')
+        limit = float(live[1] if at == 'bid' else live[2])
     await price.fill(f'{limit:.2f}' if limit is not None else mid)
     await asyncio.sleep(0.5)
     shown = page.locator('button', has_text=re.compile(r'^Good (for Day|till Canceled)')).first

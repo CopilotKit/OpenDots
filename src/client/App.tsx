@@ -34,6 +34,7 @@ import type {
 import { api, ApiError, authHeaders, setToken } from './api';
 import { Mascot } from './Mascot';
 import { OptionsAlerts } from './OptionsAlerts';
+import { AutopilotButton } from './AutopilotButton';
 import { Chat } from './Chat';
 import { ThreadList } from './ThreadList';
 import { ResultPane } from './ResultPane';
@@ -520,6 +521,7 @@ export function App() {
             </strong>
           </div>
           <div className="top-actions">
+            <AutopilotButton />
             <span className="mode-badge">
               {configured ? 'SELF-HOSTED' : 'SETUP REQUIRED'}
             </span>

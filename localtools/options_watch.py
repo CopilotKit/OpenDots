@@ -7,7 +7,10 @@ price, the same model as options_track, priced from the owner's actual fill.
 When an exit fires, the listener sets up the closing order on Robinhood in its
 own tab (never a Dot's tab), the Review order button blinks with the mouse on
 it, and the owner is told: a Windows notification, and the OpenDots banner on
-the phone. The owner presses Review order; nothing here places an order.
+the phone. The owner presses Review order, unless the owner turned the
+autopilot on (autopilot.py): then it checks the order and presses through
+itself (dry run: up to the review screen), and every 5 minutes with no trade
+open it also enters the best suggestion that passes every check.
 
 Exits, each fired once per trade:
 - profit target and stop: the suggestion's own management rules (track()).
@@ -121,9 +124,23 @@ def notify(alert: dict) -> None:
         pass  # The banner still has it.
 
 
-async def check(journal: og.Journal, alerts: Alerts, now: datetime, set_up, minutes=today_bars, say=notify) -> list[dict]:
+def placed_note(placed: dict | None) -> str:
+    """What the autopilot did with an order, for the owner."""
+    if not placed:
+        return ''
+    if placed['result'] == 'submitted':
+        return f' Autopilot pressed "{placed["pressed"]}". Check the fill on Robinhood.'
+    if placed['result'] == 'dry_run':
+        return f' Dry run: it stopped at the review screen; submit it yourself if you agree. {" ".join(placed["why"])}'
+    return f' Autopilot did not press anything: {" ".join(placed["why"])}'
+
+
+async def check(journal: og.Journal, alerts: Alerts, now: datetime, set_up, minutes=today_bars, say=notify,
+                place=None) -> list[dict]:
     """One pass over the open trades: send each newly fired exit once.
-    set_up(state, legs) sets up the closing order and returns its result."""
+    set_up(state, legs) sets up the closing order and returns its result;
+    place(row, state, legs, ready), when the autopilot is on, checks it and
+    presses through (autopilot.place), returning what it did."""
     sent = []
     for row in journal.open_trades():
         try:
@@ -135,20 +152,29 @@ async def check(journal: og.Journal, alerts: Alerts, now: datetime, set_up, minu
         for event in state['events']:
             if event['event'] in done:
                 continue
+            placed = None
             try:
                 ready = await set_up(state, closing_legs(state['legs']))
                 setup = {k: ready.get(k) for k in ('result', 'estimate', 'limit', 'bid_ask', 'warning', 'mouse_on')}
+                if place:
+                    placed = await place(row, state, closing_legs(state['legs']), ready)
             except Exception as error:
                 setup = {'result': 'not set up', 'error': f'{type(error).__name__}: {error}'}
+            if placed and placed['result'] == 'submitted':
+                journal.record(row['id'], 'closed', setup['limit'])  # At the limit sent; the fill may differ by cents.
             legs = ' / '.join(f'{l["action"]} {l["strike"]:g}{l["type"][0].upper()}' for l in state['legs'])
+            submitted = bool(placed and placed['result'] == 'submitted')
             alert = {
                 'at': time.time(), 'trade': row['id'], 'event': event['event'], 'ticker': state['ticker'],
                 'expiry': state['expiry'], 'pnl': event['pnl'], 'now_pnl': state['now_pnl'], 'setup': setup,
-                'title': f'Close {state["ticker"]} {state["kind"]}: {event["event"]}',
-                'message': (f'{legs} {state["expiry"]}: about ${event["pnl"]:+.2f} at {event["time"]} (model). '
-                            + ('The closing order is set up on Robinhood: check the limit and press Review order.'
+                'autopilot': placed,
+                'title': f'{"Closed" if submitted else "Close"} {state["ticker"]} {state["kind"]}: {event["event"]}',
+                'message': (f'{legs} {state["expiry"]}: about ${event["pnl"]:+.2f} at {event["time"]} (model).'
+                            + (placed_note(placed) if submitted else
+                               ' The closing order is set up on Robinhood: check the limit and press Review order.'
+                               + placed_note(placed)
                                if setup['result'] == 'ready_for_owner' else
-                               f'Could not set up the closing order ({setup.get("error", "")[:120]}): close it on Robinhood yourself.'))}
+                               f' Could not set up the closing order ({setup.get("error", "")[:120]}): close it on Robinhood yourself.'))}
             say(alert)
             alerts.add(row['id'], event['event'], alert)
             sent.append(alert)
@@ -157,15 +183,48 @@ async def check(journal: og.Journal, alerts: Alerts, now: datetime, set_up, minu
     return sent
 
 
+ENTRY_EVERY_S = 300
+PRICE_SLIP = 0.10  # An entry's live mid may be at most 10% worse than the suggestion's.
+
+
+async def enter(journal: og.Journal, orders, et: datetime, find, set_up, place, say=notify) -> dict | None:
+    """Autopilot entries: the best suggestion that passes every check is set up
+    at the live mid and placed (dry run: stopped at the review). One per pass."""
+    import autopilot
+    mode = autopilot.state()['mode']
+    if mode == 'off' or journal.open_trades():
+        return None
+    for suggestion in find():
+        problems = autopilot.check_entry(journal, orders, suggestion, mode, et)
+        if problems:
+            continue
+        ready = await set_up(suggestion)
+        credit = suggestion['price'] > 0
+        planned = suggestion.get('limit', abs(suggestion['price']))
+        worse = ready['limit'] < planned * (1 - PRICE_SLIP) if credit else ready['limit'] > planned * (1 + PRICE_SLIP)
+        extra = [f'The live mid ${ready["limit"]:.2f} is more than {PRICE_SLIP:.0%} worse than planned ${planned:.2f}.'] if worse else []
+        placed = await place(suggestion, ready, extra, autopilot.title_for(suggestion['legs'], credit))
+        if placed['result'] == 'submitted':
+            journal.record(suggestion['id'], 'taken', ready['limit'])  # At the limit sent; the listener manages it from here.
+        legs = ' / '.join(f'{l["action"]} {l["strike"]:g}{l["type"][0].upper()}' for l in suggestion['legs'])
+        say({'at': time.time(), 'trade': suggestion['id'], 'event': f'autopilot entry ({placed["result"]})',
+             'ticker': suggestion['ticker'], 'autopilot': placed,
+             'title': f'{"Opened" if placed["result"] == "submitted" else "Autopilot"} {suggestion["ticker"]} {suggestion["kind"]}',
+             'message': f'{legs} {suggestion["expiry"]} at ${ready["limit"]:.2f}.' + placed_note(placed)})
+        return placed
+    return None
+
+
 async def main() -> None:
     from playwright.async_api import async_playwright
+    import autopilot
     import robinhood_ticket
-    journal, alerts = og.Journal(), Alerts()
+    journal, alerts, orders = og.Journal(), Alerts(), autopilot.Orders()
     async with async_playwright() as pw:
         chrome = None
         tab = None
 
-        async def set_up(state, legs):
+        async def page():
             nonlocal chrome, tab
             if chrome is None or not chrome.is_connected():
                 chrome = await pw.chromium.connect_over_cdp('http://127.0.0.1:9333')
@@ -174,16 +233,50 @@ async def main() -> None:
                 context = next((c for c in chrome.contexts if any('robinhood.com' in p.url for p in c.pages)), chrome.contexts[0])
                 tab = await context.new_page()
             await tab.bring_to_front()
-            # Limit left at Robinhood's live mid: the model price is only the trigger.
-            return await robinhood_ticket.set_up(tab, state['ticker'], state['expiry'], legs, state['qty'], None, 'day')
+            return tab
 
+        async def set_up(state, legs):
+            # The model price is only the trigger. For the owner: the live mid. For the
+            # autopilot: the side that fills (pay the ask to close a credit, take the bid
+            # to close a debit), so a stop is not left unfilled.
+            at = None if autopilot.state()['mode'] == 'off' else ('ask' if state['credit'] else 'bid')
+            return await robinhood_ticket.set_up(await page(), state['ticker'], state['expiry'], legs, state['qty'],
+                                                 None, 'day', at=at)
+
+        async def place_exit(row, state, legs, ready):
+            if autopilot.state()['mode'] == 'off':
+                return None
+            problems = autopilot.check_exit(journal, row['id'], legs, state['qty'])
+            return await autopilot.place(await page(), 'exit', row['id'], legs, state['qty'], ready['limit'], None,
+                                         orders, problems)
+
+        async def set_up_entry(s):
+            return await robinhood_ticket.set_up(await page(), s['ticker'], s['expiry'], s['legs'], s['qty'], None, 'day')
+
+        async def place_entry(s, ready, extra, title):
+            return await autopilot.place(await page(), 'entry', s['id'], s['legs'], s['qty'], ready['limit'],
+                                         autopilot.max_loss_allowed(s['kind']), orders, extra, title)
+
+        def find():
+            return og.suggest(journal).get('suggestions', [])
+
+        last_entry = 0.0
         while True:
             now = og.now_eastern()
             if now.hour * 60 + now.minute >= 16 * 60 + 5:
                 break
-            if og.market_open(now) and journal.open_trades():
-                for alert in await check(journal, alerts, now, set_up):
-                    print(json.dumps(alert), flush=True)
+            if og.market_open(now):
+                try:
+                    if journal.open_trades():
+                        for alert in await check(journal, alerts, now, set_up, place=place_exit):
+                            print(json.dumps(alert), flush=True)
+                    elif time.time() - last_entry >= ENTRY_EVERY_S:
+                        last_entry = time.time()
+                        placed = await enter(journal, orders, now, find, set_up_entry, place_entry)
+                        if placed:
+                            print(json.dumps(placed), flush=True)
+                except Exception as error:  # A bad pass must not end the day's watching.
+                    print(f'pass failed: {type(error).__name__}: {error}', file=sys.stderr, flush=True)
             await asyncio.sleep(EVERY_S)
 
 

@@ -9,6 +9,7 @@ import {
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { existsSync, readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { Store } from './store.js';
@@ -155,6 +156,46 @@ export function createApp({
       .filter((alert) => alert.at > since)
       .slice(-20);
     return c.json({ alerts });
+  });
+  // Robinhood autopilot (localtools/autopilot.py): status, and on (with the
+  // owner's PIN) or off. The PIN is checked there, never stored here.
+  const autopilot = (request: object) =>
+    new Promise<Record<string, unknown>>((done) => {
+      const child = spawn(
+        'localtools/.venv/Scripts/python.exe',
+        ['localtools/autopilot.py'],
+        { env: { ...process.env, PYTHONIOENCODING: 'utf-8' } },
+      );
+      let out = '';
+      child.stdout.on('data', (chunk) => (out += chunk));
+      child.on('error', (error) => done({ error: error.message }));
+      child.on('close', () => {
+        try {
+          done(JSON.parse(out) as Record<string, unknown>);
+        } catch {
+          done({ error: 'The autopilot did not answer.' });
+        }
+      });
+      child.stdin.end(JSON.stringify(request));
+    });
+  app.get('/api/autopilot', async (c) =>
+    c.json(await autopilot({ cmd: 'status' })),
+  );
+  app.post('/api/autopilot', async (c) => {
+    const body = z
+      .object({
+        on: z.boolean(),
+        mode: z.enum(['dry_run', 'live']).default('dry_run'),
+        pin: z.string().max(12).default(''),
+      })
+      .safeParse(await c.req.json());
+    if (!body.success) return c.json({ error: 'Invalid request.' }, 400);
+    const result = await autopilot(
+      body.data.on
+        ? { cmd: 'on', mode: body.data.mode, pin: body.data.pin }
+        : { cmd: 'off' },
+    );
+    return c.json(result, result.error ? 403 : 200);
   });
   // Send the owner's message to a running unattended task without stopping it;
   // the task reads it after the tool step in progress.
