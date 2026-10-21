@@ -127,24 +127,51 @@ def leg_vol(surface: dict, index, days_left: int, spot, strike, years, side: str
 
 
 # History ------------------------------------------------------------------
-def load(documents: dict | None = None) -> dict:
-    """Per ticker: the sessions' 5-minute bars with the volatility index that bar."""
-    documents = documents or {s: edge_lab.download(s) for s in (*VOL_INDEX, *VOL_INDEX.values())}
+def download(symbol: str, interval: str) -> dict:
+    """5-minute bars (60 days) come from the edge lab's cache; hourly bars (about 2
+    years, back past the August 2024 spike) from Yahoo, cached for 12 hours."""
+    if interval == '5m':
+        return edge_lab.download(symbol)
+    import requests
+    edge_lab.CACHE.mkdir(parents=True, exist_ok=True)
+    path = edge_lab.CACHE / f"{symbol.replace('^', '')}-{interval}.json"
+    if path.exists() and time.time() - path.stat().st_mtime < 12 * 3600:
+        return json.loads(path.read_text())
+    url = f'https://query1.finance.yahoo.com/v8/finance/chart/{symbol.replace("^", "%5E")}?interval={interval}&range=730d'
+    response = requests.get(url, timeout=60, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+    response.raise_for_status()
+    path.write_text(response.text)
+    return response.json()
+
+
+def load(documents: dict | None = None, interval: str = '5m') -> dict:
+    """Per ticker: each full session's bars with the volatility index at that bar
+    (its latest reading at or before the bar: the index's hourly bars fall on the
+    hour, the stocks' on the half hour)."""
+    from bisect import bisect_right
+    documents = documents or {s: download(s, interval) for s in (*VOL_INDEX, *VOL_INDEX.values())}
+    full = 70 if interval == '5m' else 6
     out = {}
     for ticker, index_symbol in VOL_INDEX.items():
-        index = {b['t']: b['c'] for bars in edge_lab.sessions(documents[index_symbol]).values() for b in bars}
+        readings = sorted((b['t'], b['c']) for bars in edge_lab.sessions(documents[index_symbol]).values() for b in bars)
+        stamps = [t for t, _ in readings]
         days = {}
         for day, bars in edge_lab.sessions(documents[ticker]).items():
-            last = None
             rows = []
             for b in bars:
-                last = index.get(b['t'], last)
-                if last:
-                    rows.append({**b, 'index': last})
-            if len(rows) >= 70:  # Full sessions only.
+                k = bisect_right(stamps, b['t']) - 1
+                if k >= 0 and b['t'] - stamps[k] <= timedelta(hours=2):
+                    rows.append({**b, 'index': readings[k][1]})
+            if len(rows) >= full:  # Full sessions only.
                 days[day] = rows
         out[ticker] = days
     return out
+
+
+HOURLY_TIMES = ((9, 30), (10, 30), (12, 30), (14, 30))
+# Where credit sellers get hurt: each top rule set is shown through these.
+STRESS = (('Aug 2024 spike', '2024-07-24', '2024-08-16'), ('Dec 2024 Fed drop', '2024-12-12', '2024-12-27'),
+          ('Apr 2025 tariffs', '2025-03-26', '2025-04-17'))
 
 
 # One trade ------------------------------------------------------------------
@@ -264,9 +291,10 @@ def stats(pnls: list[float]) -> dict:
 
 
 # The lab ------------------------------------------------------------------
-def run(history: dict | None = None, surfaces: dict | None = None, log=print) -> dict:
+def run(history: dict | None = None, surfaces: dict | None = None, log=print, times=None) -> dict:
     started = time.time()
     history = history or load()
+    times = times or TIMES
     if surfaces is None:
         now_index = {t: [r['index'] for r in rows][-1] for t, days in history.items() for rows in [list(days.values())[-1]]}
         surfaces = {t: fit_surface(t, now_index[t]) for t in history}
@@ -278,7 +306,7 @@ def run(history: dict | None = None, surfaces: dict | None = None, log=print) ->
         closes: list[float] = []
         for d, name in enumerate(names):
             rows = days[name]
-            for at in TIMES:
+            for at in times:
                 i = next((k for k, b in enumerate(rows) if (b['t'].hour, b['t'].minute) == at), None)
                 if i is None or len(closes) < 10:
                     continue
@@ -293,10 +321,9 @@ def run(history: dict | None = None, surfaces: dict | None = None, log=print) ->
         log(f'{ticker}: {sum(1 for k in trades if k[0] == ticker)} trades replayed ({time.time() - started:.0f}s)')
     all_days = sorted({k[1] for k in trades})
     split = all_days[int(len(all_days) * 2 / 3)] if all_days else ''
-    # Every rule set: gather its trades' pnl vectors (all exits at once), split train/test.
-    results = []
-    for tickers, rule, dte, delta, at, filt, floor in product(TICKER_SETS, SIDES, DTES, DELTAS, TIMES, FILTERS, MIN_CREDITS):
-        train, test = [], []
+    def gather(tickers, rule, dte, delta, at, filt, floor) -> list[tuple[str, np.ndarray]]:
+        """A rule set's trades: (day, pnl under every exit)."""
+        out = []
         for ticker in tickers:
             for name in all_days:
                 key = (ticker, name, at, dte, delta)
@@ -306,7 +333,15 @@ def run(history: dict | None = None, surfaces: dict | None = None, log=print) ->
                 for s in sides_for(rule, f['trend']):
                     tr = trades.get(key + (s,))
                     if tr and tr['credit'] >= floor:
-                        (train if name < split else test).append(tr['pnl'])
+                        out.append((name, tr['pnl']))
+        return out
+
+    # Every rule set: gather its trades' pnl vectors (all exits at once), split train/test.
+    results = []
+    for tickers, rule, dte, delta, at, filt, floor in product(TICKER_SETS, SIDES, DTES, DELTAS, times, FILTERS, MIN_CREDITS):
+        found = gather(tickers, rule, dte, delta, at, filt, floor)
+        train = [p for name, p in found if name < split]
+        test = [p for name, p in found if name >= split]
         if len(train) < MIN_TRAIN_TRADES or not test:
             continue
         train_m, test_m = np.array(train), np.array(test)
@@ -319,11 +354,31 @@ def run(history: dict | None = None, surfaces: dict | None = None, log=print) ->
                 'tickers': '+'.join(tickers), 'side': rule, 'dte': dte, 'delta': delta, 'time': f'{at[0]}:{at[1]:02d}',
                 'filter': filt, 'min_credit': floor, 'target': target, 'stop': stop, 'trail': trail,
                 'train': stats(list(tr_p)), 'test': stats(list(test_m[:, e]))})
-    tested = len(list(product(TICKER_SETS, SIDES, DTES, DELTAS, TIMES, FILTERS, MIN_CREDITS))) * len(exits)
+    tested = len(list(product(TICKER_SETS, SIDES, DTES, DELTAS, times, FILTERS, MIN_CREDITS))) * len(exits)
     held = [r for r in results if r['test'].get('win_rate', 0) >= og.MIN_POP and r['test'].get('per_trade', 0) > 0]
     # Ranked by the weaker of the two periods: a lucky few weeks alone does not top the list.
     robust = lambda r: min(r['train']['per_trade'], r['test']['per_trade']) * min(r['train']['n'] + r['test']['n'], 60)
     results.sort(key=lambda r: (r['train']['per_trade'] * min(r['train']['n'], 40)), reverse=True)
+    held_count = len(held)
+    top, held = dedupe(results)[:40], dedupe(sorted(held, key=robust, reverse=True))[:25]
+
+    def breakdown(r: dict) -> None:
+        """Its worst month and how it did through each stress stretch."""
+        at = tuple(int(x) for x in r['time'].split(':'))
+        e = exits.index((r['target'], r['stop'], r['trail']))
+        days = [(name, float(p[e])) for name, p in gather(r['tickers'].split('+'), r['side'], r['dte'], r['delta'], at,
+                                                         r['filter'], r['min_credit'])]
+        months: dict = defaultdict(float)
+        for name, p in days:
+            months[name[:7]] += p
+        r['worst_month'] = min(months.items(), key=lambda m: m[1]) if months else None
+        r['losing_months'] = sum(v < 0 for v in months.values())
+        r['months'] = len(months)
+        r['stress'] = {label: stats([p for name, p in days if start <= name <= end])
+                       for label, start, end in STRESS if all_days and all_days[0] <= end}
+
+    for r in top + held:
+        breakdown(r)
     spy = history.get('SPY', {})
     test_days = [d for d in sorted(spy) if d >= split]
     market = None
@@ -334,8 +389,8 @@ def run(history: dict | None = None, surfaces: dict | None = None, log=print) ->
                   'change': round(closes[-1] / spy[test_days[0]][0]['o'] - 1, 4),
                   'worst_day': round(min(changes), 4) if changes else 0.0}
     return {'days': len(all_days), 'first': all_days[0] if all_days else None, 'last': all_days[-1] if all_days else None,
-            'split': split, 'rule_sets': tested, 'passed_train': len(results), 'held_on_test': len(held),
-            'top': dedupe(results)[:40], 'held': dedupe(sorted(held, key=robust, reverse=True))[:25], 'test_market': market,
+            'split': split, 'rule_sets': tested, 'passed_train': len(results), 'held_on_test': held_count,
+            'top': top, 'held': held, 'test_market': market,
             'surfaces': {t: {'level': s['level'], 'asof': s.get('asof', '')} for t, s in surfaces.items()},
             'seconds': round(time.time() - started)}
 
@@ -362,18 +417,24 @@ def describe(r: dict) -> str:
     return f'{r["tickers"]} {when} {side}, {r["delta"]:.2f} delta at {r["time"]}{filt}, credit ${r["min_credit"]:.2f}+; {exit_}'
 
 
-def report(lab: dict) -> str:
+def report(lab: dict, title: str = 'Strategy Lab', data: str = 'Yahoo 5-minute prices') -> str:
     def row(r):
         a, b = r['train'], r['test']
+        stress = '; '.join(f'{k}: {v["n"]} trades ${v["total"]:+.0f}' for k, v in (r.get('stress') or {}).items() if v['n']) or '-'
+        month = (f'{r["worst_month"][0]} ${r["worst_month"][1]:+.0f} ({r["losing_months"]} of {r["months"]} months lost)'
+                 if r.get('worst_month') else '-')
         return (f'| {describe(r)} | {a["n"]} / {a["win_rate"]:.0%} / ${a["per_trade"]:+.2f} | '
-                f'{b["n"]} / {b.get("win_rate", 0):.0%} / ${b.get("per_trade", 0):+.2f} / worst ${b.get("worst", 0):+.0f} |')
-    head = '| Rule set | Train: trades / wins / $ a trade | Test (unseen): trades / wins / $ a trade / worst |\n|---|---|---|'
+                f'{b["n"]} / {b.get("win_rate", 0):.0%} / ${b.get("per_trade", 0):+.2f} / worst ${b.get("worst", 0):+.0f} | '
+                f'{month} | {stress} |')
+    head = ('| Rule set | Train: trades / wins / $ a trade | Test (unseen): trades / wins / $ a trade / worst trade '
+            '| Worst month | Bad stretches |\n|---|---|---|---|---|')
     share = lab['held_on_test'] / lab['passed_train'] if lab['passed_train'] else 0
+    weeks = round((lab['days'] - int(lab['days'] * 2 / 3)) / 5)
     lines = ['---', 'tags:', '  - "trading"', '  - "strategy-lab"', f'updated: "{datetime.now():%Y-%m-%d %H:%M}"', '---',
-             '# Strategy Lab', '',
+             f'# {title}', '',
              f'{lab["rule_sets"]:,} credit-spread rule sets replayed on {lab["days"]} trading days '
              f'({lab["first"]} to {lab["last"]}). Chosen on the days before {lab["split"]}; judged on the days from '
-             f'{lab["split"]} (about four weeks), which the choice never saw. Modeled option prices '
+             f'{lab["split"]} (about {weeks} weeks), which the choice never saw. Modeled option prices '
              f'(volatility index + today\'s skew), $0.02 a side off the mid, $0.03 a contract a side.', '',
              f'**{lab["passed_train"]:,} rule sets** met the target on the training days (80% wins with a profit). '
              f'**{lab["held_on_test"]:,} ({share:.0%})** still did on the unseen days. The lower that share, the more '
@@ -390,17 +451,24 @@ def report(lab: dict) -> str:
              'move faster near the close than the model shows.',
              '- One contract a trade; the owner\'s limits (one trade at a time, $60 a day) are not applied here.',
              '- A rule set that held up is a candidate for the dry-run autopilot, not proof. Its live record decides.',
-             f'- Data: Yahoo 5-minute prices; VIX for SPY, VXN for QQQ; skew from Cboe ({", ".join(f"{t} {s["asof"]}" for t, s in lab["surfaces"].items())}).',
-             '', f'Run again: `python localtools/strategy_lab.py` ({lab["seconds"]}s).']
+             '- Today\'s skew is applied to every past day; in a selloff real skew steepens, so puts were dearer '
+             '(more credit, but also costlier to close) than modeled.',
+             f'- Data: {data}; VIX for SPY, VXN for QQQ; skew from Cboe ({", ".join(f"{t} {s["asof"]}" for t, s in lab["surfaces"].items())}).',
+             '', f'Run again: `python localtools/strategy_lab.py{" hourly" if "hourly" in data else ""}` ({lab["seconds"]}s).']
     return '\n'.join(lines) + '\n'
 
 
 if __name__ == '__main__':
-    lab = run()
-    RESULTS.parent.mkdir(parents=True, exist_ok=True)
-    RESULTS.write_text(json.dumps(lab, indent=1, default=str))
+    import sys
+    hourly = 'hourly' in sys.argv[1:]
+    lab = run(load(interval='1h'), times=HOURLY_TIMES) if hourly else run()
+    name = 'Strategy Lab - 2 years' if hourly else 'Strategy Lab'
+    results = RESULTS.with_name('strategy-lab-2y.json') if hourly else RESULTS
+    results.parent.mkdir(parents=True, exist_ok=True)
+    results.write_text(json.dumps(lab, indent=1, default=str))
     REPORT.parent.mkdir(parents=True, exist_ok=True)
-    REPORT.write_text(report(lab), encoding='utf-8')
+    REPORT.with_name(f'{name}.md').write_text(
+        report(lab, name, 'Yahoo hourly prices (about 2 years)' if hourly else 'Yahoo 5-minute prices'), encoding='utf-8')
     print(json.dumps({k: lab[k] for k in ('days', 'split', 'rule_sets', 'passed_train', 'held_on_test', 'seconds')}))
     for r in lab['held'][:10]:
         print(describe(r), r['train'], r['test'])
