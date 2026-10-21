@@ -660,6 +660,10 @@ import site_mapper  # noqa: E402  (registers the site_* mapping tools)
 
 site_mapper.register(tool)
 
+import options_guide  # noqa: E402  (registers the options_* trade-finding tools)
+
+options_guide.register(tool)
+
 
 if __name__ == "__main__":
     if "--http" in sys.argv:

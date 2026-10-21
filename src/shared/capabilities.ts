@@ -114,6 +114,17 @@ export const toolGroups = {
       'browser_choose_asset',
     ],
   },
+  options: {
+    label: 'Options guide (SPY, QQQ, TSLA)',
+    description:
+      "Find credit spreads, debit spreads and cheap options within the owner's rules, explain them, and keep the journal. Never places orders.",
+    tools: [
+      'options_market',
+      'options_suggest',
+      'options_record',
+      'options_review',
+    ],
+  },
   site_mapping: {
     label: 'Site mapping (pages and data)',
     description:
