@@ -476,7 +476,7 @@ class Journal:
                        'expiry TEXT, data TEXT, status TEXT, entry REAL, exit REAL, pnl REAL, closed_ts REAL, shadow_pnl REAL)')
             # What it made managed by its rules (target, stop, 3:45pm), and how it ended.
             columns = {r[1] for r in db.execute('PRAGMA table_info(suggestions)')}
-            for column, kind in (('managed_pnl', 'REAL'), ('managed_how', 'TEXT')):
+            for column, kind in (('managed_pnl', 'REAL'), ('managed_how', 'TEXT'), ('opened_ts', 'REAL')):
                 if column not in columns:
                     db.execute(f'ALTER TABLE suggestions ADD COLUMN {column} {kind}')
             # Each day's 1-minute prices (Cboe only serves today's), for multi-day replays.
@@ -514,7 +514,7 @@ class Journal:
         if status == 'taken':
             if price is None:
                 raise ValueError('Give the fill price.')
-            update = {'status': 'open', 'entry': price}
+            update = {'status': 'open', 'entry': price, 'opened_ts': time.time()}  # The exit listener watches it from here.
         elif status == 'closed':
             if row['status'] != 'open' or price is None:
                 raise ValueError('Only an open trade can be closed, with its exit price.')
@@ -815,3 +815,21 @@ def register(tool, journal: Journal | None = None, getter=fetch) -> None:
                 'daily_limit': DAILY_LOSS_LIMIT, 'by_kind': journal.summary(),
                 'note': 'win_rate and profit_per_trade are managed results (profit target, stop, 3:45pm exit). '
                         'Run this after the close each day: it also saves the day\'s prices for replays.'}
+
+    @tool()
+    def options_exits() -> dict:
+        """The exit listener's view of each open trade (from the owner's fill): profit
+        now, best so far, the trailing floor that keeps a winner from turning into a
+        loss, and which exits fired. The listener (options_watch.py) sets up the
+        closing order on Robinhood and tells the owner by itself; use this to explain
+        where a trade stands."""
+        import options_watch
+        now = now_eastern()
+        alerts = options_watch.Alerts(journal.path)
+        states = []
+        for row in journal.open_trades():
+            state = options_watch.watch(row, options_watch.bars_since(journal, row, now))
+            state['sent'] = sorted(alerts.sent(row['id']))
+            states.append(state)
+        rules = options_watch.__doc__.split('Exits, each fired once per trade:')[1].split('Run:')[0]
+        return {'open': states, 'rules': ' '.join(rules.split())}

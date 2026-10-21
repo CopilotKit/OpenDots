@@ -4376,3 +4376,60 @@ h3 {
   font-weight: 600;
   color: #1a8f4a;
 }
+
+/* Exit alerts from the options listener. */
+.options-alerts {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: grid;
+  gap: 8px;
+  width: min(560px, calc(100vw - 32px));
+}
+.options-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 2px solid #f59e0b;
+  border-radius: 10px;
+  background: #fffbeb;
+  color: #1f2937;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+  animation: optionsAlertPulse 1.2s ease-in-out 4;
+}
+.options-alert svg {
+  flex: none;
+  margin-top: 2px;
+  color: #d97706;
+}
+.options-alert div {
+  flex: 1;
+  min-width: 0;
+}
+.options-alert p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.options-alert button {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.options-alert-allow {
+  justify-self: center;
+  padding: 6px 12px;
+  border: 1px solid #f59e0b;
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+}
+@keyframes optionsAlertPulse {
+  50% {
+    box-shadow: 0 0 0 6px rgb(245 158 11 / 35%);
+  }
+}

@@ -33,6 +33,7 @@ import type {
 } from '../shared/types';
 import { api, ApiError, authHeaders, setToken } from './api';
 import { Mascot } from './Mascot';
+import { OptionsAlerts } from './OptionsAlerts';
 import { Chat } from './Chat';
 import { ThreadList } from './ThreadList';
 import { ResultPane } from './ResultPane';
@@ -492,6 +493,7 @@ export function App() {
         </div>
       </aside>
       <div className="workspace">
+        <OptionsAlerts />
         <header className="topbar">
           <button
             className="desktop-nav-toggle document-icon"

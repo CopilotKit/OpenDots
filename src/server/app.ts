@@ -8,7 +8,7 @@ import {
 } from './confirmation-policy.js';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { Store } from './store.js';
@@ -137,6 +137,25 @@ export function createApp({
   if (platform) app.route('/api', computerRoutes(platform.computers));
   if (platform) app.route('/api', browserRoutes(platform.browser));
   if (platform) app.route('/api', teamBoardRoutes(platform.teamBoard));
+  // Exit alerts from the options listener (localtools/options_watch.py), newest
+  // last; the banner shows the ones after `since` (seconds).
+  app.get('/api/options/alerts', (c) => {
+    const since = Number(c.req.query('since') ?? 0) || 0;
+    const file = 'data/options-alerts.jsonl';
+    if (!existsSync(file)) return c.json({ alerts: [] });
+    const alerts = readFileSync(file, 'utf8')
+      .split('\n')
+      .flatMap((line) => {
+        try {
+          return line ? [JSON.parse(line) as { at: number }] : [];
+        } catch {
+          return [];
+        }
+      })
+      .filter((alert) => alert.at > since)
+      .slice(-20);
+    return c.json({ alerts });
+  });
   // Send the owner's message to a running unattended task without stopping it;
   // the task reads it after the tool step in progress.
   app.post('/api/threads/:id/steer', async (c) => {
