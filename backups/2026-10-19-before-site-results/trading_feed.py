@@ -382,6 +382,15 @@ class TradeJournal:
         with self._db() as db:
             db.execute('CREATE TABLE IF NOT EXISTS trades(id TEXT PRIMARY KEY, asset TEXT, direction TEXT, stake REAL, '
                        'expiry_s INTEGER, entry_ts REAL, entry_price REAL, setup TEXT, result TEXT, exit_price REAL)')
+            # Results from Pocket Option's own closed-deal messages: the deal's id, its
+            # profit, and where the result came from ('site', or 'estimate' from ticks).
+            have = {row[1] for row in db.execute('PRAGMA table_info(trades)')}
+            for column, kind in (('deal_id', 'TEXT'), ('profit', 'REAL'), ('source', 'TEXT')):
+                if column not in have:
+                    db.execute(f'ALTER TABLE trades ADD COLUMN {column} {kind}')
+        # Seconds to wait past expiry for the site's result before estimating one
+        # from ticks; set once the site's deal messages are seen.
+        self.site_grace = 0.0
 
     @contextmanager
     def _db(self):
@@ -395,19 +404,21 @@ class TradeJournal:
     def record(self, asset: str, direction: str, stake, expiry_s, entry_ts: float, entry_price, setup: dict) -> str:
         trade = str(uuid.uuid4())
         with self._db() as db:
-            db.execute('INSERT INTO trades VALUES(?,?,?,?,?,?,?,?,NULL,NULL)',
+            db.execute('INSERT INTO trades(id, asset, direction, stake, expiry_s, entry_ts, entry_price, setup) '
+                       'VALUES(?,?,?,?,?,?,?,?)',
                        (trade, asset, direction, stake, expiry_s, entry_ts, entry_price, json.dumps(setup)))
         return trade
 
     def settle(self, feed: PriceFeed, now: float | None = None) -> int:
-        """Fill in results of expired trades from the price feed (BUY wins above entry)."""
+        """Estimate results of expired trades from the price feed (BUY wins above
+        entry) when the site's own result has not arrived within `site_grace`."""
         now = now or feed.now()
         settled = 0
         with self._db() as db:
             rows = db.execute('SELECT id, asset, direction, expiry_s, entry_ts, entry_price FROM trades '
                               'WHERE result IS NULL AND expiry_s IS NOT NULL AND entry_price IS NOT NULL').fetchall()
             for trade, asset, direction, expiry, entry_ts, entry in rows:
-                if entry_ts + expiry > now:
+                if entry_ts + expiry + self.site_grace > now:
                     continue
                 exit_price = feed.price_at(asset_key(asset), entry_ts + expiry)
                 if exit_price is None:
@@ -416,15 +427,46 @@ class TradeJournal:
                     continue
                 up = direction == 'buy'
                 result = 'tie' if exit_price == entry else 'win' if (exit_price > entry) == up else 'loss'
-                db.execute('UPDATE trades SET result=?, exit_price=? WHERE id=?', (result, exit_price, trade))
+                db.execute("UPDATE trades SET result=?, exit_price=?, source='estimate' WHERE id=?", (result, exit_price, trade))
                 settled += 1
         return settled
+
+    def apply_deals(self, deals) -> int:
+        """Results from Pocket Option's closed deals ({asset, amount, command 0 = BUY,
+        openTimestamp, openPrice, closePrice, profit}), matched to recorded trades
+        by pair, stake, direction and open time. These replace any estimate: on a
+        night of 11-second trades the estimates said break-even while the
+        balance fell from $84 to $45."""
+        applied = 0
+        with self._db() as db:
+            for deal in deals if isinstance(deals, list) else []:
+                if not isinstance(deal, dict) or not deal.get('closePrice') or 'profit' not in deal:
+                    continue
+                try:
+                    opened, amount, profit = float(deal['openTimestamp']), float(deal['amount']), float(deal['profit'])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                direction = 'buy' if deal.get('command') == 0 else 'sell'
+                if db.execute('SELECT 1 FROM trades WHERE deal_id=?', (str(deal.get('id')),)).fetchone():
+                    continue
+                rows = db.execute("SELECT id, asset, entry_ts FROM trades WHERE direction=? AND ABS(stake - ?) < 0.006 "
+                                  "AND ABS(entry_ts - ?) <= 8 AND (source IS NULL OR source != 'site')",
+                                  (direction, amount, opened)).fetchall()
+                rows = [r for r in rows if asset_key(r[1]) == asset_key(str(deal.get('asset', '')))]
+                if not rows:
+                    continue
+                trade = min(rows, key=lambda r: abs(r[2] - opened))[0]
+                result = 'win' if profit > 0 else 'loss' if profit < 0 else 'tie'
+                db.execute("UPDATE trades SET result=?, profit=?, entry_price=?, exit_price=?, deal_id=?, source='site' "
+                           'WHERE id=?', (result, profit, deal.get('openPrice'), deal.get('closePrice'), str(deal.get('id')), trade))
+                applied += 1
+        return applied
 
     def open_trades(self, now: float) -> list[dict]:
         """Trades still running at `now` (feed clock), or just ended and not yet settled."""
         with self._db() as db:
             rows = db.execute('SELECT direction, stake, expiry_s, entry_ts FROM trades WHERE result IS NULL '
-                              'AND entry_ts + expiry_s > ? ORDER BY entry_ts', (now - 5,)).fetchall()
+                              'AND entry_ts + expiry_s > ? ORDER BY entry_ts', (now - 5 - self.site_grace,)).fetchall()
         return [{'direction': d, 'stake': s, 'expiry_s': e, 'ends': t + e} for d, s, e, t in rows]
 
     def win_rate(self, last: int = 10) -> tuple[int, int]:
@@ -445,6 +487,12 @@ class TradeJournal:
                 break
             streak += 1
         return streak
+
+    def last_results(self, count: int, since: float = 0) -> list[tuple[str, float, float | None]]:
+        """(result, stake, profit) of the latest settled trades entered after `since`, newest first."""
+        with self._db() as db:
+            return db.execute("SELECT result, stake, profit FROM trades WHERE result IN ('win','loss','tie') AND entry_ts > ? "
+                              'ORDER BY entry_ts DESC LIMIT ?', (since, count)).fetchall()
 
     def last_closed(self) -> dict | None:
         with self._db() as db:
@@ -497,18 +545,20 @@ class TradeJournal:
         """Every trade, one row each, for opening in Excel."""
         import csv
         with self._db() as db:
-            rows = db.execute('SELECT entry_ts, asset, direction, stake, expiry_s, entry_price, exit_price, result, setup '
-                              'FROM trades ORDER BY entry_ts').fetchall()
+            rows = db.execute('SELECT entry_ts, asset, direction, stake, expiry_s, entry_price, exit_price, result, setup, '
+                              'profit, source FROM trades ORDER BY entry_ts').fetchall()
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with open(path, 'w', newline='', encoding='utf-8') as handle:
             out = csv.writer(handle)
             out.writerow(['time', 'pair', 'market', 'direction', 'stake', 'expiry_s', 'entry_price', 'exit_price', 'result',
-                          'candle_s', 'rsi_zone', 'macd', 'trend_at_entry', 'reason'])
-            for ts, asset, direction, stake, expiry, entry, exit_, result, setup in rows:
+                          'candle_s', 'rsi_zone', 'macd', 'trend_at_entry', 'reason', 'confidence', 'signal',
+                          'profit', 'result_from'])
+            for ts, asset, direction, stake, expiry, entry, exit_, result, setup, profit, source in rows:
                 s = json.loads(setup or '{}')
                 out.writerow([time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ts)), asset,
                               'OTC' if 'OTC' in (asset or '').upper() else 'real', direction, stake, expiry, entry, exit_,
-                              result or 'open', s.get('candle_s'), s.get('rsi_zone'), s.get('macd'), s.get('trend'), s.get('reason', '')])
+                              result or 'open', s.get('candle_s'), s.get('rsi_zone'), s.get('macd'), s.get('trend'), s.get('reason', ''),
+                              s.get('confidence'), s.get('signal'), profit, source or ''])
         return len(rows)
 
     def recent(self, limit: int = 20) -> list[dict]:

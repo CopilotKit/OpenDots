@@ -22,6 +22,37 @@ const json = (body: unknown) => ({
 });
 afterEach(() => stores.splice(0).forEach((store) => store.close()));
 describe('API boundaries', () => {
+  it('accepts each listed origin, such as the desktop and a Tailscale address', async () => {
+    const { app } = fixture(
+      undefined,
+      'http://127.0.0.1:5173,https://pc.tailnet.ts.net:8443',
+    );
+    const from = (url: string, origin: string) =>
+      app.request(url, { headers: { Origin: origin } });
+    expect(
+      (await from('http://127.0.0.1:5173/api/state', 'http://127.0.0.1:5173'))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await from(
+          'https://pc.tailnet.ts.net:8443/api/state',
+          'https://pc.tailnet.ts.net:8443',
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await from(
+          'https://pc.tailnet.ts.net:8443/api/state',
+          'https://evil.example',
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (await from('http://other.host/api/state', 'http://other.host')).status,
+    ).toBe(403);
+  });
   it('lets a long chat through but keeps other requests small', async () => {
     const { app } = fixture();
     const big = JSON.stringify({ messages: ['x'.repeat(2_000_000)] });

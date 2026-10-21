@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import time
 import uuid
 from collections import deque
@@ -22,10 +22,39 @@ def asset_key(name: str) -> str:
     return re.sub(r'[^A-Z0-9]', '', (name or '').upper())
 
 
+class TickRecorder:
+    """Every tick seen, saved to SQLite so setups can be replayed and scored
+    later without trading them (shadow tests, 2026-10-20). Written in batches."""
+
+    def __init__(self, path, flush_rows: int = 500, flush_s: float = 5.0):
+        self.path = str(path)
+        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        self.rows: list[tuple[str, float, float]] = []
+        self.flush_rows, self.flush_s, self.flushed = flush_rows, flush_s, time.time()
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('CREATE TABLE IF NOT EXISTS ticks(asset TEXT NOT NULL, ts REAL NOT NULL, price REAL NOT NULL, PRIMARY KEY(asset, ts))')
+
+    def add(self, key: str, ts: float, price: float) -> None:
+        self.rows.append((key, ts, price))
+        if len(self.rows) >= self.flush_rows or time.time() - self.flushed >= self.flush_s:
+            self.flush()
+
+    def flush(self) -> None:
+        rows, self.rows, self.flushed = self.rows, [], time.time()
+        if not rows:
+            return
+        try:
+            with closing(sqlite3.connect(self.path, timeout=5)) as db, db:
+                db.executemany('INSERT OR IGNORE INTO ticks VALUES(?,?,?)', rows)
+        except sqlite3.Error:
+            pass  # Recording is a by-product; never break the live feed over it.
+
+
 class PriceFeed:
     """Ticks per asset from feed frames, kept for a few hours."""
 
-    def __init__(self, keep: int = 30000):
+    def __init__(self, keep: int = 30000, record=None):
+        self.recorder = TickRecorder(record) if record else None
         self.ticks: dict[str, deque] = {}
         self.names: dict[str, str] = {}
         self.keep = keep
@@ -59,6 +88,8 @@ class PriceFeed:
                 ticks = self.ticks.setdefault(key, deque(maxlen=self.keep))
                 if not ticks or row[1] >= ticks[-1][0]:
                     ticks.append((float(row[1]), float(row[2])))
+                    if self.recorder:
+                        self.recorder.add(key, float(row[1]), float(row[2]))
                     added += 1
                     self.offset = float(row[1]) - time.time()
         return added
@@ -90,6 +121,9 @@ class PriceFeed:
         if not rows:
             return added
         self.names[key] = data['asset']
+        if self.recorder:
+            for ts, price in rows:
+                self.recorder.add(key, ts, price)
         newer = [t for t in self.ticks.get(key, ()) if t[0] > rows[-1][0]]
         self.ticks[key] = deque(rows + newer, maxlen=self.keep)
         return len(rows)
@@ -245,6 +279,45 @@ def band_turn(bars: list[dict], within: int = 3) -> dict | None:
     return None
 
 
+# Expiry for every fade: over two recorded hours the signal won 56.1% and 56.0% at
+# 8 s, against 54% at 11 s and 52-55% at 30 s (where the snap-back has often faded).
+FADE_EXPIRY = 8
+
+
+def otc_fade(bars: list[dict]) -> dict | None:
+    """OTC prices snap back after a stretched candle (backtest, 2026-10-19: 120,000
+    ticks on 21 OTC pairs, scored on held-out data). Read on the last *closed*
+    candle (the final bar is still forming): a close above the upper Bollinger
+    band with RSI >= 70 -> SELL for 30 s (57.7%; with a big candle 65.5% on fewer
+    trades); the mirror below the lower band -> BUY for 30 s; a big candle closing
+    below the lower band -> BUY for 5 s (59.9%). Following these moves won 45%."""
+    closed = bars[:-1]
+    if len(closed) < 25:
+        return None
+    closes = [b['c'] for b in closed]
+    bands = bollinger(closes)
+    value = rsi(closes)
+    if not bands or value is None:
+        return None
+    mid, upper, lower = bands[-1]
+    last = closed[-1]
+    body = abs(last['c'] - last['o'])
+    avg = sum(abs(b['c'] - b['o']) for b in closed[-21:-1]) / 20 or 1e-12
+    big = body > 2 * avg
+    when = last['t']
+    if last['c'] >= upper and value >= 70:
+        return {'direction': 'down', 'kind': 'fade', 'expiry': FADE_EXPIRY, 'closed': when, 'strength': 'strong' if big else 'normal',
+                'why': f"5 s candle closed above the upper Bollinger band with RSI {value:.0f}{' on a big candle' if big else ''}: "
+                       f'OTC snaps back, SELL for {FADE_EXPIRY} s'}
+    if last['c'] <= lower and big:
+        return {'direction': 'up', 'kind': 'fade', 'expiry': FADE_EXPIRY, 'closed': when, 'strength': 'strong',
+                'why': f'big 5 s candle closed below the lower Bollinger band (RSI {value:.0f}): OTC snaps back, BUY for {FADE_EXPIRY} s'}
+    if last['c'] <= lower and value <= 30:
+        return {'direction': 'up', 'kind': 'fade', 'expiry': FADE_EXPIRY, 'closed': when, 'strength': 'normal',
+                'why': f'5 s candle closed below the lower Bollinger band with RSI {value:.0f}: OTC snaps back, BUY for {FADE_EXPIRY} s'}
+    return None
+
+
 def rsi_zone(value: float | None) -> str:
     if value is None:
         return 'unknown'
@@ -319,6 +392,9 @@ def read_bars(bars: list[dict], name: str, period: int, show: int = 12) -> dict:
                    macd_state=('bullish' if hist > 0 else 'bearish') + (
                        ', crossed just now' if before is not None and (before > 0) != (hist > 0)
                        else ', strengthening' if before is not None and abs(hist) > abs(before) else ', weakening'))
+    fade = otc_fade(bars) if period == 5 else None
+    if fade:
+        out['fade'] = {**fade, 'closed': fade['closed'] + period}  # When that candle closed.
     signal = reversal_signal(closes)
     turn = band_turn(bars)
     if turn:
@@ -465,9 +541,9 @@ class TradeJournal:
     def open_trades(self, now: float) -> list[dict]:
         """Trades still running at `now` (feed clock), or just ended and not yet settled."""
         with self._db() as db:
-            rows = db.execute('SELECT direction, stake, expiry_s, entry_ts FROM trades WHERE result IS NULL '
+            rows = db.execute('SELECT direction, stake, expiry_s, entry_ts, asset FROM trades WHERE result IS NULL '
                               'AND entry_ts + expiry_s > ? ORDER BY entry_ts', (now - 5 - self.site_grace,)).fetchall()
-        return [{'direction': d, 'stake': s, 'expiry_s': e, 'ends': t + e} for d, s, e, t in rows]
+        return [{'direction': d, 'stake': s, 'expiry_s': e, 'ends': t + e, 'asset': a} for d, s, e, t, a in rows]
 
     def win_rate(self, last: int = 10) -> tuple[int, int]:
         """Wins and settled trades among the most recent `last`."""
@@ -487,6 +563,25 @@ class TradeJournal:
                 break
             streak += 1
         return streak
+
+    def last_results(self, count: int, since: float = 0) -> list[tuple[str, float, float | None]]:
+        """(result, stake, profit) of the latest settled trades entered after `since`, newest first."""
+        with self._db() as db:
+            return db.execute("SELECT result, stake, profit FROM trades WHERE result IN ('win','loss','tie') AND entry_ts > ? "
+                              'ORDER BY entry_ts DESC LIMIT ?', (since, count)).fetchall()
+
+    def entered_since(self, asset: str, direction: str, since: float) -> int:
+        """Trades on this pair and direction entered after `since` (feed clock)."""
+        with self._db() as db:
+            rows = db.execute('SELECT asset FROM trades WHERE direction=? AND entry_ts > ?', (direction, since)).fetchall()
+        return sum(1 for (a,) in rows if asset_key(a) == asset_key(asset))
+
+    def last_result_for(self, asset: str, since: float) -> str | None:
+        """Result of the latest settled trade on this pair entered after `since`."""
+        with self._db() as db:
+            rows = db.execute("SELECT asset, result FROM trades WHERE result IN ('win','loss','tie') AND entry_ts > ? "
+                              'ORDER BY entry_ts DESC LIMIT 200', (since,)).fetchall()
+        return next((r for a, r in rows if asset_key(a) == asset_key(asset)), None)
 
     def last_closed(self) -> dict | None:
         with self._db() as db:

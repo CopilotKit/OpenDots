@@ -56,6 +56,19 @@ REVIEW = r"""({proposals,describe}) => {
 }"""
 
 
+def label_match(name, candidates):
+    """The candidate whose label shares the most words with the target name, when
+    one clearly does; used when JEV is not running. The owner still confirms it."""
+    words = set(re.findall(r'\w+', name.lower().replace('_', ' '))) - {'button', 'the', 'open', 'control', 'link', 'field'}
+    def said(e):  # Its text plus what it is: a search box's text is what was typed.
+        return ' '.join(str(e.get(k) or '') for k in ('name', 'role', 'tag', 'type', 'placeholder')).lower()
+    scored = sorted(((len(words & set(re.findall(r'\w+', said(e)))), e) for e in candidates),
+                    key=lambda pair: -pair[0])
+    if not scored or scored[0][0] == 0 or (len(scored) > 1 and scored[1][0] == scored[0][0]):
+        return None
+    return scored[0][1]
+
+
 def register_mapping_tools(tool, browser, store, describe, status_js, reference_image, current_ref):
     @tool()
     async def browser_map_propose(targets: list[str], candidate_refs: list[int] | None = None) -> dict:
@@ -90,16 +103,30 @@ def register_mapping_tools(tool, browser, store, describe, status_js, reference_
                     words=set(re.findall(r'\w+',name.lower().replace('_',' ')))-{'button','the','open','control'}
                     candidates=[e for e in elements if words & set(re.findall(r'\w+',e.get('name','').lower()))]
                 proposal={'name':name.strip(),'ref':None,'descriptor':None,'source':'jev'}
-                if not 1<=len(candidates)<=7:
-                    proposal['reason']='No bounded candidate set. Choose the correct button manually.'
-                else:
+                picked=None
+                if 1<=len(candidates)<=7:
                     try:
-                        result=await asyncio.to_thread(select_target,name,candidates,shot)
-                        _,locator=await browser.element(result['ref'])
-                        await current_ref(locator)
-                        proposal.update(ref=result['ref'],descriptor=await locator.evaluate(describe))
+                        picked=(await asyncio.to_thread(select_target,name,candidates,shot))['ref']
                     except LookupError as error:
                         proposal['reason']=str(error)
+                    except Exception:
+                        pass  # JEV not running or unreachable: match by label below.
+                if picked is None and not proposal.get('reason'):
+                    # Without JEV, the control whose text best matches the name;
+                    # the owner confirms, rejects or corrects it in the page.
+                    match=label_match(name,candidates or elements)
+                    if match:
+                        picked=match['ref']
+                        proposal.update(source='label_match',reason='Matched by its label (JEV is not running): confirm, or choose a different button.')
+                    else:
+                        proposal['reason']='No button label matches this name. Choose the correct button in the page.'
+                if picked is not None:
+                    try:
+                        _,locator=await browser.element(picked)
+                        await current_ref(locator)
+                        proposal.update(ref=picked,descriptor=await locator.evaluate(describe))
+                    except LookupError as error:
+                        proposal.update(ref=None,descriptor=None,reason=str(error))
                 proposals.append(proposal)
             if await browser.page() is not page or await page.evaluate('()=>window.__dotsMapDocument')!=token:
                 raise LookupError('Page changed during proposals. No review or save started.')
@@ -111,15 +138,26 @@ def register_mapping_tools(tool, browser, store, describe, status_js, reference_
         Revalidates live identities, saves atomically, and reports rejected names.
         Never clicks a proposed button. Existing unique names are updated."""
         from browser_targets import target_name
+        read_state="() => {const s=window.__dotsTeach;return s?.kind==='mapping_batch'?{cancelled:s.cancelled,confirmed:s.confirmed,result:s.result,items:s.items.map(p=>({name:p.name,status:p.status,descriptor:p.descriptor,source:p.source}))}:null}"
+        # Wait (up to 90 s) for the owner to go through the review in the page,
+        # rather than failing at once: an unattended Dot otherwise calls this
+        # over and over while the owner is still reviewing.
+        deadline=time.time()+90
+        while True:
+            async with browser.lock:
+                state=await (await browser.page()).evaluate(read_state)
+            if not state or state.get('cancelled') or state.get('confirmed') or state.get('result') or time.time()>deadline:
+                break
+            await asyncio.sleep(1)
         async with browser.lock:
             page=await browser.page()
-            state=await page.evaluate("() => {const s=window.__dotsTeach;return s?.kind==='mapping_batch'?{cancelled:s.cancelled,confirmed:s.confirmed,result:s.result,items:s.items.map(p=>({name:p.name,status:p.status,descriptor:p.descriptor,source:p.source}))}:null}")
+            state=await page.evaluate(read_state)
             if not state or state.get('cancelled'):
                 raise LookupError('NOT SAVED: no active mapping batch. Start a proposal review first.')
             if state.get('result'):
                 return state['result']
             if not state.get('confirmed'):
-                raise LookupError('NOT SAVED: finish confirming or rejecting each proposal in the browser.')
+                raise LookupError('NOT SAVED: the owner is still reviewing the proposals in the browser (waited 90 s). End the turn and ask them to confirm or reject each one; call this again after.')
             existing=store.list_targets(page.url)
             document_token=await page.evaluate('()=>window.__dotsMapDocument')
             records=[]
@@ -136,18 +174,17 @@ def register_mapping_tools(tool, browser, store, describe, status_js, reference_
                         raise LookupError('Confirmed control changed or has no persistent identity. No mappings saved.')
                     await current_ref(element)
                     crop=await reference_image(page,element,'jev-taught-')
-                    matches=[r for r in existing if target_name(r['name'])==target_name(item['name']) and r.get('status')!='needs_reteach']
+                    matches=[r for r in existing if not r.get('elsewhere') and target_name(r['name'])==target_name(item['name']) and r.get('status')!='needs_reteach']
                     if len(matches)>1:
                         raise LookupError('Duplicate saved name; resolve it before saving proposals.')
                     now['kind']='button'
-                    records.append({'id':matches[0]['id'] if matches else str(uuid.uuid4()),'context':page_context(page.url),'name':item['name'],'kind':'button','descriptor':now,'reference_image':crop,'status':'taught_not_executed','source':item['source'],'updated_at':time.time()})
+                    records.append({'id':matches[0]['id'] if matches else str(uuid.uuid4()),'url':page.url,'context':page_context(page.url),'name':item['name'],'kind':'button','descriptor':now,'reference_image':crop,'status':'taught_not_executed','source':item['source'],'updated_at':time.time()})
                 finally:
                     await handle.dispose()
             if await browser.page() is not page or await page.evaluate('()=>window.__dotsMapDocument')!=document_token or await page.evaluate('()=>!!window.__dotsTeach?.cancelled'):
                 raise LookupError('Page or review changed before saving. No mappings saved.')
-            with store.connect() as db:
-                for record in records:
-                    db.execute('INSERT INTO browser_targets VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',(record['id'],record['context'],json.dumps(record)))
+            for record in records:
+                store.save_target(record)
             result={'status':'saved','saved': [{'id':r['id'],'name':r['name']} for r in records],'rejected':[p['name'] for p in state['items'] if p['status']=='rejected'],'clicked':False}
             await page.evaluate('(result)=>{const s=window.__dotsTeach;s.result=result;s.saved=true;s.cancel();s.cancelled=false;}',result)
             return result

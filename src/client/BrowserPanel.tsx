@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { api, authHeaders } from './api';
 import { PairsDashboard } from './PairsDashboard';
+import { SiteMapPanel } from './SiteMapPanel';
 
 interface Frame {
   data: string;
@@ -21,6 +22,8 @@ interface Taught {
   id: string;
   name: string;
   kind?: string;
+  /** Taught on another page of the site; used here only if found. */
+  elsewhere?: boolean;
 }
 interface Status {
   running: boolean;
@@ -69,6 +72,7 @@ export function BrowserPanel() {
     name: string;
     tookControl: boolean;
     after?: boolean;
+    kind?: 'button' | 'region';
   }>();
   const [teachStep, setTeachStep] = useState('');
   const [taught, setTaught] = useState<Taught[]>([]);
@@ -88,7 +92,9 @@ export function BrowserPanel() {
   }, [frame?.url, editing]);
   const loadTaught = () =>
     api<{ targets?: Taught[] }>('/browser/targets')
-      .then((result) => setTaught(result.targets ?? []))
+      .then((result) =>
+        setTaught((result.targets ?? []).filter((t) => !t.elsewhere)),
+      )
       .catch(() => setTaught([]));
   useEffect(() => {
     if (status?.running && !teaching) void loadTaught();
@@ -163,7 +169,7 @@ export function BrowserPanel() {
       // The owner's clicks reach the page only while they have control.
       const tookControl = !takeover;
       if (tookControl) await api('/browser/takeover', 'POST', { on: true });
-      setTeaching({ name, tookControl, after });
+      setTeaching({ name, tookControl, after, kind: teachKind });
       setTeachAfter(false);
       setTeachOpen(false);
       setTeachName('');
@@ -234,6 +240,106 @@ export function BrowserPanel() {
       x: ((event.clientX - box.left) / box.width) * (frame?.width ?? 0),
       y: ((event.clientY - box.top) / box.height) * (frame?.height ?? 0),
     };
+  };
+  // One pointer gesture on the view (mouse, finger or pen): a tap is a click; a
+  // drag is sent whole at release (drawing a taught region, or a mouse drag); a
+  // finger swipe otherwise scrolls the page, since phones have no wheel.
+  const gesture = useRef<{
+    id: number;
+    touch: boolean;
+    start: { x: number; y: number };
+    last: { x: number; y: number };
+    points: { x: number; y: number }[];
+  }>(undefined);
+  const [drawBox, setDrawBox] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  }>();
+  const drawing = teaching?.kind === 'region';
+  // A desktop page shrunk to a phone screen is too small to tap: zoom the view.
+  // Zoomed, one finger pans the view (a tap still clicks); at 1x a swipe
+  // scrolls the page. Drawing a region always draws.
+  const [zoom, setZoom] = useState(1);
+  // Phones cannot type into the live view: a text box sends text to the page.
+  const [typed, setTyped] = useState('');
+  const viewBox = (
+    img: HTMLImageElement,
+    a: { x: number; y: number },
+    b: { x: number; y: number },
+  ) => {
+    const view = img.parentElement!;
+    const rect = view.getBoundingClientRect();
+    const left = Math.min(a.x, b.x) - rect.left + view.scrollLeft;
+    const top = Math.min(a.y, b.y) - rect.top + view.scrollTop;
+    return {
+      left,
+      top,
+      width: Math.abs(a.x - b.x),
+      height: Math.abs(a.y - b.y),
+    };
+  };
+  const onPointerDown = (e: React.PointerEvent<HTMLImageElement>) => {
+    if (!takeover || e.button !== 0) return;
+    e.currentTarget.parentElement?.focus();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Capture only keeps the drag when the finger leaves the view.
+    }
+    const at = { x: e.clientX, y: e.clientY };
+    gesture.current = {
+      id: e.pointerId,
+      touch: e.pointerType !== 'mouse',
+      start: at,
+      last: at,
+      points: [point(e)],
+    };
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLImageElement>) => {
+    const g = gesture.current;
+    if (!g || g.id !== e.pointerId) return;
+    const at = { x: e.clientX, y: e.clientY };
+    if (Math.hypot(at.x - g.last.x, at.y - g.last.y) < 4) return;
+    g.last = at;
+    g.points.push(point(e));
+    if (drawing) setDrawBox(viewBox(e.currentTarget, g.start, at));
+  };
+  const onPointerUp = (e: React.PointerEvent<HTMLImageElement>) => {
+    const g = gesture.current;
+    if (!g || g.id !== e.pointerId) return;
+    gesture.current = undefined;
+    setDrawBox(undefined);
+    const end = { x: e.clientX, y: e.clientY };
+    if (Math.hypot(end.x - g.start.x, end.y - g.start.y) < 8) {
+      void send({ type: 'click', ...g.points[0] });
+      return;
+    }
+    const points = [...g.points, point(e)];
+    if (drawing || !g.touch) {
+      // At most 60 points, spread evenly along the drag.
+      const step = Math.max(1, (points.length - 1) / 59);
+      const kept = Array.from(
+        { length: Math.min(60, points.length) },
+        (_, i) => points[Math.min(points.length - 1, Math.round(i * step))],
+      );
+      void send({ type: 'drag', points: kept });
+      return;
+    }
+    if (zoom > 1) return; // The swipe panned the zoomed view.
+    const scale =
+      (frame?.width ?? 0) / e.currentTarget.getBoundingClientRect().width || 1;
+    const clamp = (v: number) => Math.max(-5000, Math.min(5000, Math.round(v)));
+    void send({
+      type: 'wheel',
+      dx: clamp((g.start.x - end.x) * scale),
+      dy: clamp((g.start.y - end.y) * scale),
+    });
+  };
+  const onPointerCancel = () => {
+    gesture.current = undefined;
+    setDrawBox(undefined);
   };
   // Some sign-ins (e.g. Google) refuse any remotely controlled browser. This
   // opens the same profile in a plain window; logins carry over to the Dots.
@@ -355,6 +461,15 @@ export function BrowserPanel() {
           {takeover ? <Bot size={14} /> : <Hand size={14} />}
           {takeover ? 'Hand back' : 'Take control'}
         </button>
+        <button
+          type="button"
+          className="browser-control"
+          aria-label="Zoom the live view"
+          title="Zoom the live view (for tapping small buttons on a phone)"
+          onClick={() => setZoom((z) => (z >= 3 ? 1 : z + 1))}
+        >
+          {zoom}×
+        </button>
       </form>
       <div
         className={`browser-view ${takeover ? 'owner' : ''}`}
@@ -387,11 +502,18 @@ export function BrowserPanel() {
             alt={`Live view of ${frame.url}`}
             src={`data:image/jpeg;base64,${frame.data}`}
             draggable={false}
-            onClick={(e) => {
-              if (!takeover) return;
-              e.currentTarget.parentElement?.focus();
-              void send({ type: 'click', ...point(e) });
+            style={{
+              width: `${zoom * 100}%`,
+              touchAction: !takeover
+                ? undefined
+                : zoom === 1 || drawing
+                  ? 'none'
+                  : 'pan-x pan-y',
             }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerCancel}
             onContextMenu={(e) => {
               if (!takeover) return;
               e.preventDefault();
@@ -408,12 +530,41 @@ export function BrowserPanel() {
         ) : (
           <p className="muted">Connecting to the live view…</p>
         )}
+        {drawBox && <span className="browser-draw" style={drawBox} />}
         <span className={`browser-badge ${takeover ? 'owner' : ''}`}>
           {takeover
             ? 'You have control. Dots are waiting.'
             : 'Dots are in control. Watching live.'}
         </span>
       </div>
+      {takeover && (
+        <form
+          className="browser-type"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (typed) void send({ type: 'text', text: typed });
+            setTyped('');
+          }}
+        >
+          <input
+            aria-label="Type into the page"
+            placeholder="Type into the page"
+            value={typed}
+            maxLength={2000}
+            onChange={(e) => setTyped(e.target.value)}
+          />
+          <button className="browser-control" disabled={!typed}>
+            Type
+          </button>
+          <button
+            type="button"
+            className="browser-control"
+            onClick={() => void send({ type: 'key', key: 'Enter' })}
+          >
+            Enter
+          </button>
+        </form>
+      )}
       <div className="browser-teach">
         {teaching ? (
           <>
@@ -526,6 +677,17 @@ export function BrowserPanel() {
           </span>
         )}
       </div>
+      {status?.running && (
+        <SiteMapPanel
+          url={frame?.url ?? status.url}
+          takeover={takeover}
+          onTakeover={async (on) => {
+            await api('/browser/takeover', 'POST', { on });
+            await refresh();
+          }}
+          onError={setError}
+        />
+      )}
       {/pocketoption\.com/.test(frame?.url ?? status?.url ?? '') && (
         <PairsDashboard onError={setError} />
       )}

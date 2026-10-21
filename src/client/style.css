@@ -4080,8 +4080,17 @@ h3 {
 .browser-view img {
   display: block;
   width: 100%;
+  max-width: none;
   height: auto;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.browser-draw {
+  position: absolute;
+  border: 2px dashed #ff5a36;
+  background: rgba(255, 90, 54, 0.12);
+  pointer-events: none;
 }
 .browser-badge {
   position: absolute;
@@ -4244,6 +4253,59 @@ h3 {
   cursor: pointer;
   padding: 0 4px;
 }
+.browser-type {
+  display: flex;
+  gap: 6px;
+}
+.browser-type input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 16px; /* 16px stops phones zooming in on focus. */
+}
+.site-map {
+  font-size: 13px;
+}
+.site-map-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 2px;
+}
+.site-map-body form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.site-map-body input {
+  min-width: 140px;
+  font-size: 16px;
+}
+.site-routine {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.site-routine-head,
+.site-routine-fill {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.site-routine-head strong {
+  margin-right: auto;
+}
+.site-record ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
 .browser-teach-after {
   display: inline-flex;
   align-items: center;
@@ -4308,4 +4370,9 @@ h3 {
 .pairs-candles {
   font-family: ui-monospace, monospace;
   letter-spacing: 1px;
+}
+
+.pairs-mode.on {
+  font-weight: 600;
+  color: #1a8f4a;
 }

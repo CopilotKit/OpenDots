@@ -58,6 +58,9 @@ export class Platform {
     );
     this.browser = new LiveBrowser(undefined, undefined, config.mcp);
     config.browserTargets = () => this.browser.targetNames();
+    config.siteMaps = () => this.browser.siteMaps();
+    // Owner messages sent to a running task reach it after its current step.
+    config.steering = this.steering;
     config.browserText = () => this.browser.pageText();
     config.tradingSession = () => this.browser.tradingSession();
     // The local tools halve the stake limit once the balance is below this.

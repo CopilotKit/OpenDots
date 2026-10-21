@@ -9,6 +9,7 @@ import { completion } from './fixtures/model-stream.js';
 import { Store } from '../src/server/store.js';
 import { WorkspaceStore } from '../src/server/workspace.js';
 import type { PlatformConfig } from '../src/server/platform-config.js';
+import { SteeringInbox } from '../src/server/steering.js';
 
 const databases: Array<{ close(): void }> = [];
 afterEach(() => {
@@ -16,7 +17,7 @@ afterEach(() => {
   databases.splice(0).forEach((db) => db.close());
 });
 
-function fixture(mode: 'unattended' | 'confirm') {
+function fixture(mode: 'unattended' | 'confirm', steering?: SteeringInbox) {
   const store = new Store(':memory:');
   const workspace = new WorkspaceStore(':memory:', 'owner');
   databases.push(store, workspace);
@@ -44,6 +45,7 @@ function fixture(mode: 'unattended' | 'confirm') {
       voiceName: 'marin',
       slackUsers: [],
       mcp,
+      steering,
     } as unknown as PlatformConfig,
     dot.id,
   );
@@ -536,4 +538,38 @@ it('tells the model the real page balance every turn (the 13:58 run)', async () 
   expect(lastUser(bodies[2])).toContain(
     'Balance on the page right now: $26.80. Use this, not earlier figures',
   );
+});
+
+it('reads an owner message sent mid-run after the current step, shows it, and keeps it with the goal', async () => {
+  const steering = new SteeringInbox();
+  const f = fixture('unattended', steering);
+  const bodies = script([
+    () => {
+      // The owner adds a to-do while the first page is being made.
+      steering.push('thread', 'Also create Trade 3.');
+      return page('Trade 1');
+    },
+    () => page('Trade 3'),
+    () => say('TASK COMPLETE: Trade 1 and Trade 3 saved.'),
+    () => say('TASK COMPLETE: the space lists Trade 1 and Trade 3.'),
+  ]);
+  const events = await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  expect(pages(f)).toEqual(['Trade 1', 'Trade 3']);
+  // The turn ended after the tool step; the next call carries the message.
+  expect(lastUser(bodies[1])).toBe('Also create Trade 3.');
+  // Later nudges restate it with the goal.
+  expect(lastUser(bodies[3])).toContain('owner updates since');
+  expect(lastUser(bodies[3])).toContain('Also create Trade 3.');
+  // It shows in the chat as the owner's message, inside one run.
+  expect(
+    events.some(
+      (e) =>
+        e.type === EventType.TEXT_MESSAGE_START &&
+        (e as { role?: string }).role === 'user',
+    ),
+  ).toBe(true);
+  expect(events.filter((e) => e.type === EventType.RUN_STARTED)).toHaveLength(
+    1,
+  );
+  expect(steering.has('thread')).toBe(false);
 });

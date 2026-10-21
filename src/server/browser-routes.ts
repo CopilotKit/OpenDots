@@ -15,6 +15,18 @@ const inputSchema = z.discriminatedUnion('type', [
     dx: z.number().min(-5000).max(5000),
     dy: z.number().min(-5000).max(5000),
   }),
+  z.object({
+    type: z.literal('drag'),
+    points: z
+      .array(
+        z.object({
+          x: z.number().min(0).max(20000),
+          y: z.number().min(0).max(20000),
+        }),
+      )
+      .min(2)
+      .max(60),
+  }),
   z.object({ type: z.literal('key'), key: z.string().min(1).max(40) }),
   z.object({ type: z.literal('text'), text: z.string().min(1).max(2000) }),
 ]);
@@ -148,6 +160,80 @@ export function browserRoutes(live: LiveBrowser) {
       return c.json({ error: failure(error) }, 409);
     }
   });
+  // Site map of the page on screen: routines to run or record, site rename.
+  app.get('/browser/sitemap', async (c) => {
+    try {
+      return c.json(await live.siteMap());
+    } catch (error) {
+      return c.json({ error: failure(error) }, 502);
+    }
+  });
+  app.post('/browser/routine/run', async (c) => {
+    const body = z
+      .object({
+        name: z.string().min(1).max(80),
+        values: z.record(z.string(), z.string().max(200)).default({}),
+      })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'Invalid routine run.' }, 400);
+    try {
+      return c.json(await live.runRoutine(body.data.name, body.data.values));
+    } catch (error) {
+      return c.json({ error: failure(error) }, 409);
+    }
+  });
+  app.post('/browser/routine/forget', async (c) => {
+    const body = z
+      .object({ name: z.string().min(1).max(80) })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'Invalid routine.' }, 400);
+    try {
+      return c.json(await live.forgetRoutine(body.data.name));
+    } catch (error) {
+      return c.json({ error: failure(error) }, 409);
+    }
+  });
+  app.post('/browser/routine/record', async (c) => {
+    const body = z
+      .object({
+        action: z.enum(['start', 'poll', 'finish', 'discard']),
+        name: z.string().max(80).default(''),
+        fillIns: z.record(z.string(), z.string().max(200)).default({}),
+        description: z.string().max(500).default(''),
+      })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!body.success)
+      return c.json({ error: 'Invalid recording request.' }, 400);
+    const { action, name, fillIns, description } = body.data;
+    if (action === 'start' && !name.trim())
+      return c.json({ error: 'Name the routine first.' }, 400);
+    try {
+      return c.json(await live.record(action, name, fillIns, description));
+    } catch (error) {
+      return c.json({ error: failure(error) }, 409);
+    }
+  });
+  app.post('/browser/site/rename', async (c) => {
+    const body = z
+      .object({
+        site: z.string().min(1).max(120),
+        newName: z.string().max(80).default(''),
+        startUrl: z.string().max(2000).default(''),
+      })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'Invalid site rename.' }, 400);
+    try {
+      return c.json(
+        await live.renameSite(
+          body.data.site,
+          body.data.newName,
+          body.data.startUrl,
+        ),
+      );
+    } catch (error) {
+      return c.json({ error: failure(error) }, 409);
+    }
+  });
   // Pairs dashboard under the live view: the latest scan, a new scan, a switch.
   app.get('/browser/pairs', (c) => c.json(live.pairScan()));
   app.post('/browser/pairs/scan', async (c) => {
@@ -167,6 +253,14 @@ export function browserRoutes(live: LiveBrowser) {
     } catch (error) {
       return c.json({ error: failure(error) }, 409);
     }
+  });
+  app.get('/browser/trading-mode', (c) => c.json(live.tradingMode()));
+  app.post('/browser/trading-mode', async (c) => {
+    const body = z
+      .object({ obviousOnly: z.boolean() })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'Give obviousOnly.' }, 400);
+    return c.json(live.setTradingMode(body.data.obviousOnly));
   });
   app.post('/browser/pairs/choose', async (c) => {
     const body = z

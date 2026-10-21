@@ -8,11 +8,12 @@ import uuid
 from pathlib import Path
 from PIL import Image
 from procedure_memory import ProcedureMemory, page_context
+from site_maps import SiteMaps
 
 
 DESCRIBE = r"""e => {
  const label = (e.getAttribute('aria-label') || e.innerText || e.getAttribute('title') || '').trim().replace(/\s+/g,' ').slice(0,160);
- const attrs = ['id','data-testid','data-test','aria-label'].flatMap(key => e.getAttribute(key) ? [[key,e.getAttribute(key)]] : []);
+ const attrs = ['id','data-testid','data-test','aria-label','name','placeholder'].flatMap(key => e.getAttribute(key) ? [[key,e.getAttribute(key)]] : []);
  const r=e.getBoundingClientRect();
  return {tag:e.tagName.toLowerCase(),role:e.getAttribute('role')||'',label,attrs,
  bounds:{x:r.x,y:r.y,width:r.width,height:r.height}};
@@ -177,7 +178,13 @@ class TargetStore(ProcedureMemory):
 
 
 def register_target_tools(tool, browser, save_image, ensure_control, store=None):
-    store = store or TargetStore(Path(__file__).parent.parent / 'data' / 'browser-targets.sqlite')
+    # Taught targets live in the Obsidian site maps (one folder per site); the old
+    # SQLite store is only read once to copy its targets over.
+    if store is None:
+        from site_maps import migrate_sqlite
+        store = SiteMaps()
+        data = Path(__file__).parent.parent / 'data'
+        migrate_sqlite(store, data / 'browser-targets.sqlite', [data / 'output', Path(__file__).parent / 'output'])
 
     async def reference_image(page, element, prefix, bounds=None):
         box = bounds if bounds is not None else await element.bounding_box()
@@ -193,18 +200,27 @@ def register_target_tools(tool, browser, save_image, ensure_control, store=None)
         return save_image(shot.crop((left*sx, top*sy, right*sx, bottom*sy)), prefix + uuid.uuid4().hex[:8])
 
     async def resolve(identity):
+        # This page's target first; the same name taught on another page of the
+        # site is used only if it is actually found here (layouts can differ).
         page = await browser.page()
-        record = store.get_target(identity, page.url)
-        if record.get('status') == 'needs_reteach':
-            raise LookupError('Mapping invalidated after a wrong-target capture. Teach and confirm the target again.')
-        if record['kind'] == 'region':
-            raise LookupError('This is a capture area, not a clickable target. Use browser_region_capture.')
-        handle = await page.evaluate_handle(RESOLVE, record['descriptor'])
-        element = handle.as_element()
-        if element is None:
+        found = store.candidates(identity, page.url)
+        here = [r for r in found if not r.get('elsewhere')]
+        if len(here) > 1:
+            raise LookupError('Saved target name is ambiguous on this page. Use a target ID from browser_targets.')
+        if not found:
+            store.get_target(identity, page.url)  # Raises the reason.
+        for record in here or found:
+            if record.get('status') == 'needs_reteach':
+                raise LookupError('Mapping invalidated after a wrong-target capture. Teach and confirm the target again.')
+            if record['kind'] == 'region':
+                raise LookupError('This is a capture area, not a clickable target. Use browser_region_capture.')
+            handle = await page.evaluate_handle(RESOLVE, record['descriptor'])
+            element = handle.as_element()
+            if element is not None:
+                store.touch_target(record, page.url)
+                return page, record, element
             await handle.dispose()
-            raise LookupError('Taught target is missing or ambiguous. Reopen its menu or teach it again; no coordinates were reused.')
-        return page, record, element
+        raise LookupError('Taught target is missing or ambiguous. Reopen its menu or teach it again; no coordinates were reused.')
 
     async def current_ref(element):
         # Require a visible, uncovered target. Do not scroll the outer page.
@@ -280,7 +296,7 @@ def register_target_tools(tool, browser, save_image, ensure_control, store=None)
                 await validate_region(page, state['region_context'])
                 crop = await reference_image(page, None, 'taught-region-', descriptor['bounds'])
                 await validate_region(page, state['region_context'])
-                record = store.save_target({'id': str(uuid.uuid4()), 'context': page_context(page.url), 'name': state['name'], 'kind': 'region', 'descriptor': descriptor, 'region_context': state['region_context'], 'reference_image': crop, 'status': 'capture_only'})
+                record = store.save_target({'id': str(uuid.uuid4()), 'url': page.url, 'context': page_context(page.url), 'name': state['name'], 'kind': 'region', 'descriptor': descriptor, 'region_context': state['region_context'], 'reference_image': crop, 'status': 'capture_only'})
                 await page.evaluate('(id)=>{window.__dotsTeach.saved=id}', record['id'])
                 return record
             if not descriptor['attrs'] and not descriptor['label']:
@@ -296,7 +312,7 @@ def register_target_tools(tool, browser, save_image, ensure_control, store=None)
                     crop = None
                 else:
                     crop = await reference_image(page, element, 'taught-target-')
-                record = store.save_target({'id': str(uuid.uuid4()), 'context': page_context(page.url), 'name': state['name'], 'kind': state['kind'], 'descriptor': descriptor, 'reference_image': crop, 'expected_text': state.get('expected', ''), 'status': 'taught_not_executed'})
+                record = store.save_target({'id': str(uuid.uuid4()), 'url': page.url, 'context': page_context(page.url), 'name': state['name'], 'kind': state['kind'], 'descriptor': descriptor, 'reference_image': crop, 'expected_text': state.get('expected', ''), 'status': 'taught_not_executed'})
                 await page.evaluate('(id)=>{window.__dotsTeach.saved=id}', record['id'])
                 return record
             finally:
@@ -324,7 +340,8 @@ def register_target_tools(tool, browser, save_image, ensure_control, store=None)
 
     @tool()
     async def browser_targets() -> dict:
-        """List owner-taught targets for the current page. Recall never clicks."""
+        """List owner-taught targets for the current page, then the site's others
+        (marked elsewhere: taught on another page, used only if found here). Recall never clicks."""
         async with browser.lock:
             return {'targets': store.list_targets((await browser.page()).url)}
 
@@ -433,18 +450,16 @@ def register_target_tools(tool, browser, save_image, ensure_control, store=None)
         # Caller owns browser.lock. Names are aliases, never executable instructions.
         normalize = lambda value: re.sub(r'[\W_]', '', value.casefold())
         key = normalize(name)
-        records = store.list_targets((await browser.page()).url)
-        matches = [r for r in records if key and normalize(r['name']) == key and r.get('status') != 'needs_reteach']
+        url = (await browser.page()).url
+        records = store.list_targets(url)
+        matches = store.candidates(name, url) if key else []
         if not matches:
             if any(key and normalize(r['name']) == key for r in records):
                 raise LookupError('This remembered mapping was invalidated. Re-teach it before use.')
             return None
-        if len(matches) != 1:
-            raise LookupError('Multiple saved targets have this name. Use an exact target ID or rename/re-teach the mapping.')
-        record = matches[0]
-        if record['kind'] == 'region':
-            raise LookupError('This remembered name is a capture area, not a button. Use browser_region_capture with target ID ' + record['id'])
-        _, _, element = await resolve(record['id'])
+        if all(r['kind'] == 'region' for r in matches):
+            raise LookupError('This remembered name is a capture area, not a button. Use browser_region_capture with target ID ' + matches[0]['id'])
+        _, record, element = await resolve(name)
         try:
             return {**await current_ref(element), 'target_id': record['id'], 'taught_name': record['name'], 'expected_text': record.get('expected_text', ''), 'source': 'owner_taught_memory'}
         finally:
@@ -452,4 +467,6 @@ def register_target_tools(tool, browser, save_image, ensure_control, store=None)
 
     from browser_mapping import register_mapping_tools
     register_mapping_tools(tool, browser, store, DESCRIBE, TEACH_STATUS, reference_image, current_ref)
+    from site_routines import register_routine_tools
+    register_routine_tools(tool, browser, store, resolve, current_ref, scan, ensure_control)
     return recall_name

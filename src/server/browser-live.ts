@@ -145,8 +145,15 @@ export class LiveBrowser {
       );
     for (const page of pages) {
       try {
-        if ((await page.evaluate(() => document.visibilityState)) === 'visible')
-          return page;
+        // A tab that never answers (it once froze the whole live view) is
+        // skipped after 2 s instead of waited on forever.
+        const state = await Promise.race([
+          page.evaluate(() => document.visibilityState),
+          new Promise<string>((resolve) =>
+            setTimeout(() => resolve('timeout'), 2000),
+          ),
+        ]);
+        if (state === 'visible') return page;
       } catch {
         // Page navigating or closed; try the next one.
       }
@@ -234,6 +241,22 @@ export class LiveBrowser {
       locked?: number | null;
     };
   }
+  /** The owner's trading switches, read by the local tools on every trade. */
+  tradingMode(
+    file = process.env.LOCALTOOLS_TRADING_MODE_FILE ??
+      'localtools/output/trading-mode.json',
+  ): { obviousOnly: boolean } {
+    return { obviousOnly: this.pairScan(file).obviousOnly === true };
+  }
+  setTradingMode(
+    obviousOnly: boolean,
+    file = process.env.LOCALTOOLS_TRADING_MODE_FILE ??
+      'localtools/output/trading-mode.json',
+  ) {
+    mkdirSync(dirname(resolve(file)), { recursive: true });
+    writeFileSync(resolve(file), JSON.stringify({ obviousOnly }));
+    return { obviousOnly };
+  }
   /** Rate the top pairs and leave the chart on the clearest trend. */
   scanPairs(count = 8, market: 'otc' | 'real' | 'same' = 'same') {
     return this.tool('browser_scan_pairs', {
@@ -264,6 +287,70 @@ export class LiveBrowser {
     return page
       .evaluate(() => document.body?.innerText ?? '')
       .catch(() => undefined);
+  }
+  /** The map of the site on screen (targets, routines), for the live view. */
+  async siteMap() {
+    if (!(await this.page())) return { site: null };
+    await this.followViewedTab().catch(() => undefined);
+    return this.tool('site_map', { here: true });
+  }
+  runRoutine(name: string, values: Record<string, string>) {
+    return this.tool('site_routine_run', { name, values });
+  }
+  forgetRoutine(name: string) {
+    return this.tool('site_routine_forget', { name });
+  }
+  renameSite(site: string, newName: string, startUrl: string) {
+    return this.tool('site_rename', {
+      site,
+      new_name: newName,
+      start_url: startUrl,
+    });
+  }
+  /** Owner recording of a routine: start, poll, finish (save) or discard. */
+  record(
+    action: 'start' | 'poll' | 'finish' | 'discard',
+    name = '',
+    fillIns: Record<string, string> = {},
+    description = '',
+  ) {
+    if (action === 'start')
+      return this.tool('site_routine_record_start', {
+        name,
+        fill_ins: fillIns,
+      });
+    if (action === 'poll') return this.tool('site_routine_record_poll');
+    return this.tool('site_routine_record_finish', {
+      description,
+      save: action === 'finish',
+    });
+  }
+  /** Mapped sites with their targets and routines, for a run's instructions. */
+  async siteMaps(): Promise<string> {
+    if (!this.mcp) return '';
+    const { sites } = (await this.tool('site_map')) as {
+      sites?: {
+        name: string;
+        start_url: string;
+        targets: string[];
+        shortcuts?: Record<string, string>;
+        routines: { name: string; params: string[]; description: string }[];
+      }[];
+    };
+    if (!sites?.length) return '';
+    const lines = sites.map((site) => {
+      const routines = site.routines
+        .map(
+          (r) =>
+            `${r.name}${r.params.length ? ` (${r.params.map((p) => `{${p}}`).join(', ')})` : ''}`,
+        )
+        .join('; ');
+      const keys = Object.entries(site.shortcuts ?? {})
+        .map(([name, combo]) => `${name} = "${combo}"`)
+        .join(', ');
+      return `${site.name} (${site.start_url}): taught ${site.targets.slice(0, 25).join(', ') || 'nothing yet'}${keys ? `; keyboard shortcuts (site_shortcut_press): ${keys}` : ''}${routines ? `; routines: ${routines}` : ''}`;
+    });
+    return `The owner's mapped sites (site maps kept as Obsidian notes): ${lines.join(' | ').slice(0, 2500)}. When asked to do something on one of these sites, use its map: site_routine_run for a matching routine (with its fill-ins), otherwise browser_open its start page and use the taught names with browser_target_find / browser_find. site_map(site) shows a site's full map and routine steps. After doing a new multi-step task there successfully, offer to save it with site_routine_save.`;
   }
   /** Names of taught targets on the current page, for a run's instructions. */
   async targetNames(): Promise<string[]> {
@@ -354,6 +441,7 @@ export class LiveBrowser {
     event:
       | { type: 'click'; x: number; y: number; button?: 'left' | 'right' }
       | { type: 'wheel'; dx: number; dy: number }
+      | { type: 'drag'; points: { x: number; y: number }[] }
       | { type: 'key'; key: string }
       | { type: 'text'; text: string },
   ) {
@@ -364,6 +452,14 @@ export class LiveBrowser {
       await page.mouse.click(event.x, event.y, { button: event.button });
     else if (event.type === 'wheel') {
       await page.mouse.wheel(event.dx, event.dy);
+    } else if (event.type === 'drag') {
+      // A whole press-move-release, sent at release so slow links (a phone on
+      // the tailnet) still give the page one smooth drag, e.g. a taught region.
+      const [first, ...rest] = event.points;
+      await page.mouse.move(first.x, first.y);
+      await page.mouse.down();
+      for (const p of rest) await page.mouse.move(p.x, p.y, { steps: 2 });
+      await page.mouse.up();
     } else if (event.type === 'key') await page.keyboard.press(event.key);
     else await page.keyboard.insertText(event.text);
   }

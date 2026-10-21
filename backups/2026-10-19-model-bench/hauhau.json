@@ -1,0 +1,276 @@
+{
+ "label": "hauhau-uncensored",
+ "model": "gpt-oss-20b-uncensored-hauhaucs-aggressive",
+ "results": [
+  {
+   "run": 0,
+   "task": "scan_real",
+   "kind": "tool",
+   "ok": true,
+   "secs": 1.1,
+   "tokens": 45,
+   "detail": "[('browser_scan_pairs', {'market': 'real', 'count': 6})]"
+  },
+  {
+   "run": 0,
+   "task": "sell_3m",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.9,
+   "tokens": 84,
+   "detail": "[('browser_place_trade', {'direction': 'sell', 'reason': 'RSI 74 & falling, MACD just crossed down', 'expiry': '3m'})]"
+  },
+  {
+   "run": 0,
+   "task": "site_read",
+   "kind": "tool",
+   "ok": true,
+   "secs": 1.7,
+   "tokens": 179,
+   "detail": "[('site_add', {'site': 'books', 'operation': 'search', 'trigger': 'https://books.test/s?q={q}', 'example': {'q': 'dune'}, 'example2': {'q': 'foundation'}})]"
+  },
+  {
+   "run": 0,
+   "task": "site_write",
+   "kind": "tool",
+   "ok": true,
+   "secs": 1.7,
+   "tokens": 175,
+   "detail": "[('site_add', {'site': 'notes', 'operation': 'create', 'trigger': 'https://notes.test/new?note={note}', 'example': {'note': 'hi'}, 'example2': {'note': 'bye'}, 'write': True})]"
+  },
+  {
+   "run": 0,
+   "task": "no_tool",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.4,
+   "tokens": 37,
+   "detail": "17\u202f\u00d7\u202f3 equals **51**."
+  },
+  {
+   "run": 0,
+   "task": "stake_rule",
+   "kind": "code",
+   "ok": true,
+   "secs": 5.2,
+   "tokens": 544,
+   "detail": "PASS"
+  },
+  {
+   "run": 0,
+   "task": "parse_close",
+   "kind": "code",
+   "ok": true,
+   "secs": 10.6,
+   "tokens": 1121,
+   "detail": "PASS"
+  },
+  {
+   "run": 0,
+   "task": "fix_streak",
+   "kind": "code",
+   "ok": true,
+   "secs": 6.3,
+   "tokens": 656,
+   "detail": "PASS"
+  },
+  {
+   "run": 0,
+   "task": "expiry_rule",
+   "kind": "code",
+   "ok": true,
+   "secs": 5.9,
+   "tokens": 626,
+   "detail": "PASS"
+  },
+  {
+   "run": 0,
+   "task": "rsi",
+   "kind": "code",
+   "ok": true,
+   "secs": 14.9,
+   "tokens": 1564,
+   "detail": "PASS"
+  },
+  {
+   "run": 1,
+   "task": "scan_real",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.5,
+   "tokens": 45,
+   "detail": "[('browser_scan_pairs', {'market': 'real', 'count': 6})]"
+  },
+  {
+   "run": 1,
+   "task": "sell_3m",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.8,
+   "tokens": 82,
+   "detail": "[('browser_place_trade', {'direction': 'sell', 'reason': 'RSI 74 falling, MACD just crossed down', 'expiry': '3m'})]"
+  },
+  {
+   "run": 1,
+   "task": "site_read",
+   "kind": "tool",
+   "ok": false,
+   "secs": 1.1,
+   "tokens": 110,
+   "detail": "[('site_add', {'site': 'books', 'operation': 'search', 'trigger': 'https://books.test/s?q={q}', 'example': {'q': 'dune'}, 'example2': {'q': 'foundation'}, 'write': True})]"
+  },
+  {
+   "run": 1,
+   "task": "site_write",
+   "kind": "tool",
+   "ok": true,
+   "secs": 2.6,
+   "tokens": 274,
+   "detail": "[('site_add', {'site': 'notes', 'operation': 'create', 'trigger': 'https://notes.test/new?note={param}', 'example': {'note': 'hi'}, 'example2': {'note': 'bye'}, 'write': True})]"
+  },
+  {
+   "run": 1,
+   "task": "no_tool",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.4,
+   "tokens": 36,
+   "detail": "17\u202f\u00d7\u202f3 = **51**"
+  },
+  {
+   "run": 1,
+   "task": "stake_rule",
+   "kind": "code",
+   "ok": true,
+   "secs": 4.3,
+   "tokens": 454,
+   "detail": "PASS"
+  },
+  {
+   "run": 1,
+   "task": "parse_close",
+   "kind": "code",
+   "ok": true,
+   "secs": 13.1,
+   "tokens": 1377,
+   "detail": "PASS"
+  },
+  {
+   "run": 1,
+   "task": "fix_streak",
+   "kind": "code",
+   "ok": true,
+   "secs": 3.5,
+   "tokens": 366,
+   "detail": "PASS"
+  },
+  {
+   "run": 1,
+   "task": "expiry_rule",
+   "kind": "code",
+   "ok": true,
+   "secs": 7.9,
+   "tokens": 837,
+   "detail": "PASS"
+  },
+  {
+   "run": 1,
+   "task": "rsi",
+   "kind": "code",
+   "ok": true,
+   "secs": 11.2,
+   "tokens": 1172,
+   "detail": "PASS"
+  },
+  {
+   "run": 2,
+   "task": "scan_real",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.5,
+   "tokens": 45,
+   "detail": "[('browser_scan_pairs', {'market': 'real', 'count': 6})]"
+  },
+  {
+   "run": 2,
+   "task": "sell_3m",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.8,
+   "tokens": 78,
+   "detail": "[('browser_place_trade', {'direction': 'sell', 'reason': 'RSI 74 falling, MACD just crossed down', 'expiry': '3m'})]"
+  },
+  {
+   "run": 2,
+   "task": "site_read",
+   "kind": "tool",
+   "ok": false,
+   "secs": 1.3,
+   "tokens": 135,
+   "detail": "[('site_add', {'site': 'books', 'operation': 'search', 'trigger': 'https://books.test/s?q={q}', 'example': {'q': 'dune'}, 'example2': {'q': 'foundation'}, 'write': True})]"
+  },
+  {
+   "run": 2,
+   "task": "site_write",
+   "kind": "tool",
+   "ok": true,
+   "secs": 3.8,
+   "tokens": 402,
+   "detail": "[('site_add', {'site': 'notes', 'operation': 'create', 'trigger': 'https://notes.test/new?note={note}', 'example': {'note': 'hi'}, 'example2': {'note': 'bye'}, 'write': True})]"
+  },
+  {
+   "run": 2,
+   "task": "no_tool",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.5,
+   "tokens": 43,
+   "detail": "17 \u00d7 3 = **51**"
+  },
+  {
+   "run": 2,
+   "task": "stake_rule",
+   "kind": "code",
+   "ok": true,
+   "secs": 4.8,
+   "tokens": 510,
+   "detail": "PASS"
+  },
+  {
+   "run": 2,
+   "task": "parse_close",
+   "kind": "code",
+   "ok": true,
+   "secs": 11.9,
+   "tokens": 1251,
+   "detail": "PASS"
+  },
+  {
+   "run": 2,
+   "task": "fix_streak",
+   "kind": "code",
+   "ok": true,
+   "secs": 3.4,
+   "tokens": 356,
+   "detail": "PASS"
+  },
+  {
+   "run": 2,
+   "task": "expiry_rule",
+   "kind": "code",
+   "ok": true,
+   "secs": 6.4,
+   "tokens": 663,
+   "detail": "PASS"
+  },
+  {
+   "run": 2,
+   "task": "rsi",
+   "kind": "code",
+   "ok": true,
+   "secs": 8.7,
+   "tokens": 938,
+   "detail": "PASS"
+  }
+ ]
+}

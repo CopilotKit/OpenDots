@@ -13,7 +13,8 @@ from unittest.mock import patch
 from playwright.async_api import async_playwright
 import browser as browser_module
 from browser import Browser
-from browser_targets import TargetStore, register_target_tools
+from browser_targets import register_target_tools
+from site_maps import SiteMaps
 from procedure_memory import ProcedureMemory
 from trading_feed import TradeJournal
 from test_place_trade_live import PAGE, Server
@@ -83,7 +84,7 @@ class MarketReadTests(unittest.IsolatedAsyncioTestCase):
                         return register
 
                     save = lambda image, name: str(Path(directory) / (name + '.png'))
-                    recall = register_target_tools(tool, runtime, save, lambda: None, TargetStore(Path(directory) / 't.sqlite'))
+                    recall = register_target_tools(tool, runtime, save, lambda: None, SiteMaps(Path(directory) / 'maps'))
                     with patch.object(browser_module, 'Browser', return_value=runtime), \
                             patch.object(browser_module, 'register_target_tools', return_value=recall), \
                             patch.object(browser_module, 'TradeJournal', return_value=TradeJournal(Path(directory) / 'journal.sqlite')), \
@@ -91,6 +92,11 @@ class MarketReadTests(unittest.IsolatedAsyncioTestCase):
                         browser_module.register(tool, lambda action: None, save, lambda *args: '')
                     # Keep test sessions out of the file the running OpenDots reads.
                     self.enterContext(patch.object(browser_module, 'TRADING_SESSION_FILE', Path(directory) / 'session.json'))
+                    self.enterContext(patch.object(browser_module, 'FLAT_STAKE', 0))  # These tests check the stake levels.
+                    self.enterContext(patch.object(browser_module, 'STAKE_SHARE', 0))
+                    self.enterContext(patch.object(browser_module, 'OBVIOUS_ONLY', False))  # ...and everyday trend trades.
+                    self.enterContext(patch.object(browser_module, 'TRADING_MODE_FILE', Path(directory) / 'mode.json'))
+                    self.enterContext(patch.object(browser_module, 'OTC_FADE', False))  # These trade OTC trends on purpose.
 
                     # The "site": answer each timeframe pick with candles (candles first, as a
                     # large frame, so the reader cannot rely on key order or frame size).
@@ -123,17 +129,22 @@ class MarketReadTests(unittest.IsolatedAsyncioTestCase):
                         await tools['browser_market_read']('soon')
 
                     # A 5-minute trade reads 1-minute candles: the bigger picture is up, so a
-                    # SELL is refused and a BUY goes through with the reading attached.
+                    # SELL is refused and a BUY goes through with the reading attached, cut to
+                    # 1 minute since real-pair trades run 1 minute unless the setup is top.
                     with self.assertRaisesRegex(ValueError, r'chart reads up right now.*a SELL goes against it'):
                         await tools['browser_place_trade']('sell', 5, 'SELL: testing the big-picture rule', expiry='5m')
                     self.assertEqual(await page.evaluate('window.trades || []'), [])
                     result = await tools['browser_place_trade']('buy', 5, 'BUY: M1 trend up', expiry='5m')
-                    self.assertEqual(await page.evaluate('window.trades'), [['Buy', result['placed'].split()[1][1:], '00:05:00']])
+                    self.assertEqual(await page.evaluate('window.trades'), [['Buy', result['placed'].split()[1][1:], '00:01:00']])
                     self.assertEqual((result['big_picture']['timeframe'], result['big_picture']['trend']), ('M1', 'up'))
                     self.assertEqual(await page.inner_text('.counter__icon'), 'S30')
                     # A panel left open (by the owner or an earlier step) is closed before trading.
                     await page.click('.items__link--chart-type')
                     self.assertEqual(await page.locator('.drop-down-modal-wrap').count(), 1)
+                    # Real pairs run 1 minute unless the setup is top confidence: 30m becomes 1m.
+                    result = await tools['browser_place_trade']('buy', 5, 'BUY: longer trade', expiry='30m')
+                    self.assertEqual((await page.evaluate('window.trades'))[-1][2], '00:01:00')
+                    self.assertIn('shortened from 30m to 1m', result['expiry_note'])
                     # Short trades keep the quick tick reading and leave the chart alone.
                     picks = len(await page.evaluate('window.picks'))
                     result = await tools['browser_place_trade']('buy', 5, 'BUY: short test trade')

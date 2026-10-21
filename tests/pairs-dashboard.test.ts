@@ -42,6 +42,18 @@ describe('pairs dashboard routes', () => {
       ['localtools', 'browser_choose_asset', { name: 'EUR/USD OTC' }],
     ]);
   });
+  it('switches obvious-turns-only mode on and off through a settings file', () => {
+    const live = new LiveBrowser();
+    const file = join(
+      mkdtempSync(join(tmpdir(), 'mode-')),
+      'trading-mode.json',
+    );
+    expect(live.tradingMode(file)).toEqual({ obviousOnly: false });
+    expect(live.setTradingMode(true, file)).toEqual({ obviousOnly: true });
+    expect(live.tradingMode(file)).toEqual({ obviousOnly: true });
+    live.setTradingMode(false, file);
+    expect(live.tradingMode(file)).toEqual({ obviousOnly: false });
+  });
   it('reads the latest saved scan, or nothing before the first', () => {
     const live = new LiveBrowser();
     const dir = mkdtempSync(join(tmpdir(), 'pairs-'));

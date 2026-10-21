@@ -46,7 +46,20 @@ export const protectedPaths = [
   'src/server/workspace.ts',
   'src/server/dev-workspace.ts',
   'src/server/platform-tools.ts',
-  'localtools/',
+  // The local tools are open for changes (trading, site maps, routines; owner,
+  // 2026-10-21) except what decides what runs without asking or what reaches
+  // files and commands. browser.py also holds the money guard: review it.
+  'localtools/order_guard.py',
+  'localtools/browser-policy.json',
+  'localtools/confirmation_policy.py',
+  'localtools/server.py',
+  'localtools/code-runner.py',
+  'localtools/file-access.py',
+  'localtools/.venv/',
+  'localtools/browser-profile/',
+  'localtools/output/',
+  'localtools/vendor/',
+  'localtools/jev-models/',
   'mcp.servers.json',
   '.env',
   '.env.example',
@@ -365,15 +378,28 @@ export class DevWorkspace {
       ['Type-check', ['typescript/bin/tsc', '--noEmit']],
       ['Lint', ['eslint/bin/eslint.js', 'src', 'tests']],
       ['Tests', ['vitest/vitest.mjs', 'run', '--reporter=dot']],
+      // The local tools' own tests (the live browser ones skip themselves).
+      ['Local tools tests', ['-m', 'unittest', 'discover', '-p', 'test_*.py']],
     ];
     const parts: string[] = [];
     let passed = true;
+    const python = join(
+      this.repo,
+      'localtools',
+      '.venv',
+      'Scripts',
+      'python.exe',
+    );
     for (const [name, args] of steps) {
-      const result = await run(
-        process.execPath,
-        [join(this.worktree, 'node_modules', args[0]), ...args.slice(1)],
-        this.worktree,
-      );
+      if (args[0] === '-m' && !existsSync(python)) continue;
+      const result =
+        args[0] === '-m'
+          ? await run(python, args, join(this.worktree, 'localtools'))
+          : await run(
+              process.execPath,
+              [join(this.worktree, 'node_modules', args[0]), ...args.slice(1)],
+              this.worktree,
+            );
       const tail = result.output
         // Strip ANSI colour codes from tool output.
         .replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g'), '')

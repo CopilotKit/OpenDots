@@ -8,7 +8,8 @@ from unittest.mock import patch
 from playwright.async_api import async_playwright
 import browser as browser_module
 from browser import Browser
-from browser_targets import TargetStore, register_target_tools
+from browser_targets import register_target_tools
+from site_maps import SiteMaps
 from procedure_memory import ProcedureMemory
 
 # The box caps entries at the balance, as Pocket Option does.
@@ -40,7 +41,7 @@ class VisualTypeTests(unittest.IsolatedAsyncioTestCase):
                         return register
 
                     save = lambda image, name: str(Path(directory) / (name + '.png'))
-                    recall = register_target_tools(tool, runtime, save, lambda: None, TargetStore(Path(directory) / 't.sqlite'))
+                    recall = register_target_tools(tool, runtime, save, lambda: None, SiteMaps(Path(directory) / 'maps'))
                     with patch.object(browser_module, 'Browser', return_value=runtime), \
                             patch.object(browser_module, 'register_target_tools', return_value=recall), \
                             patch.object(browser_module, 'ProcedureMemory', return_value=ProcedureMemory(Path(directory) / 'p.sqlite')):

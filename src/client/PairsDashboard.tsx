@@ -39,6 +39,13 @@ export function PairsDashboard({ onError }: { onError: (m: string) => void }) {
   const [busy, setBusy] = useState('');
   // A pair switched here, until a newer scan reports where the chart is.
   const [chosen, setChosen] = useState<{ pair: string; at: number }>();
+  // Obvious turns only (MACD cross after a run, RSI beyond 70/30) vs every clear trend.
+  const [obvious, setObvious] = useState<boolean>();
+  useEffect(() => {
+    api<{ obviousOnly: boolean }>('/browser/trading-mode')
+      .then((mode) => setObvious(mode.obviousOnly))
+      .catch(() => undefined);
+  }, []);
   const load = () =>
     api<PairScan>('/browser/pairs')
       .then(setScan)
@@ -77,6 +84,25 @@ export function PairsDashboard({ onError }: { onError: (m: string) => void }) {
               ? 'Not scanned yet.'
               : `Scanned ${age < 90 ? `${age}s` : `${Math.round(age / 60)}m`} ago${scan.market ? ` (${scan.market} pairs)` : ''}${current ? `; chart on ${current}` : ''}.`}
         </span>
+        <button
+          type="button"
+          className={`text-button pairs-mode ${obvious ? 'on' : ''}`}
+          title="On: trade only obvious turns (MACD cross after a run, RSI beyond 70/30) and keep scanning for them. Off: trade every clear trend."
+          disabled={obvious === undefined}
+          aria-pressed={!!obvious}
+          onClick={() =>
+            void act('Switching mode…', async () => {
+              const mode = await api<{ obviousOnly: boolean }>(
+                '/browser/trading-mode',
+                'POST',
+                { obviousOnly: !obvious },
+              );
+              setObvious(mode.obviousOnly);
+            })
+          }
+        >
+          Obvious turns only: {obvious ? 'On' : 'Off'}
+        </button>
         {(['otc', 'real'] as const).map((market) => (
           <button
             key={market}

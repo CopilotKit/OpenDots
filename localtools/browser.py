@@ -18,6 +18,7 @@ import base64
 import json
 from browser_geometry import viewport_point
 from procedure_memory import ProcedureMemory, page_context
+import order_guard
 from jev import select_target, check_image
 from browser_targets import register_target_tools
 from trading_feed import PriceFeed, TradeJournal, asset_key, candle_period, pair_trend, read_bars, read_chart
@@ -61,8 +62,13 @@ ASSET_JS = r"""({mode, name, other}) => {
  };
  // A row or tab showing this asset with its payout, e.g. "GBP/JPY OTC +92%".
  const payout = e => { for (let x = e, i = 0; x && i < 4; x = x.parentElement, i++) { const t = text(x); if (/%/.test(t) && same(t)) return true; } return false; };
+ // Pocket Option's own asset button; a favorites bar of pair tabs above it (on
+ // the live account) is not the opener: clicking a tab switches pairs, no list.
+ const favorite = e => !!e.closest('[class*="favorites"]');
  const opener = () => {
-   const found = all.filter(e => visible(e) && !inList(e) && asset(text(e)) && !Array.from(e.children).some(c => text(c) === text(e)));
+   const own = [...document.querySelectorAll('.current-symbol, .pair-number-wrap')].find(e => visible(e) && asset(text(e)));
+   if (own) return own;
+   const found = all.filter(e => visible(e) && !inList(e) && !favorite(e) && asset(text(e)) && !Array.from(e.children).some(c => text(c) === text(e)));
    found.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
    return found[0];
  };
@@ -91,6 +97,46 @@ ASSET_JS = r"""({mode, name, other}) => {
 
 # The latest pair scan, for the pairs dashboard under the browser in OpenDots.
 PAIR_SCAN_FILE = Path(__file__).parent / 'output' / 'pair-scan.json'
+# Owner, 2026-10-19: one stake for every trade while the confidence tiers are
+# measured on real results; 0 goes back to the confidence/profit levels.
+FLAT_STAKE = 0
+# Owner, 2026-10-19: stake a share of the balance so it compounds (a flat $5 kept
+# the balance between $90 and $130): 5% normally, 18% on a real pair right after
+# a win there (61% of those won; Kelly for that edge is about 18%). Whole dollars.
+STAKE_SHARE = 0.05
+WIN_STAKE_SHARE = 0.18
+# Owner, 2026-10-19: on real pairs, after 2 losses in a row, stake the 3rd trade
+# (if the chart backs it) to win both back plus a normal win.
+RECOVERY = False  # Off (owner, 2026-10-19): after a loss the next trade won only 46%.
+# Real pairs: double after a win on a pair, leave it for STREAK_WINDOW seconds after a loss.
+STREAK_RULE = True
+STREAK_WINDOW = 300
+# Owner, 2026-10-19: trade only obvious turns (a MACD cross after a run one way,
+# with RSI beyond 70/30; a Bollinger band turn makes it a top setup) and keep
+# scanning pairs until one shows. Off for now: the flat-$5 real-pair run it would
+# have replaced was winning (31-15 on AUD/JPY, 1m, 2026-10-19). True turns it on.
+OBVIOUS_ONLY = False
+OBVIOUS = ('reversal', 'top', 'fade')
+# Owner, 2026-10-19: on OTC trade only fades of stretched candles (backtest: 55-66%
+# against the move, 45% with it); real pairs keep their trend trading.
+OTC_FADE = True
+FADE_EXPIRIES = (8, 11)  # Fade trades take these in turn.
+FADE_FRESH = 3.5  # Seconds after its candle closed that a fade is still tradeable.
+WATCH_SECONDS = 90  # Obvious-only scans keep watching this long before reporting none.
+AUTO_TRADE = True  # Obvious-only scans place the trade on what they find.
+DUP_SECONDS = 30  # One trade per signal: no repeat on the same pair and direction this soon.
+MIN_PAYOUT, PAYOUT_WINDOW = 80, 4  # Trade only well-paying pairs; scans keep to the top 4 live points.
+RESCAN_SECONDS = 300  # A fresh scan at least this often, so other pairs' turns are seen.
+# The owner's switch on the pairs board ({"obviousOnly": true}); read on every
+# trade and scan, so flipping it needs no restart.
+TRADING_MODE_FILE = Path(__file__).parent / 'output' / 'trading-mode.json'
+
+
+def obvious_only() -> bool:
+    try:
+        return bool(json.loads(TRADING_MODE_FILE.read_text(encoding='utf-8')).get('obviousOnly'))
+    except (OSError, ValueError, AttributeError):
+        return OBVIOUS_ONLY
 # The trading session's start, peak and locked profit, read by OpenDots to end a
 # run at the trailing stop.
 TRADING_SESSION_FILE = Path(__file__).parent / 'output' / 'trading-session.json'
@@ -567,7 +613,9 @@ def register(
     # code finds the controls by the page's fixed structure (a.btn-call/btn-put,
     # the Amount box, the Time box), so no element number is ever picked by the
     # model. The live price feed of the trading tab gives the chart reading.
-    trade_feed = {'feed': PriceFeed(), 'page': None}
+    # Every tick is saved for shadow tests (shadow_report.py); never test fixtures.
+    ticks_file = None if os.environ.get('LOCALTOOLS_LIVE_TEST') else Path(__file__).parent.parent / 'data' / 'price-ticks.sqlite'
+    trade_feed = {'feed': PriceFeed(record=ticks_file), 'page': None}
     # Every placed trade with its setup, settled won/lost from the feed after
     # its expiry, so the Dot sees what has actually been working.
     journal = TradeJournal(Path(__file__).parent.parent / 'data' / 'trade-journal.sqlite')
@@ -594,6 +642,12 @@ def register(
 
     # Ready-made times in the Time panel, as on the site (S3 S15 S30 / M1 M3 M5 / M30 H1 H4).
     EXPIRY_PRESETS = {3: 'S3', 15: 'S15', 30: 'S30', 60: 'M1', 180: 'M3', 300: 'M5', 1800: 'M30', 3600: 'H1', 14400: 'H4'}
+    REAL_EXPIRIES = (60, 180, 300, 1800, 3600, 14400)  # The panel's times for real pairs.
+    # The Payout box beside the stake, e.g. "Payout +92%".
+    PAYOUT_JS = r"""() => { const m = (document.body.innerText || '').match(/Payout\s*\+?\s*(\d+)\s*%/);
+        return m ? +m[1] : null; }"""
+    REAL_MAX_EXPIRY = 60  # Real pairs: 1 minute; longer only for a top setup (5m trades lost, owner 2026-10-20).
+    MAX_OPEN, REAL_OPEN_SHARE = 3, 0.15  # Open at once, and real-pair stakes out as a share of the account.
     OTC_MIN_EXPIRY, OTC_MAX_EXPIRY = 5, 30  # Seconds; longer OTC trades get faked out too often.
     # Trailing stop: once the peak profit reaches 20% of the start, half of it is locked.
     LOCK_SHARE, TRAIL_START = 0.5, 0.2
@@ -665,6 +719,15 @@ def register(
             stake = min(stake, round(balance * 0.2, 2), round(balance - locked, 2) if locked else stake)
             return max(stake, 0.0), (f'top setup (MACD cross, RSI beyond 70/30, Bollinger band curving over): '
                                      f'${stake:g}, outside the usual levels')
+        if STAKE_SHARE and not FLAT_STAKE:
+            stake = max(1.0, float(int(balance * STAKE_SHARE)))
+            return stake, f'{STAKE_SHARE:.0%} of the ${balance:g} balance: ${stake:g} ({confidence} confidence)'
+        if FLAT_STAKE:
+            # Evaluation phase: the same stake on every trade, so profit shows each
+            # tier's real win rate (with stakes tied to confidence, the bigger stakes
+            # went to the "good" trades that lost) and the money moves.
+            stake = min(FLAT_STAKE, round(balance * 0.2, 2))
+            return stake, f'flat ${stake:g} evaluation stake ({confidence} confidence)'
         wins, total = journal.win_rate(10)
         proven = total >= 5 and wins >= 0.6 * total
         level = min({'normal': 0, 'good': 1, 'very high': 2}.get(confidence, 0) + (1 if proven else 0), 2)
@@ -714,7 +777,7 @@ def register(
         shown = await page.evaluate(ASSET_JS, {'mode': 'opener', 'name': ''})
         await page.evaluate("() => document.querySelectorAll('[data-dots-asset]').forEach(e => e.removeAttribute('data-dots-asset'))")
         chart = read_chart(trade_feed['feed'], asset_key(shown or ''), period, 8)
-        keep = ('asset', 'recent_candles', 'rsi14', 'rsi_zone', 'macd_state', 'ema9_slope', 'bollinger', 'signal', 'note')
+        keep = ('asset', 'recent_candles', 'rsi14', 'rsi_zone', 'macd_state', 'ema9_slope', 'bollinger', 'signal', 'fade', 'note')
         return {'pair': shown or chart.get('asset'), **{k: chart[k] for k in keep if k in chart}}
 
     # Longer candles come from the chart itself: picking a timeframe makes the
@@ -904,6 +967,13 @@ def register(
             pair = await page.evaluate(ASSET_JS, {'mode': 'opener', 'name': ''}) or ''
             real = not pair.upper().endswith('OTC')
             scan = trade_feed.get('scan')
+            now = trade_feed['feed'].now()
+            if scan and RESCAN_SECONDS and now - (scan.get('at') or now) > RESCAN_SECONDS:
+                # Without this a run stayed on one pair for 11 minutes (no losses in a row to
+                # force a scan) while obvious turns elsewhere went unseen.
+                minutes = int((now - scan['at']) // 60)
+                raise ValueError(f'No trade was placed: the last scan was {minutes} minutes ago. Run browser_scan_pairs to look '
+                                 f'across the pairs again (an obvious turn elsewhere is traded at once), then carry on.')
             if scan:
                 if real != (scan['market'] == 'real'):
                     raise ValueError(
@@ -913,11 +983,30 @@ def register(
                     raise ValueError(
                         f"No trade was placed: {pair or 'this pair'} was not in the latest scan. Trade a scanned pair "
                         f"({', '.join(scan['pairs'][:8])}) or run browser_scan_pairs again.")
+            payout = await page.evaluate(PAYOUT_JS)
+            if payout and payout < MIN_PAYOUT:
+                raise ValueError(
+                    f'No trade was placed: {pair} pays {payout}%, under the {MIN_PAYOUT}% minimum (at {payout}% you must win '
+                    f'{100 / (1 + payout / 100):.0f}% of trades just to break even). Run browser_scan_pairs to move to a top-payout pair.')
             seconds = asked or (60 if real else 11)
             expiry_note = None
+            if real and seconds > 60 and obvious_only():
+                # An obvious turn plays out in about a minute and shows on 15-second
+                # candles; 5-minute trades read 1-minute candles, where turns took many
+                # minutes to form (and the scan and this check read different candles).
+                expiry_note = f'Expiry set to 1m from {seconds // 60}m: obvious turns are traded over 1 minute.'
+                seconds = 60
             if real and seconds < 60:
                 expiry_note = f'Expiry lengthened from {seconds}s to 1m: real (non-OTC) pairs trade for 1 minute or more.'
                 seconds = 60
+            elif real and seconds == 660:
+                # "11m" is the OTC default (11s) carried over as minutes; real pairs default to 1m.
+                expiry_note = 'Expiry set to 1m: 11 is the OTC default in seconds; real pairs default to 1 minute.'
+                seconds = 60
+            elif real and seconds not in REAL_EXPIRIES:
+                snapped = max(e for e in REAL_EXPIRIES if e <= seconds)
+                expiry_note = f'Expiry set to {snapped // 60}m: real pairs use the panel times (1m, 3m, 5m, 30m, 1h, 4h).'
+                seconds = snapped
             if not real and seconds < OTC_MIN_EXPIRY:
                 expiry_note = f'Expiry lengthened from {seconds}s to the OTC minimum of {OTC_MIN_EXPIRY}s.'
                 seconds = OTC_MIN_EXPIRY
@@ -936,6 +1025,15 @@ def register(
                     wider = await big_picture(page, period)
                     if wider.get('candles'):
                         reading = wider
+                if not real and OTC_FADE:
+                    fade = reading.get('fade')
+                    fresh = fade and trade_feed['feed'].now() - fade['closed'] <= FADE_FRESH
+                    if not fresh or (fade['direction'] == 'up') != (side == 'buy'):
+                        raise ValueError(
+                            f"No trade was placed: OTC trades only fade a stretched 5 s candle (a close beyond a Bollinger band "
+                            f"with RSI beyond 70/30, against the move), and there is no fresh one for a {side.upper()} on "
+                            f"{reading.get('pair') or 'this pair'}. Run browser_scan_pairs: it watches the pairs and trades fades itself.")
+                    return reading, wider, 'fade'  # Against the move on purpose: no trend rule.
                 trend = pair_trend(reading)
                 if trend['direction'] in ('up', 'down') and (trend['direction'] == 'up') != (side == 'buy'):
                     if trend.get('why'):
@@ -946,9 +1044,28 @@ def register(
                         f"No trade was placed: the chart reads {trend['direction']} right now (RSI {reading.get('rsi14')}, "
                         f"MACD {reading.get('macd_state')}, EMA {reading.get('ema9_slope')}), so a {side.upper()} goes against it. "
                         f"Trade with the trend ({'BUY' if trend['direction'] == 'up' else 'SELL'}) or wait for the next reading.")
+                if obvious_only() and (reading.get('signal') or {}).get('kind') not in OBVIOUS:
+                    # Owner, 2026-10-19: everyday trends traded at a coin flip (83 won, 84 lost);
+                    # take only the obvious turns and keep shuffling pairs for the next one.
+                    raise ValueError(
+                        f"No trade was placed: no obvious setup on {reading.get('pair') or 'this pair'} right now "
+                        f"(RSI {reading.get('rsi14')}, MACD {reading.get('macd_state')}). Only obvious turns trade: a MACD "
+                        f"cross after a run one way with RSI beyond 70/30. Run browser_scan_pairs to find one.")
                 return reading, wider, confidence_of(side, trend)
 
             before_reading, wider, confidence = await read_chart_now()
+            if confidence == 'fade':
+                # Owner, 2026-10-19: alternate 8 s and 11 s to compare them live (8 s led the
+                # backtest at 56%, 11 s was next at 54%); the journal records which was used.
+                fade_seconds = FADE_EXPIRIES[trade_feed.get('fades', 0) % len(FADE_EXPIRIES)]
+                if seconds != fade_seconds:
+                    expiry_note = f'Expiry set to {fade_seconds}s (fades alternate {" / ".join(f"{e}s" for e in FADE_EXPIRIES)}).'
+                seconds = fade_seconds
+                before_reading['fade']['expiry'] = fade_seconds
+            obvious_turn = confidence == 'fade' or (before_reading.get('signal') or {}).get('kind') in OBVIOUS
+            if DUP_SECONDS and (obvious_only() or obvious_turn) and journal.entered_since(pair, side, feed.now() - DUP_SECONDS):
+                raise ValueError(f'No trade was placed: this {side.upper()} on {pair} was already traded in the last '
+                                 f'{DUP_SECONDS} seconds (one trade per signal). Run browser_scan_pairs for the next one.')
             balance = (await page.evaluate(STAKE_JS)).get('balance')
             if balance and amount is not None and amount >= balance * 0.99:
                 raise ValueError(
@@ -958,7 +1075,34 @@ def register(
             # trade's result first, so each decision follows the last outcome and
             # open stakes can't pile up. An extra trade at once must come from profit.
             running = journal.open_trades(feed.now())
-            if running and (confidence != 'very high' or len(running) >= 3 or stake_limit(balance, running)[0] < 1):
+
+            def may_add(running) -> bool:
+                """Another trade while some are open. OTC (11-second trades free up fast):
+                only on very high confidence backed by profit. Real pairs (1 minute
+                trades, which would otherwise block every chance meanwhile): on good
+                confidence or better, with the open stakes kept under 15% of the account,
+                and never on a pair that already has one open: same-pair trades on one
+                read win or lose together (owner, 2026-10-20)."""
+                if len(running) >= MAX_OPEN:
+                    return False
+                same_pair = any(asset_key(t.get('asset') or '') == asset_key(pair) for t in running)
+                if confidence == 'fade':  # 30 s fades would otherwise block most others.
+                    return not same_pair
+                if real:
+                    if same_pair:
+                        return False
+                    out = sum(t['stake'] for t in running)
+                    planned = stake_plan(balance, [], confidence)[0]
+                    return (confidence in ('good', 'very high', 'top') and planned >= 1
+                            and out + planned <= REAL_OPEN_SHARE * ((balance or 0) + out))
+                return confidence == 'very high' and stake_limit(balance, running)[0] >= 1
+
+            if running and not may_add(running) and (obvious_only() or obvious_turn):
+                # A turn is stale by the time an open trade closes: skip it, do not wait.
+                raise ValueError(f"No trade was placed: your open {running[0]['direction'].upper()} "
+                                 f"${running[0]['stake']:g} trade is still running, so this setup is skipped. "
+                                 f'Run browser_scan_pairs for the next one.')
+            if running and not may_add(running):
                 # Wait here (up to 5 minutes) rather than returning every few seconds:
                 # each early return costs a model turn, and a small model left with
                 # "still waiting" tends to reply "trade placed" without calling anything.
@@ -987,13 +1131,53 @@ def register(
                 trade_feed['reported'] = previous
             # Stakes come from profit: the starting funds only ever back one small
             # base stake at a time; once trades win, the profit is the wallet.
-            stake, rule = stake_plan(balance, running, confidence)
+            # A real-pair trade beside open ones is sized as a trade of its own.
+            stake, rule = stake_plan(balance, [] if real and running else running, confidence)
+            if real and seconds > REAL_MAX_EXPIRY and confidence != 'top':
+                # Longer real-pair trades only on a near-certain read (owner, 2026-10-19).
+                expiry_note = (f'Expiry shortened from {seconds // 60}m to {REAL_MAX_EXPIRY // 60}m: real-pair trades run '
+                               f'1 minute unless the setup is top confidence.')
+                seconds = REAL_MAX_EXPIRY
             if confidence == 'top' and not real and seconds != TOP_OTC_EXPIRY:
                 expiry_note = f'Expiry set to {TOP_OTC_EXPIRY}s for a top setup (they play out fast on OTC).'
                 seconds = TOP_OTC_EXPIRY
             # Losses in a row mean the trend is not holding: choose again from a fresh scan.
             since = max(trade_feed.get('session_at') or 0, (trade_feed.get('scan') or {}).get('at') or 0)
             streak = journal.losing_streak(since)
+            # Recovery (owner, 2026-10-19; real pairs only, where prices come from a real
+            # market): after 2 losses in a row, a 3rd trade the chart backs (good confidence
+            # or better) is staked to win back both plus a normal win. One step only: a 3rd
+            # loss forces a new scan below, and stakes go back to normal.
+            recovery = None
+            if real and streak == 2 and confidence in ('good', 'very high', 'top') and RECOVERY:
+                lost = sum(abs(p) if p is not None else s for _, s, p in journal.last_results(2, since))
+                wanted = round((lost + (FLAT_STAKE or stake) * 0.92) / 0.92, 2)
+                recovery = min(wanted, round((balance or 0) * 0.2, 2))
+                if recovery > stake:
+                    rule = (f'recovery after 2 losses (${lost:g}): ${recovery:g} to win them back plus a normal win'
+                            + (' (held to 20% of the balance)' if recovery < wanted else ''))
+                    stake = recovery
+                else:
+                    recovery = None
+            # Streak rule on real pairs (owner, 2026-10-19): after a win on a pair the next
+            # trade there won 61.4% (114 trades), after a loss 46.2% (93). Double after a
+            # win (WIN_STAKE_SHARE of the balance once stakes are a share); after a loss,
+            # leave the pair for a while.
+            if real and STREAK_RULE:
+                last_here = journal.last_result_for(pair, feed.now() - STREAK_WINDOW)
+                if last_here == 'loss':
+                    raise ValueError(f'No trade was placed: the last trade on {pair} lost, and after a loss the next one on the '
+                                     f'same pair has won only 46%. Run browser_scan_pairs to move to another pair.')
+                if last_here == 'win':
+                    if WIN_STAKE_SHARE:
+                        raised = float(int((balance or 0) * WIN_STAKE_SHARE))
+                        how = f'{WIN_STAKE_SHARE:.0%} of the balance instead of the usual ${stake:g}'
+                    else:
+                        raised = min(round(stake * 2, 2), round((balance or 0) * 0.2, 2))
+                        how = f'double the usual ${stake:g}'
+                    if raised > stake:
+                        rule = f'after a win on {pair}: ${raised:g}, {how} (next trades after a win won 61%)'
+                        stake = raised
             if streak >= LOSS_STREAK_RESCAN:
                 raise ValueError(
                     f'No trade was placed: {streak} losses in a row since the last scan, so this trend is not holding. '
@@ -1033,9 +1217,13 @@ def register(
             key = asset_key(reading.get('pair') or '')
             last = trade_feed['feed'].last(key)
             setup = {**setup_of(before_reading, period, str(reason).strip()), 'confidence': confidence,
-                     'signal': (before_reading.get('signal') or {}).get('kind')}
+                     'signal': (f"fade {before_reading['fade']['strength']} {before_reading['fade']['expiry']}s" if confidence == 'fade'
+                                else (before_reading.get('signal') or {}).get('kind')), **({'recovery': True} if recovery else {}),
+                     'mode': 'obvious only' if obvious_only() else 'all trends'}
             if placed:
                 trade_feed['last_trade_at'] = time.time()  # Keeps the session (and its starting balance) going.
+                if confidence == 'fade':
+                    trade_feed['fades'] = trade_feed.get('fades', 0) + 1
             if placed and last:
                 journal.record(trade_feed['feed'].names.get(key, reading.get('pair') or key), side, stake, seconds, last[0], last[1], setup)
             after = (await page.evaluate(STAKE_JS)).get('balance')
@@ -1270,6 +1458,8 @@ def register(
         await money_guard(name, point=[spot["x"], spot["y"]])
         if MONEY.search(target or ''):
             raise money_refusal(target)
+        order_guard.check_click(page.url, name)
+        order_guard.check_click(page.url, target)
         intent_check(name, target)
         await max_wager_guard(name)
         if not is_link and RISKY.search(name):
@@ -1431,6 +1621,7 @@ def register(
         name = info["name"] or ""
         is_link = info["tag"] == "a" or info["role"] == "link"
         await money_guard(name, locator)
+        order_guard.check_click(url, name)
         intent_check(name, expected_text)
         await max_wager_guard(name)
         if not is_link and RISKY.search(name) and not auto_approved(url):
@@ -1465,6 +1656,9 @@ def register(
         )
         url = (await browser.page()).url
         await money_guard(info["name"] or "", locator)
+        if submit and not is_search and order_guard.owner_presses_orders(url):
+            raise PermissionError(f'Nothing was typed: pressing Enter in "{info["name"] or "this field"}" could submit an order on this site. '
+                                  'Type without submit; the owner places orders here.')
         if info["type"] == "password":
             await ask(f"Type into \"{info['name']}\" on {url}")
         elif auto_approved(url):
@@ -1504,6 +1698,9 @@ def register(
     @tool()
     async def browser_press(key: str) -> dict:
         """Press a key in the page, e.g. 'Enter', 'Escape', 'PageDown', 'Control+F'."""
+
+        if re.search(r'enter|return', key, re.I):
+            await order_guard.check_enter(await browser.page())
 
         async def work():
             await (await browser.page()).keyboard.press(key)
@@ -1618,14 +1815,15 @@ def register(
         non-OTC pairs, which need expiries of 1m or more, or "same" as the pair on
         screen), rates each
         by RSI, MACD and EMA agreement on candles sized for `expiry`, and ends on the
-        best one so you can trade it at once. Places no trade."""
+        best one so you can trade it at once. With obvious turns only switched on,
+        it watches the pairs and trades the first obvious turn itself (auto_trade)."""
         ensure_control()
         unit = re.fullmatch(r'\s*(\d+)\s*(s|sec|secs|seconds|m|min|mins|minutes|h|hr|hour|hours)?\s*', str(expiry or '11s').lower())
         seconds = int(unit.group(1)) * {'m': 60, 'h': 3600}.get((unit.group(2) or 's')[0], 1) if unit else 11
         kind = str(market or 'same').strip().lower()
         kind = 'real' if kind in ('real', 'non-otc', 'nonotc', 'non otc', 'forex', 'live') else 'otc' if kind == 'otc' else 'same'
         if kind == 'real':
-            seconds = max(seconds, 60)  # Real pairs trade from 1 minute.
+            seconds = 60 if seconds == 660 or obvious_only() else max(seconds, 60)  # Real pairs trade from 1 minute ("11m" is the OTC 11s habit); obvious turns over 1 minute.
         period = candle_period(seconds)
         count = min(max(int(count or 8), 2), 20)
 
@@ -1644,30 +1842,74 @@ def register(
                 seconds = OTC_MAX_EXPIRY
                 period = candle_period(seconds)
             candidates = [r for r in listed if r['name'].upper().endswith('OTC') == otc]
+            # A real pair that just lost is skipped for a while (streak rule).
+            benched = [r['name'] for r in candidates if not otc and STREAK_RULE
+                       and journal.last_result_for(r['name'], feed.now() - STREAK_WINDOW) == 'loss']
+            candidates = [r for r in candidates if r['name'] not in benched]
             candidates.sort(key=lambda r: -(r['payout'] or 0))  # Stable: the site's order breaks ties.
-            candidates = candidates[:count]
+            # Only the best payouts: the win rate needed to break even rises fast as the
+            # payout falls (52% at 92%, 53% at 88%, 62% at 62%). A clearer trend at a
+            # lower payout cost more than it gained.
+            # The window is measured from the best *live* payout: late in the day the only
+            # 92% real pairs were frozen (no prices at all) while live ones paid 56-78%.
+            pool = candidates[:count + 8]
+            live, dead, best_live = [], [], 0
             rows = []
+
+            def rate(item) -> dict:
+                key = asset_key(item['name'])
+                chart = read_chart(feed, key, period, 8)
+                fade = chart.get('fade') if otc and OTC_FADE else None
+                if fade and feed.now() - fade['closed'] <= FADE_FRESH:
+                    return {'pair': item['name'], 'payout': item['payout'], 'trend': fade['direction'], 'score': 50,
+                            'rsi14': chart.get('rsi14'), 'macd': (chart.get('macd_state') or '').split(',')[0] or None,
+                            'recent_candles': (chart.get('recent_candles') or '').split(' ')[0],
+                            'signal': fade['why'], 'setup': 'fade', 'expiry': fade['expiry']}
+                trend = pair_trend(chart)
+                return {'pair': item['name'], 'payout': item['payout'], 'trend': trend['direction'],
+                        'score': trend['score'], 'rsi14': chart.get('rsi14'),
+                        'macd': (chart.get('macd_state') or '').split(',')[0] or None,
+                        'ema9_slope': chart.get('ema9_slope'),
+                        'recent_candles': (chart.get('recent_candles') or '').split(' ')[0],
+                        **({'signal': trend['why']} if trend.get('why') else {}),
+                        **({'setup': trend['signal']} if trend.get('signal') else {})}
+
             try:
-                for item in candidates:
+                for item in pool:
+                    if len(live) >= count or (best_live and (item['payout'] or 0) < best_live - PAYOUT_WINDOW):
+                        break  # Enough pairs, or the rest pay well below the best live one.
                     key = asset_key(item['name'])
-                    if asset_key(original or '') != key or rows:
+                    if asset_key(original or '') != key or rows or dead:
                         await pick_pair(page, item['name'])
                         for _ in range(15):  # The pair's recent prices arrive about 1.5 s after the switch.
                             await asyncio.sleep(0.2)
                             if len(feed.ticks.get(key) or ()) >= 60:
                                 break
-                    chart = read_chart(feed, key, period, 8)
-                    trend = pair_trend(chart)
-                    rows.append({'pair': item['name'], 'payout': item['payout'], 'trend': trend['direction'],
-                                 'score': trend['score'], 'rsi14': chart.get('rsi14'),
-                                 'macd': (chart.get('macd_state') or '').split(',')[0] or None,
-                                 'ema9_slope': chart.get('ema9_slope'),
-                                 'recent_candles': (chart.get('recent_candles') or '').split(' ')[0],
-                                 **({'signal': trend['why']} if trend.get('why') else {})})
+                    last = feed.last(key)
+                    if not last or feed.now() - last[0] > 30:
+                        dead.append(item['name'])  # No live prices: nothing to read or trade.
+                        continue
+                    live.append(item)
+                    best_live = max(best_live, item['payout'] or 0)
+                    rows.append(rate(item))
+                    if rows[-1].get('setup') in OBVIOUS:
+                        break  # Stop here and trade it while it is fresh (a turn lasts seconds).
+                # Obvious-only: keep watching the pairs just read instead of handing an empty
+                # scan back to the model (each round trip cost ~15 s and a refused trade).
+                # Their prices keep streaming after a switch, so re-reading them needs no
+                # chart changes; the first obvious turn wins.
+                deadline = time.time() + WATCH_SECONDS
+                while ((obvious_only() or (otc and OTC_FADE)) and rows and not any(r.get('setup') in OBVIOUS for r in rows)
+                       and time.time() < deadline):
+                    await asyncio.sleep(1)
+                    rows = [rate(item) for item in live]
             finally:
-                clear = sorted((r for r in rows if r['trend'] in ('up', 'down')),
+                rows = [r for r in rows if (r['payout'] or 0) >= best_live - PAYOUT_WINDOW]
+                too_low = bool(live) and best_live < MIN_PAYOUT
+                clear = sorted((r for r in rows if r['trend'] in ('up', 'down')
+                                and (r.get('setup') == 'fade' or not (otc and OTC_FADE))),
                                key=lambda r: (-r['score'], -(r['payout'] or 0)))
-                best = clear[0] if clear else None
+                best = clear[0] if clear and not too_low else None
                 target = best['pair'] if best else original
                 now_on = await page.evaluate(ASSET_JS, {'mode': 'opener', 'name': ''})
                 if target and asset_key(now_on or '') != asset_key(target):
@@ -1678,12 +1920,24 @@ def register(
             # This scan's market and pairs are now the only ones browser_place_trade accepts.
             trade_feed['scan'] = {'market': 'OTC' if otc else 'real', 'pairs': [r['pair'] for r in rows], 'at': feed.now()}
             rules = ('OTC rules: short trades, 5s to 30s with 11s preferred (the default); news does not move OTC prices.' if otc else
-                     'Real-pair rules: expiry 1m or more (1m by default, up to 4h); check news and the economic calendar '
+                     'Real-pair rules: expiry 1m or more (1m; longer is cut to 1m unless the setup is top); check news and the economic calendar '
                      'for both currencies with search_web and name it in the reason; use browser_market_read for 5m and up.')
             result = {'market': 'OTC' if otc else 'real', 'rules': rules, 'now_on': now_on, 'best': best, 'candle_s': period, 'pairs': ranked,
-                      'note': (f"Now on {now_on}: its trend is {best['trend']}, so trade "
-                               f"{'BUY' if best['trend'] == 'up' else 'SELL'} here if it still holds."
-                               if best else f'No pair has a clear trend right now; back on {now_on}. Scan again shortly.')}
+                      'obvious': bool(best and best.get('setup') in OBVIOUS),
+                      'note': (f"Obvious setup on {now_on}: {best['signal']}. Trade "
+                               f"{'BUY' if best['trend'] == 'up' else 'SELL'} now." if best and best.get('setup') in OBVIOUS
+                               else f'No fade setup on these OTC pairs in the last {WATCH_SECONDS} seconds; scan again.' if otc and OTC_FADE
+                               else f'No obvious setup on these pairs in the last {WATCH_SECONDS} seconds; scan again.' if obvious_only()
+                               else f"Now on {now_on}: its trend is {best['trend']}, so trade "
+                                    f"{'BUY' if best['trend'] == 'up' else 'SELL'} here if it still holds."
+                               if best
+                               else (f"{'OTC' if otc else 'Real'} pairs pay at most {best_live}% right now, under the {MIN_PAYOUT}% minimum "
+                                     f"(break-even {100 / (1 + best_live / 100):.0f}% wins): nothing to trade. "
+                                     f"{'Switch to OTC pairs or wait.' if not otc else 'Wait and scan later.'}") if too_low
+                               else (f'None of these pairs has live prices right now ({", ".join(dead[:6])}): the market may be closed. '
+                                     f"{'Switch to OTC pairs or wait.' if not otc else 'Wait and scan later.'}") if not live
+                               else f'No pair has a clear trend right now; back on {now_on}. Scan again shortly.'),
+                      **({'no_prices': dead} if dead else {}), **({'skipped_after_a_loss': benched} if benched else {})}
             try:
                 PAIR_SCAN_FILE.parent.mkdir(parents=True, exist_ok=True)
                 PAIR_SCAN_FILE.write_text(json.dumps({'time': time.time(), 'expiry_s': seconds, **result}), encoding='utf-8')
@@ -1691,7 +1945,22 @@ def register(
                 pass  # The dashboard copy is a convenience; the result stands.
             return result
 
-        return await act(work, action={'kind': 'scan_pairs', 'target': {'count': count}}, page_view=False)
+        result = await act(work, action={'kind': 'scan_pairs', 'target': {'count': count}}, page_view=False)
+        if result.get('obvious') and AUTO_TRADE:  # In either mode (owner, 2026-10-19).
+            # Trade the find at once (owner, 2026-10-19): left to the model, 14 of 16
+            # setups were lost to rescans or to 45-90 s of deliberation.
+            best = result['best']
+            side = 'buy' if best['trend'] == 'up' else 'sell'
+            try:
+                traded = await browser_place_trade(side, reason=f"{side.upper()} (auto): {best.get('signal', '')}"[:300],
+                                                   expiry=f"{best['expiry']}s" if best.get('expiry') else '')
+                result['auto_trade'] = {k: traded[k] for k in ('placed', 'confirmed', 'balance_now', 'stake_rule', 'expiry_note',
+                                                                'previous_trade') if k in traded}
+                result['note'] = f"Traded it: {traded.get('placed')}. Run browser_scan_pairs again for the next turn."
+            except (ValueError, LookupError, PermissionError) as error:
+                result['auto_trade'] = {'refused': str(error)[:300]}
+                result['note'] = f'Found a turn on {result["now_on"]} but did not trade it: {str(error)[:200]} Scan again.'
+        return result
 
     @tool()
     async def browser_scroll(direction: str = "down", pages: int = 1) -> dict:

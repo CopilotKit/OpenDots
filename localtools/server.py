@@ -656,6 +656,10 @@ import browser  # noqa: E402  (registers the browser_* tools)
 
 browser.register(tool, confirm, _save, ask_vision)
 
+import site_mapper  # noqa: E402  (registers the site_* mapping tools)
+
+site_mapper.register(tool)
+
 
 if __name__ == "__main__":
     if "--http" in sys.argv:

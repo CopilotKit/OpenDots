@@ -7,7 +7,8 @@
       "LOCALTOOLS_VISION_MODEL": "gemma4-e4b:latest",
       "LOCALTOOLS_GROUNDING_MODEL": "qwen3-vl:8b-instruct",
       "LOCALTOOLS_JEV_URL": "http://127.0.0.1:8017",
-      "LOCALTOOLS_JEV_BACKEND": "visual-jev"
+      "LOCALTOOLS_JEV_BACKEND": "visual-jev",
+      "LOCALTOOLS_SITE_MAPS": "C:/Users/inter/Desktop/MainAINotes/Site Maps"
     }
   },
   "file_access": {
@@ -19,5 +20,14 @@
     "command": "localtools/.venv/Scripts/python.exe",
     "args": ["localtools/code-runner.py"],
     "env": {}
+  },
+  "api_anything": {
+    "enabled": true,
+    "command": "node",
+    "args": [
+      "C:/Users/inter/Desktop/AIVoice/api-anything/dist/cli.js",
+      "mcp",
+      "--allow-writes"
+    ]
   }
 }

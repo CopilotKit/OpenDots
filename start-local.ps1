@@ -36,8 +36,15 @@ try {
   )
   Write-Host "Starting OpenDots at $url (keep this window open; close it to stop OpenDots)..."
   # No auto-restart: editing files must never interrupt a running Dot.
-  npm run local
-  if ($LASTEXITCODE -ne 0) { throw "OpenDots stopped with exit code $LASTEXITCODE." }
+  # The output also goes to data\launcher.log (the run before is kept as
+  # launcher.previous.log), so a crash can be read after the window is closed.
+  # cmd merges stderr, so PowerShell does not turn its lines into errors.
+  # A log still held open by an old window must never stop OpenDots starting.
+  $log = 'data\launcher.log'
+  try { if (Test-Path $log) { Move-Item $log data\launcher.previous.log -Force -ErrorAction Stop } }
+  catch { $log = "data\launcher-$(Get-Date -Format yyyyMMdd-HHmmss).log" }
+  cmd /c "npm run local 2>&1" | Tee-Object -FilePath $log
+  if ($LASTEXITCODE -ne 0) { throw "OpenDots stopped with exit code $LASTEXITCODE. The output is in data\launcher.log." }
 } catch {
   Write-Host ''
   Write-Host "OpenDots could not start: $($_.Exception.Message)" -ForegroundColor Red

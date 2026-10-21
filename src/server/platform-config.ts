@@ -49,6 +49,8 @@ export interface PlatformConfig extends WebConfig {
   steering?: SteeringInbox;
   /** Names of the owner-taught buttons on the shared browser's current page. */
   browserTargets?: () => Promise<string[]>;
+  /** The owner's mapped sites (Obsidian site maps), as one line for a Dot. */
+  siteMaps?: () => Promise<string>;
   /** Visible text of the shared browser's current page. */
   browserText?: () => Promise<string | undefined>;
   /** The trading session's start, peak and locked (trailing-stop) balance. */

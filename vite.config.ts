@@ -6,6 +6,8 @@ export default defineConfig({
   server: {
     strictPort: true,
     host: '127.0.0.1',
+    // Reached from the owner's own devices through Tailscale (tailnet-only).
+    allowedHosts: ['.ts.net'],
     proxy: { '/api': 'http://127.0.0.1:4310' },
     watch: { ignored: ['**/localtools/**', '**/data/**'] },
   },

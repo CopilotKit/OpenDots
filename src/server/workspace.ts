@@ -148,7 +148,7 @@ export class WorkspaceStore {
           [space.id],
           null,
           false,
-          'gptoss-20b-coder:latest',
+          'gptoss-20b-uncensored:latest',
           ['developer', 'memory', 'self_improve'],
           true,
         );

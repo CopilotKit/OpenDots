@@ -15,7 +15,8 @@ from unittest.mock import patch
 from playwright.async_api import async_playwright
 import browser as browser_module
 from browser import Browser
-from browser_targets import TargetStore, register_target_tools
+from browser_targets import register_target_tools
+from site_maps import SiteMaps
 from procedure_memory import ProcedureMemory
 from trading_feed import TradeJournal
 import trading_feed
@@ -64,6 +65,7 @@ PAGE = '''<a class="current" href="javascript:void 0">EUR/USD OTC</a>
  <div class="presets"><a class="preset">S15</a> <a class="preset">S30</a> <a class="preset">M1</a></div></div>
 <div class="block block--bet-amount"><div class="block__title">Amount</div><div><input id="stake" value="5"
  oninput="if (+this.value > 119.16) this.value = '119.16'"></div></div>
+<div class="payout">Payout <span id="payout">+92%</span></div>
 <a class="btn btn-call" onclick="placed('Buy')">BUY</a> <a class="btn btn-put" onclick="placed('Sell')">SELL</a>
 <div id="log"></div>
 <script>
@@ -116,16 +118,33 @@ class PlaceTradeTests(unittest.IsolatedAsyncioTestCase):
                         return register
 
                     save = lambda image, name: str(Path(directory) / (name + '.png'))
-                    recall = register_target_tools(tool, runtime, save, lambda: None, TargetStore(Path(directory) / 't.sqlite'))
+                    recall = register_target_tools(tool, runtime, save, lambda: None, SiteMaps(Path(directory) / 'maps'))
                     with patch.object(browser_module, 'Browser', return_value=runtime), \
                             patch.object(browser_module, 'register_target_tools', return_value=recall), \
                             patch.object(browser_module, 'TradeJournal', return_value=TradeJournal(Path(directory) / 'journal.sqlite')),                             patch.object(browser_module, 'ProcedureMemory', return_value=ProcedureMemory(Path(directory) / 'p.sqlite')):
                         browser_module.register(tool, lambda action: None, save, lambda *args: '')
                     # Keep test sessions out of the file the running OpenDots reads.
                     self.enterContext(patch.object(browser_module, 'TRADING_SESSION_FILE', Path(directory) / 'session.json'))
+                    self.enterContext(patch.object(browser_module, 'FLAT_STAKE', 0))  # These tests check the stake levels.
+                    self.enterContext(patch.object(browser_module, 'STAKE_SHARE', 0))
+                    self.enterContext(patch.object(browser_module, 'OBVIOUS_ONLY', False))  # ...and everyday trend trades.
+                    self.enterContext(patch.object(browser_module, 'TRADING_MODE_FILE', Path(directory) / 'mode.json'))
+                    self.enterContext(patch.object(browser_module, 'OTC_FADE', False))  # These trade OTC trends on purpose.
                     trades = lambda: page.evaluate('window.trades || []')
                     set_balance = lambda value: page.evaluate(f"document.querySelector('.js-balance-demo').textContent = '{value}'")
 
+                    # A low-payout pair is refused: at 62% the break-even win rate is 62%.
+                    await page.evaluate("document.getElementById('payout').textContent = '+62%'")
+                    with self.assertRaisesRegex(ValueError, r'pays 62%, under the 80% minimum .*break even'):
+                        await tools['browser_place_trade']('buy', 5, 'BUY: low payout')
+                    await page.evaluate("document.getElementById('payout').textContent = '+92%'")
+                    # Obvious turns only, switched on from the pairs board (its settings file): an
+                    # everyday reading places nothing.
+                    (Path(directory) / 'mode.json').write_text('{"obviousOnly": true}', encoding='utf-8')
+                    with self.assertRaisesRegex(ValueError, 'no obvious setup .*Run browser_scan_pairs'):
+                        await tools['browser_place_trade']('buy', 5, 'BUY: just a trend')
+                    (Path(directory) / 'mode.json').write_text('{"obviousOnly": false}', encoding='utf-8')
+                    self.assertEqual(await trades(), [])
                     # Bad inputs and a max wager place nothing.
                     with self.assertRaisesRegex(ValueError, 'direction must be'):
                         await tools['browser_place_trade']('maybe', 10, 'test')
@@ -148,7 +167,7 @@ class PlaceTradeTests(unittest.IsolatedAsyncioTestCase):
                     self.assertLess(len(json.dumps(result)), 1200)
 
                     # With rising prices the chart reads "up": a SELL against it is refused, a BUY goes through.
-                    base = time.time() - 600
+                    base = time.time() // 5 * 5 - 600  # On 5-second candle boundaries, so the test reads the same every run.
                     await server.send([(base + i, 1.1 + (i ** 2) * 1e-7 - (0.00001 if i % 7 == 0 else 0)) for i in range(400)])  # Accelerating rise.
                     await asyncio.sleep(0.3)
                     with self.assertRaisesRegex(ValueError, r'chart reads up right now \(RSI .*a SELL goes against it'):
@@ -214,7 +233,12 @@ class PlaceTradeTests(unittest.IsolatedAsyncioTestCase):
                     # Very high confidence (RSI far above 50, all agreeing) and profit to cover it:
                     # a second trade goes in at once while the first is still open.
                     await set_balance('139.16')
+                    # This reading is an obvious turn (a reversal) already traded seconds ago: one trade per signal.
+                    with self.assertRaisesRegex(ValueError, 'already traded in the last 30 seconds'):
+                        await tools['browser_place_trade']('buy', 7, 'BUY: the same turn again')
                     started = time.time()
+                    # The rest of this test reuses that reading: treat each trade as a fresh signal.
+                    self.enterContext(patch.object(browser_module, 'DUP_SECONDS', 0))
                     result = await tools['browser_place_trade']('buy', 7, 'BUY: strong trend, second trade')
                     self.assertEqual(result['confidence'], 'very high', result.get('chart_now'))
                     self.assertIn('green over red', result['chart_now']['signal']['why'])
@@ -225,15 +249,32 @@ class PlaceTradeTests(unittest.IsolatedAsyncioTestCase):
                     self.assertNotIn('previous_trade', result)
                     # Without a stake code picks it the same way, with no note.
                     await set_balance('119.16')
-                    await asyncio.sleep(12)  # Let the open trades end (their 5-second grace passes too).
+                    await asyncio.sleep(17)  # Past the 11 s trade and its 5 s grace.  # Let the open trades end (their 5-second grace passes too).
                     result = await tools['browser_place_trade']('buy', reason='BUY: no stake given')
                     self.assertEqual((await trades())[-1], ['Buy', result['placed'].split()[1][1:], '00:00:11'])
                     self.assertNotIn('stake_note', result)
                     self.assertIn('early stake', result['stake_rule'])
 
+                    # The evaluation phase: a flat $5 on every trade, whatever the confidence.
+                    await asyncio.sleep(17)  # Past the 11 s trade and its 5 s grace.
+                    with patch.object(browser_module, 'FLAT_STAKE', 5.0):
+                        result = await tools['browser_place_trade']('buy', 1, 'BUY: flat stake')
+                    self.assertEqual((await trades())[-1][1], '5')
+                    self.assertIn('flat $5 evaluation stake', result['stake_rule'])
+
+                    # The owner's rule now: 5% of the balance, in whole dollars, so stakes grow with it.
+                    await asyncio.sleep(17)
+                    before = await page.evaluate("document.querySelector('.js-balance-demo').textContent")
+                    await set_balance('300')
+                    with patch.object(browser_module, 'STAKE_SHARE', 0.05):
+                        result = await tools['browser_place_trade']('buy', 1, 'BUY: share stake')
+                    await set_balance(before)
+                    self.assertEqual((await trades())[-1][1], '15')
+                    self.assertIn('5% of the $300 balance: $15', result['stake_rule'])
+
                     # A top setup (MACD cross + RSI beyond 30 + the band curving up, stood in for here)
                     # stakes $10 outside the usual levels and runs 5 seconds on OTC.
-                    await asyncio.sleep(12)
+                    await asyncio.sleep(17)  # Past the 11 s trade and its 5 s grace.
                     top = {'direction': 'up', 'kind': 'reversal', 'why': 'MACD crossed bullish (green over red), with RSI below 30'}
                     with patch.object(trading_feed, 'reversal_signal', lambda closes, **k: dict(top)),                             patch.object(trading_feed, 'band_turn', lambda bars, **k: {'direction': 'up', 'why': 'band curving up'}):
                         result = await tools['browser_place_trade']('buy', 3, 'BUY: top setup', expiry='11s')
@@ -266,7 +307,7 @@ class PlaceTradeTests(unittest.IsolatedAsyncioTestCase):
                         for i in range(3):
                             db.execute("INSERT INTO trades(id, asset, direction, stake, expiry_s, entry_ts, entry_price, setup, result, exit_price) "
                                        "VALUES (?, 'EURUSD_otc', 'buy', 1, 11, ?, 1.0, '{}', 'loss', 0.9)", (f'loss{i}', time.time() + 10000 + i))
-                    await asyncio.sleep(12)
+                    await asyncio.sleep(17)  # Past the 11 s trade and its 5 s grace.
                     with self.assertRaisesRegex(ValueError, '3 losses in a row since the last scan.*browser_scan_pairs'):
                         await tools['browser_place_trade']('buy', reason='BUY: after three losses')
                     with db:
@@ -275,13 +316,13 @@ class PlaceTradeTests(unittest.IsolatedAsyncioTestCase):
 
                     # The trailing stop is switched off for now: a peak of $300 locks nothing, stakes come
                     # from the whole profit, and falling back toward the start does not stop trading.
-                    await asyncio.sleep(12)
+                    await asyncio.sleep(17)  # Past the 11 s trade and its 5 s grace.
                     await set_balance('300')
                     result = await tools['browser_place_trade']('buy', reason='BUY: at the peak')
                     self.assertNotIn('locked', result['stake_rule'])
                     session = json.loads((Path(directory) / 'session.json').read_text(encoding='utf-8'))
                     self.assertEqual((session['start'], session['peak'], session['locked']), (119.16, 300.0, None))
-                    await asyncio.sleep(12)
+                    await asyncio.sleep(17)  # Past the 11 s trade and its 5 s grace.
                     await set_balance('209.9')
                     result = await tools['browser_place_trade']('buy', reason='BUY: after the drop')
                     self.assertTrue(result['confirmed'])  # No trailing stop: trading goes on.

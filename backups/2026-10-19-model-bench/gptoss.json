@@ -1,0 +1,276 @@
+{
+ "label": "gptoss-coder",
+ "model": "gptoss-20b-coder:latest",
+ "results": [
+  {
+   "run": 0,
+   "task": "scan_real",
+   "kind": "tool",
+   "ok": true,
+   "secs": 16.4,
+   "tokens": 45,
+   "detail": "[('browser_scan_pairs', {'market': 'real', 'count': 6})]"
+  },
+  {
+   "run": 0,
+   "task": "sell_3m",
+   "kind": "tool",
+   "ok": true,
+   "secs": 1.1,
+   "tokens": 144,
+   "detail": "[('browser_place_trade', {'direction': 'sell', 'reason': 'RSI 74 and falling, MACD just crossed down', 'expiry': '3m'})]"
+  },
+  {
+   "run": 0,
+   "task": "site_read",
+   "kind": "tool",
+   "ok": false,
+   "secs": 1.0,
+   "tokens": 129,
+   "detail": "[('site_add', {'site': 'books', 'operation': 'search', 'trigger': 'https://books.test/s?q={q}', 'example': {'q': 'dune'}, 'example2': {'q': 'foundation'}, 'write': True})]"
+  },
+  {
+   "run": 0,
+   "task": "site_write",
+   "kind": "tool",
+   "ok": true,
+   "secs": 1.9,
+   "tokens": 240,
+   "detail": "[('site_add', {'site': 'notes', 'operation': 'create', 'trigger': 'https://notes.test/new', 'example': {'note': 'hi'}, 'example2': {'note': 'bye'}, 'write': True})]"
+  },
+  {
+   "run": 0,
+   "task": "no_tool",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.5,
+   "tokens": 56,
+   "detail": "17\u202f\u00d7\u202f3\u202f=\u202f51."
+  },
+  {
+   "run": 0,
+   "task": "stake_rule",
+   "kind": "code",
+   "ok": false,
+   "secs": 46.1,
+   "tokens": 6000,
+   "detail": "Traceback (most recent call last):\n  File \"C:\\Users\\inter\\AppData\\Local\\Temp\\tmpogk5gie3\\sol.py\", line 4, in <module>\n    assert stake_for(100, False, True) == 5.0\n           ^^^^^^^^^\nNameError: name 'stake_for' is not defined"
+  },
+  {
+   "run": 0,
+   "task": "parse_close",
+   "kind": "code",
+   "ok": true,
+   "secs": 16.3,
+   "tokens": 2165,
+   "detail": "PASS"
+  },
+  {
+   "run": 0,
+   "task": "fix_streak",
+   "kind": "code",
+   "ok": false,
+   "secs": 4.1,
+   "tokens": 538,
+   "detail": "Traceback (most recent call last):\n  File \"C:\\Users\\inter\\AppData\\Local\\Temp\\tmpy2vg3282\\sol.py\", line 15, in <module>\n    assert losing_streak([\"loss\", \"tie\", \"loss\"]) == 2\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError"
+  },
+  {
+   "run": 0,
+   "task": "expiry_rule",
+   "kind": "code",
+   "ok": true,
+   "secs": 9.1,
+   "tokens": 1217,
+   "detail": "PASS"
+  },
+  {
+   "run": 0,
+   "task": "rsi",
+   "kind": "code",
+   "ok": false,
+   "secs": 26.3,
+   "tokens": 3471,
+   "detail": "Traceback (most recent call last):\n  File \"C:\\Users\\inter\\AppData\\Local\\Temp\\tmpumgagq1p\\sol.py\", line 53, in <module>\n    assert rsi(c) == ref(c), (rsi(c), ref(c))\n           ^^^^^^^^^^^^^^^^\nAssertionError: (53.81, 47.77)"
+  },
+  {
+   "run": 1,
+   "task": "scan_real",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.5,
+   "tokens": 45,
+   "detail": "[('browser_scan_pairs', {'market': 'real', 'count': 6})]"
+  },
+  {
+   "run": 1,
+   "task": "sell_3m",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.8,
+   "tokens": 96,
+   "detail": "[('browser_place_trade', {'direction': 'sell', 'reason': 'RSI 74 falling, MACD just crossed down', 'expiry': '3m'})]"
+  },
+  {
+   "run": 1,
+   "task": "site_read",
+   "kind": "tool",
+   "ok": false,
+   "secs": 1.2,
+   "tokens": 161,
+   "detail": "[('site_add', {'site': 'books', 'operation': 'search', 'trigger': 'https://books.test/s?q={q}', 'example': {'q': 'dune'}, 'example2': {'q': 'foundation'}, 'write': True})]"
+  },
+  {
+   "run": 1,
+   "task": "site_write",
+   "kind": "tool",
+   "ok": true,
+   "secs": 2.4,
+   "tokens": 320,
+   "detail": "[('site_add', {'site': 'notes', 'operation': 'create', 'trigger': 'https://notes.test/new', 'example': {'note': 'hi'}, 'example2': {'note': 'bye'}, 'write': True})]"
+  },
+  {
+   "run": 1,
+   "task": "no_tool",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.4,
+   "tokens": 51,
+   "detail": "17\u202f\u00d7\u202f3\u202f=\u202f51"
+  },
+  {
+   "run": 1,
+   "task": "stake_rule",
+   "kind": "code",
+   "ok": true,
+   "secs": 13.7,
+   "tokens": 1801,
+   "detail": "PASS"
+  },
+  {
+   "run": 1,
+   "task": "parse_close",
+   "kind": "code",
+   "ok": false,
+   "secs": 16.0,
+   "tokens": 2076,
+   "detail": ",{\"deals\":[{\"id\":\"z\",\"profit\":0,\"command\":1}]}]') == [{\"id\": \"z\", \"profit\": 0.0, \"direction\": \"sell\", \"result\": \"tie\"}]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError"
+  },
+  {
+   "run": 1,
+   "task": "fix_streak",
+   "kind": "code",
+   "ok": false,
+   "secs": 3.0,
+   "tokens": 400,
+   "detail": "Traceback (most recent call last):\n  File \"C:\\Users\\inter\\AppData\\Local\\Temp\\tmpyw_627i8\\sol.py\", line 15, in <module>\n    assert losing_streak([\"loss\", \"tie\", \"loss\"]) == 2\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError"
+  },
+  {
+   "run": 1,
+   "task": "expiry_rule",
+   "kind": "code",
+   "ok": true,
+   "secs": 12.7,
+   "tokens": 1705,
+   "detail": "PASS"
+  },
+  {
+   "run": 1,
+   "task": "rsi",
+   "kind": "code",
+   "ok": false,
+   "secs": 7.8,
+   "tokens": 1048,
+   "detail": "Traceback (most recent call last):\n  File \"C:\\Users\\inter\\AppData\\Local\\Temp\\tmpv9p_dpyw\\sol.py\", line 44, in <module>\n    assert rsi(c) == ref(c), (rsi(c), ref(c))\n           ^^^^^^^^^^^^^^^^\nAssertionError: (-0.0, 48.12)"
+  },
+  {
+   "run": 2,
+   "task": "scan_real",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.5,
+   "tokens": 45,
+   "detail": "[('browser_scan_pairs', {'market': 'real', 'count': 6})]"
+  },
+  {
+   "run": 2,
+   "task": "sell_3m",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.9,
+   "tokens": 108,
+   "detail": "[('browser_place_trade', {'direction': 'sell', 'reason': 'RSI 74 and falling, MACD just crossed down.', 'expiry': '3m'})]"
+  },
+  {
+   "run": 2,
+   "task": "site_read",
+   "kind": "tool",
+   "ok": false,
+   "secs": 2.0,
+   "tokens": 262,
+   "detail": "[('site_add', {'site': 'books', 'operation': 'search', 'trigger': 'https://books.test/s?q={q}', 'example': {'q': 'dune'}, 'example2': {'q': 'foundation'}, 'write': True})]"
+  },
+  {
+   "run": 2,
+   "task": "site_write",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.7,
+   "tokens": 82,
+   "detail": "[('site_add', {'site': 'notes', 'operation': 'create', 'trigger': 'https://notes.test/new', 'example': {'note': 'hi'}, 'example2': {'note': 'bye'}, 'write': True})]"
+  },
+  {
+   "run": 2,
+   "task": "no_tool",
+   "kind": "tool",
+   "ok": true,
+   "secs": 0.5,
+   "tokens": 54,
+   "detail": "17\u202f\u00d7\u202f3\u202f=\u202f51."
+  },
+  {
+   "run": 2,
+   "task": "stake_rule",
+   "kind": "code",
+   "ok": false,
+   "secs": 46.3,
+   "tokens": 6000,
+   "detail": "Traceback (most recent call last):\n  File \"C:\\Users\\inter\\AppData\\Local\\Temp\\tmph7u87m_3\\sol.py\", line 4, in <module>\n    assert stake_for(100, False, True) == 5.0\n           ^^^^^^^^^\nNameError: name 'stake_for' is not defined"
+  },
+  {
+   "run": 2,
+   "task": "parse_close",
+   "kind": "code",
+   "ok": true,
+   "secs": 11.5,
+   "tokens": 1516,
+   "detail": "PASS"
+  },
+  {
+   "run": 2,
+   "task": "fix_streak",
+   "kind": "code",
+   "ok": false,
+   "secs": 46.0,
+   "tokens": 6000,
+   "detail": "Traceback (most recent call last):\n  File \"C:\\Users\\inter\\AppData\\Local\\Temp\\tmp2eo6iey4\\sol.py\", line 4, in <module>\n    assert losing_streak([]) == 0\n           ^^^^^^^^^^^^^\nNameError: name 'losing_streak' is not defined"
+  },
+  {
+   "run": 2,
+   "task": "expiry_rule",
+   "kind": "code",
+   "ok": true,
+   "secs": 7.3,
+   "tokens": 962,
+   "detail": "PASS"
+  },
+  {
+   "run": 2,
+   "task": "rsi",
+   "kind": "code",
+   "ok": false,
+   "secs": 7.0,
+   "tokens": 927,
+   "detail": "Traceback (most recent call last):\n  File \"C:\\Users\\inter\\AppData\\Local\\Temp\\tmp1x6jbtwv\\sol.py\", line 39, in <module>\n    assert rsi(c) == ref(c), (rsi(c), ref(c))\n           ^^^^^^^^^^^^^^^^\nAssertionError: (-0.0, 48.12)"
+  }
+ ]
+}

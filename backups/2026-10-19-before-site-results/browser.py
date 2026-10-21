@@ -91,6 +91,29 @@ ASSET_JS = r"""({mode, name, other}) => {
 
 # The latest pair scan, for the pairs dashboard under the browser in OpenDots.
 PAIR_SCAN_FILE = Path(__file__).parent / 'output' / 'pair-scan.json'
+# Owner, 2026-10-19: one stake for every trade while the confidence tiers are
+# measured on real results; 0 goes back to the confidence/profit levels.
+FLAT_STAKE = 5.0
+# Owner, 2026-10-19: on real pairs, after 2 losses in a row, stake the 3rd trade
+# (if the chart backs it) to win both back plus a normal win.
+RECOVERY = True
+# Owner, 2026-10-19: trade only obvious turns (a MACD cross after a run one way,
+# with RSI beyond 70/30; a Bollinger band turn makes it a top setup) and keep
+# scanning pairs until one shows. Off for now: the flat-$5 real-pair run it would
+# have replaced was winning (31-15 on AUD/JPY, 1m, 2026-10-19). True turns it on.
+OBVIOUS_ONLY = False
+OBVIOUS = ('reversal', 'top')
+WATCH_SECONDS = 90  # Obvious-only scans keep watching this long before reporting none.
+# The owner's switch on the pairs board ({"obviousOnly": true}); read on every
+# trade and scan, so flipping it needs no restart.
+TRADING_MODE_FILE = Path(__file__).parent / 'output' / 'trading-mode.json'
+
+
+def obvious_only() -> bool:
+    try:
+        return bool(json.loads(TRADING_MODE_FILE.read_text(encoding='utf-8')).get('obviousOnly'))
+    except (OSError, ValueError, AttributeError):
+        return OBVIOUS_ONLY
 # The trading session's start, peak and locked profit, read by OpenDots to end a
 # run at the trailing stop.
 TRADING_SESSION_FILE = Path(__file__).parent / 'output' / 'trading-session.json'
@@ -594,6 +617,13 @@ def register(
 
     # Ready-made times in the Time panel, as on the site (S3 S15 S30 / M1 M3 M5 / M30 H1 H4).
     EXPIRY_PRESETS = {3: 'S3', 15: 'S15', 30: 'S30', 60: 'M1', 180: 'M3', 300: 'M5', 1800: 'M30', 3600: 'H1', 14400: 'H4'}
+    REAL_EXPIRIES = (60, 180, 300, 1800, 3600, 14400)  # The panel's times for real pairs.
+    MIN_PAYOUT, PAYOUT_WINDOW = 80, 4  # Trade only well-paying pairs; scans keep to the top 4 points.
+    # The Payout box beside the stake, e.g. "Payout +92%".
+    PAYOUT_JS = r"""() => { const m = (document.body.innerText || '').match(/Payout\s*\+?\s*(\d+)\s*%/);
+        return m ? +m[1] : null; }"""
+    REAL_MAX_EXPIRY = 300  # Real pairs: 1-5 minutes; longer only for a top setup.
+    MAX_OPEN, REAL_OPEN_SHARE = 3, 0.15  # Open at once, and real-pair stakes out as a share of the account.
     OTC_MIN_EXPIRY, OTC_MAX_EXPIRY = 5, 30  # Seconds; longer OTC trades get faked out too often.
     # Trailing stop: once the peak profit reaches 20% of the start, half of it is locked.
     LOCK_SHARE, TRAIL_START = 0.5, 0.2
@@ -665,6 +695,12 @@ def register(
             stake = min(stake, round(balance * 0.2, 2), round(balance - locked, 2) if locked else stake)
             return max(stake, 0.0), (f'top setup (MACD cross, RSI beyond 70/30, Bollinger band curving over): '
                                      f'${stake:g}, outside the usual levels')
+        if FLAT_STAKE:
+            # Evaluation phase: the same stake on every trade, so profit shows each
+            # tier's real win rate (with stakes tied to confidence, the bigger stakes
+            # went to the "good" trades that lost) and the money moves.
+            stake = min(FLAT_STAKE, round(balance * 0.2, 2))
+            return stake, f'flat ${stake:g} evaluation stake ({confidence} confidence)'
         wins, total = journal.win_rate(10)
         proven = total >= 5 and wins >= 0.6 * total
         level = min({'normal': 0, 'good': 1, 'very high': 2}.get(confidence, 0) + (1 if proven else 0), 2)
@@ -694,6 +730,17 @@ def register(
                 except ValueError:
                     return
             trade_feed['feed'].add_frame(data)
+            # Pocket Option's own results: {"profit", "deals": [...]} when a trade
+            # closes, and the recent closed-deals list ([{..., "closeTimestamp"}]).
+            if data[:12].startswith(('{"profit"', '[{"id"')):
+                try:
+                    parsed = json.loads(data)
+                except ValueError:
+                    return
+                deals = parsed.get('deals') if isinstance(parsed, dict) else parsed
+                if isinstance(deals, list):
+                    journal.site_grace = 15.0  # The site reports results: wait for them.
+                    journal.apply_deals(deals)
 
         session.on('Network.webSocketFrameReceived', frame)
         await session.send('Network.enable')
@@ -902,11 +949,30 @@ def register(
                     raise ValueError(
                         f"No trade was placed: {pair or 'this pair'} was not in the latest scan. Trade a scanned pair "
                         f"({', '.join(scan['pairs'][:8])}) or run browser_scan_pairs again.")
+            payout = await page.evaluate(PAYOUT_JS)
+            if payout and payout < MIN_PAYOUT:
+                raise ValueError(
+                    f'No trade was placed: {pair} pays {payout}%, under the {MIN_PAYOUT}% minimum (at {payout}% you must win '
+                    f'{100 / (1 + payout / 100):.0f}% of trades just to break even). Run browser_scan_pairs to move to a top-payout pair.')
             seconds = asked or (60 if real else 11)
             expiry_note = None
+            if real and seconds > 60 and obvious_only():
+                # An obvious turn plays out in about a minute and shows on 15-second
+                # candles; 5-minute trades read 1-minute candles, where turns took many
+                # minutes to form (and the scan and this check read different candles).
+                expiry_note = f'Expiry set to 1m from {seconds // 60}m: obvious turns are traded over 1 minute.'
+                seconds = 60
             if real and seconds < 60:
                 expiry_note = f'Expiry lengthened from {seconds}s to 1m: real (non-OTC) pairs trade for 1 minute or more.'
                 seconds = 60
+            elif real and seconds == 660:
+                # "11m" is the OTC default (11s) carried over as minutes; real pairs default to 1m.
+                expiry_note = 'Expiry set to 1m: 11 is the OTC default in seconds; real pairs default to 1 minute.'
+                seconds = 60
+            elif real and seconds not in REAL_EXPIRIES:
+                snapped = max(e for e in REAL_EXPIRIES if e <= seconds)
+                expiry_note = f'Expiry set to {snapped // 60}m: real pairs use the panel times (1m, 3m, 5m, 30m, 1h, 4h).'
+                seconds = snapped
             if not real and seconds < OTC_MIN_EXPIRY:
                 expiry_note = f'Expiry lengthened from {seconds}s to the OTC minimum of {OTC_MIN_EXPIRY}s.'
                 seconds = OTC_MIN_EXPIRY
@@ -935,6 +1001,13 @@ def register(
                         f"No trade was placed: the chart reads {trend['direction']} right now (RSI {reading.get('rsi14')}, "
                         f"MACD {reading.get('macd_state')}, EMA {reading.get('ema9_slope')}), so a {side.upper()} goes against it. "
                         f"Trade with the trend ({'BUY' if trend['direction'] == 'up' else 'SELL'}) or wait for the next reading.")
+                if obvious_only() and (reading.get('signal') or {}).get('kind') not in OBVIOUS:
+                    # Owner, 2026-10-19: everyday trends traded at a coin flip (83 won, 84 lost);
+                    # take only the obvious turns and keep shuffling pairs for the next one.
+                    raise ValueError(
+                        f"No trade was placed: no obvious setup on {reading.get('pair') or 'this pair'} right now "
+                        f"(RSI {reading.get('rsi14')}, MACD {reading.get('macd_state')}). Only obvious turns trade: a MACD "
+                        f"cross after a run one way with RSI beyond 70/30. Run browser_scan_pairs to find one.")
                 return reading, wider, confidence_of(side, trend)
 
             before_reading, wider, confidence = await read_chart_now()
@@ -947,7 +1020,22 @@ def register(
             # trade's result first, so each decision follows the last outcome and
             # open stakes can't pile up. An extra trade at once must come from profit.
             running = journal.open_trades(feed.now())
-            if running and (confidence != 'very high' or len(running) >= 3 or stake_limit(balance, running)[0] < 1):
+
+            def may_add(running) -> bool:
+                """Another trade while some are open. OTC (11-second trades free up fast):
+                only on very high confidence backed by profit. Real pairs (1-5 minute
+                trades, which would otherwise block every chance meanwhile): on good
+                confidence or better, with the open stakes kept under 15% of the account."""
+                if len(running) >= MAX_OPEN:
+                    return False
+                if real:
+                    out = sum(t['stake'] for t in running)
+                    planned = stake_plan(balance, [], confidence)[0]
+                    return (confidence in ('good', 'very high', 'top') and planned >= 1
+                            and out + planned <= REAL_OPEN_SHARE * ((balance or 0) + out))
+                return confidence == 'very high' and stake_limit(balance, running)[0] >= 1
+
+            if running and not may_add(running):
                 # Wait here (up to 5 minutes) rather than returning every few seconds:
                 # each early return costs a model turn, and a small model left with
                 # "still waiting" tends to reply "trade placed" without calling anything.
@@ -976,13 +1064,34 @@ def register(
                 trade_feed['reported'] = previous
             # Stakes come from profit: the starting funds only ever back one small
             # base stake at a time; once trades win, the profit is the wallet.
-            stake, rule = stake_plan(balance, running, confidence)
+            # A real-pair trade beside open ones is sized as a trade of its own.
+            stake, rule = stake_plan(balance, [] if real and running else running, confidence)
+            if real and seconds > REAL_MAX_EXPIRY and confidence != 'top':
+                # Longer real-pair trades only on a near-certain read (owner, 2026-10-19).
+                expiry_note = (f'Expiry shortened from {seconds // 60}m to {REAL_MAX_EXPIRY // 60}m: real-pair trades run '
+                               f'1-5 minutes unless the setup is top confidence.')
+                seconds = REAL_MAX_EXPIRY
             if confidence == 'top' and not real and seconds != TOP_OTC_EXPIRY:
                 expiry_note = f'Expiry set to {TOP_OTC_EXPIRY}s for a top setup (they play out fast on OTC).'
                 seconds = TOP_OTC_EXPIRY
             # Losses in a row mean the trend is not holding: choose again from a fresh scan.
             since = max(trade_feed.get('session_at') or 0, (trade_feed.get('scan') or {}).get('at') or 0)
             streak = journal.losing_streak(since)
+            # Recovery (owner, 2026-10-19; real pairs only, where prices come from a real
+            # market): after 2 losses in a row, a 3rd trade the chart backs (good confidence
+            # or better) is staked to win back both plus a normal win. One step only: a 3rd
+            # loss forces a new scan below, and stakes go back to normal.
+            recovery = None
+            if real and streak == 2 and confidence in ('good', 'very high', 'top') and RECOVERY:
+                lost = sum(abs(p) if p is not None else s for _, s, p in journal.last_results(2, since))
+                wanted = round((lost + (FLAT_STAKE or stake) * 0.92) / 0.92, 2)
+                recovery = min(wanted, round((balance or 0) * 0.2, 2))
+                if recovery > stake:
+                    rule = (f'recovery after 2 losses (${lost:g}): ${recovery:g} to win them back plus a normal win'
+                            + (' (held to 20% of the balance)' if recovery < wanted else ''))
+                    stake = recovery
+                else:
+                    recovery = None
             if streak >= LOSS_STREAK_RESCAN:
                 raise ValueError(
                     f'No trade was placed: {streak} losses in a row since the last scan, so this trend is not holding. '
@@ -1021,7 +1130,9 @@ def register(
             reading = await chart_now(page, period)
             key = asset_key(reading.get('pair') or '')
             last = trade_feed['feed'].last(key)
-            setup = setup_of(before_reading, period, str(reason).strip())
+            setup = {**setup_of(before_reading, period, str(reason).strip()), 'confidence': confidence,
+                     'signal': (before_reading.get('signal') or {}).get('kind'), **({'recovery': True} if recovery else {}),
+                     'mode': 'obvious only' if obvious_only() else 'all trends'}
             if placed:
                 trade_feed['last_trade_at'] = time.time()  # Keeps the session (and its starting balance) going.
             if placed and last:
@@ -1613,7 +1724,7 @@ def register(
         kind = str(market or 'same').strip().lower()
         kind = 'real' if kind in ('real', 'non-otc', 'nonotc', 'non otc', 'forex', 'live') else 'otc' if kind == 'otc' else 'same'
         if kind == 'real':
-            seconds = max(seconds, 60)  # Real pairs trade from 1 minute.
+            seconds = 60 if seconds == 660 or obvious_only() else max(seconds, 60)  # Real pairs trade from 1 minute ("11m" is the OTC 11s habit); obvious turns over 1 minute.
         period = candle_period(seconds)
         count = min(max(int(count or 8), 2), 20)
 
@@ -1633,8 +1744,25 @@ def register(
                 period = candle_period(seconds)
             candidates = [r for r in listed if r['name'].upper().endswith('OTC') == otc]
             candidates.sort(key=lambda r: -(r['payout'] or 0))  # Stable: the site's order breaks ties.
-            candidates = candidates[:count]
+            # Only the best payouts: the win rate needed to break even rises fast as the
+            # payout falls (52% at 92%, 53% at 88%, 62% at 62%). A clearer trend at a
+            # lower payout cost more than it gained.
+            best_payout = max((r['payout'] or 0) for r in candidates) if candidates else 0
+            candidates = [r for r in candidates if (r['payout'] or 0) >= best_payout - PAYOUT_WINDOW][:count]
             rows = []
+
+            def rate(item) -> dict:
+                key = asset_key(item['name'])
+                chart = read_chart(feed, key, period, 8)
+                trend = pair_trend(chart)
+                return {'pair': item['name'], 'payout': item['payout'], 'trend': trend['direction'],
+                        'score': trend['score'], 'rsi14': chart.get('rsi14'),
+                        'macd': (chart.get('macd_state') or '').split(',')[0] or None,
+                        'ema9_slope': chart.get('ema9_slope'),
+                        'recent_candles': (chart.get('recent_candles') or '').split(' ')[0],
+                        **({'signal': trend['why']} if trend.get('why') else {}),
+                        **({'setup': trend['signal']} if trend.get('signal') else {})}
+
             try:
                 for item in candidates:
                     key = asset_key(item['name'])
@@ -1644,14 +1772,18 @@ def register(
                             await asyncio.sleep(0.2)
                             if len(feed.ticks.get(key) or ()) >= 60:
                                 break
-                    chart = read_chart(feed, key, period, 8)
-                    trend = pair_trend(chart)
-                    rows.append({'pair': item['name'], 'payout': item['payout'], 'trend': trend['direction'],
-                                 'score': trend['score'], 'rsi14': chart.get('rsi14'),
-                                 'macd': (chart.get('macd_state') or '').split(',')[0] or None,
-                                 'ema9_slope': chart.get('ema9_slope'),
-                                 'recent_candles': (chart.get('recent_candles') or '').split(' ')[0],
-                                 **({'signal': trend['why']} if trend.get('why') else {})})
+                    rows.append(rate(item))
+                    if obvious_only() and rows[-1].get('setup') in OBVIOUS:
+                        break  # Stop here and trade it while it is fresh (a turn lasts seconds).
+                # Obvious-only: keep watching the pairs just read instead of handing an empty
+                # scan back to the model (each round trip cost ~15 s and a refused trade).
+                # Their prices keep streaming after a switch, so re-reading them needs no
+                # chart changes; the first obvious turn wins.
+                deadline = time.time() + WATCH_SECONDS
+                while (obvious_only() and rows and not any(r.get('setup') in OBVIOUS for r in rows)
+                       and time.time() < deadline):
+                    await asyncio.sleep(1)
+                    rows = [rate(item) for item in candidates[:len(rows)]]
             finally:
                 clear = sorted((r for r in rows if r['trend'] in ('up', 'down')),
                                key=lambda r: (-r['score'], -(r['payout'] or 0)))
@@ -1669,8 +1801,12 @@ def register(
                      'Real-pair rules: expiry 1m or more (1m by default, up to 4h); check news and the economic calendar '
                      'for both currencies with search_web and name it in the reason; use browser_market_read for 5m and up.')
             result = {'market': 'OTC' if otc else 'real', 'rules': rules, 'now_on': now_on, 'best': best, 'candle_s': period, 'pairs': ranked,
-                      'note': (f"Now on {now_on}: its trend is {best['trend']}, so trade "
-                               f"{'BUY' if best['trend'] == 'up' else 'SELL'} here if it still holds."
+                      'obvious': bool(best and best.get('setup') in OBVIOUS),
+                      'note': (f"Obvious setup on {now_on}: {best['signal']}. Trade "
+                               f"{'BUY' if best['trend'] == 'up' else 'SELL'} now." if best and best.get('setup') in OBVIOUS
+                               else f'No obvious setup on these pairs in the last {WATCH_SECONDS} seconds; scan again.' if obvious_only()
+                               else f"Now on {now_on}: its trend is {best['trend']}, so trade "
+                                    f"{'BUY' if best['trend'] == 'up' else 'SELL'} here if it still holds."
                                if best else f'No pair has a clear trend right now; back on {now_on}. Scan again shortly.')}
             try:
                 PAIR_SCAN_FILE.parent.mkdir(parents=True, exist_ok=True)

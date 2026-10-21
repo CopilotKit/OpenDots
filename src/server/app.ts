@@ -53,6 +53,12 @@ export function createApp({
   platform,
 }: AppOptions) {
   const app = new Hono();
+  // APP_ORIGIN may list several, e.g. the desktop address and a Tailscale one
+  // for the owner's phone: "http://127.0.0.1:5173,https://pc.tailnet.ts.net:8443".
+  const origins = (origin ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
   const smallBodies = bodyLimit({
     maxSize: 1_000_000,
     onError: (c) => c.json({ error: 'Request is too large.' }, 413),
@@ -90,13 +96,20 @@ export function createApp({
       'localhost',
       '127.0.0.1',
       '[::1]',
-      ...(origin ? [new URL(origin).hostname] : []),
+      ...origins.map((item) => new URL(item).hostname),
     ]);
     if (!ownerToken && !allowedHosts.has(requestUrl.hostname))
       return c.json({ error: 'Unrecognized host.' }, 403);
     const requestOrigin = c.req.header('origin');
-    const expectedOrigin = origin ?? new URL(c.req.url).origin;
-    if (requestOrigin && !matchesOrigin(requestOrigin, expectedOrigin))
+    const expectedOrigins = origins.length
+      ? origins
+      : [new URL(c.req.url).origin];
+    if (
+      requestOrigin &&
+      !expectedOrigins.some((expected) =>
+        matchesOrigin(requestOrigin, expected),
+      )
+    )
       return c.json({ error: 'Cross-origin requests are not allowed.' }, 403);
     if (c.req.header('sec-fetch-site') === 'cross-site')
       return c.json({ error: 'Cross-site requests are not allowed.' }, 403);
@@ -129,8 +142,8 @@ export function createApp({
   app.post('/api/threads/:id/steer', async (c) => {
     if (!platform)
       return c.json({ error: 'Steering needs the local platform.' }, 503);
-    // The current run loop does not read messages sent mid-run; say so rather
-    // than accept a message that would never reach the task.
+    // Without the inbox (e.g. a server built without the local platform's run
+    // loop) a message would never reach the task; say so rather than accept it.
     if (!platform.config.steering)
       return c.json(
         {

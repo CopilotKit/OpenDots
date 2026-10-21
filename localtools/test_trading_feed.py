@@ -3,7 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from trading_feed import PriceFeed, bars_from_candles, read_bars, reversal_signal, TradeJournal, asset_key, candle_period, candles, macd, pair_trend, read_chart, rsi
+from trading_feed import PriceFeed, bars_from_candles, otc_fade, read_bars, reversal_signal, TradeJournal, asset_key, candle_period, candles, macd, pair_trend, read_chart, rsi
 
 
 class FeedTests(unittest.TestCase):
@@ -270,6 +270,29 @@ class SiteResultTests(unittest.TestCase):
             journal.record('AUDCAD_otc', 'buy', 1, 11, 5, 1.0, {})
             self.assertEqual(journal.apply_deals([self.deal(5, 1, 0.92)]), 1)
             self.assertEqual(journal.last_closed()['result'], 'WON')
+
+
+class OtcFadeTests(unittest.TestCase):
+    def test_a_stretched_candle_is_faded_and_a_quiet_one_is_not(self):
+        import math
+        c0 = 100000
+        rows = []
+        for i in range(600):
+            t = c0 - 600 + i
+            p = 1.0 + 0.0002 * math.sin(i / 2.0)
+            if t >= c0 - 20:
+                p = 1.0 + (t - (c0 - 20)) * 0.00008
+            if t >= c0 - 5:
+                p = 1.0012 + (t - (c0 - 5)) * 0.0006
+            rows.append((t + 0.2, p))
+        rows.append((c0 + 1, rows[-1][1]))
+        fade = otc_fade(candles(rows, 5))
+        self.assertEqual((fade['direction'], fade['expiry'], fade['strength']), ('down', 8, 'strong'))
+        self.assertEqual(fade['closed'], c0 - 5)
+        mirror = [(t, 2 - p) for t, p in rows]  # The same move downward: a BUY.
+        self.assertEqual(otc_fade(candles(mirror, 5))['direction'], 'up')
+        quiet = [(c0 - 600 + i, 1.0 + 0.0002 * math.sin(i / 2.0)) for i in range(600)]
+        self.assertIsNone(otc_fade(candles(quiet, 5)))
 
 
 if __name__ == '__main__':

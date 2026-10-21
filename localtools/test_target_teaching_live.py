@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 from playwright.async_api import async_playwright
 from browser import Browser
-from browser_targets import TargetStore, register_target_tools
+from browser_targets import register_target_tools
+from site_maps import SiteMaps
 
 
 @unittest.skipUnless(os.environ.get('LOCALTOOLS_LIVE_TEST') == '1', 'Opt-in isolated Chrome test')
@@ -24,7 +25,7 @@ class TeachingTests(unittest.IsolatedAsyncioTestCase):
                     await page.goto('http://teaching.test/menu')
                     runtime = Browser()
                     runtime._context, runtime._page = context, page
-                    store = TargetStore(Path(directory) / 'targets.sqlite')
+                    store = SiteMaps(Path(directory) / 'maps')
                     tools = {}
                     def tool():
                         def register(fn):

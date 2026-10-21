@@ -1,5 +1,8 @@
 {
   "autoApproveSites": [
     "pocketoption.com"
+  ],
+  "ownerPressesOrders": [
+    "robinhood.com"
   ]
 }
