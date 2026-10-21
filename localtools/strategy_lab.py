@@ -81,14 +81,37 @@ def dte_bucket(days: int) -> int:
     return 0 if days <= 0 else 1 if days == 1 else 2 if days <= 3 else 3
 
 
+def implied_spot(chain: dict, by_expiry: dict) -> float:
+    """The stock price the option quotes were made at (call - put + strike near the money).
+    After hours Cboe's "current price" moves on while the quotes stay at the close."""
+    guess = chain['price']
+    for expiry in sorted(by_expiry):
+        options = by_expiry[expiry]
+        calls = {o['strike']: o for o in options if o['call'] and o['bid'] > 0}
+        puts = {o['strike']: o for o in options if not o['call'] and o['bid'] > 0}
+        both = sorted((k for k in calls if k in puts), key=lambda k: abs(k - guess))[:5]
+        if len(both) >= 3 and int(np.busday_count(chain['asof'].date(), expiry)) >= 1:
+            return float(np.median([k + (calls[k]['bid'] + calls[k]['ask']) / 2 - (puts[k]['bid'] + puts[k]['ask']) / 2
+                                    for k in both]))
+    return guess
+
+
+def trading_years(at: datetime, expiry) -> float:
+    """Market hours from `at` to 4pm on the expiry day, in trading years (252 days of 390 minutes)."""
+    today_left = max(16 * 60 - (at.hour * 60 + at.minute), 0) if at.weekday() < 5 else 0
+    full_days = int(np.busday_count(at.date(), expiry))  # Weekdays after today, through the expiry day.
+    return max(today_left + 390 * full_days, 1) / (252 * 390)
+
+
 def fit_surface(ticker: str, index_now: float, getter=og.fetch) -> dict:
     """{'level': {bucket: atm iv / index}, 'put'/'call': (z grid, iv / atm iv)} from today's chain.
     z = ln(strike / price) / (atm iv * sqrt(years)): how many expected moves out."""
     chain = og.parse_chain(getter(f'options/{ticker}.json'))
-    spot, asof = chain['price'], chain['asof']
+    asof = chain['asof']
     by_expiry = defaultdict(list)
     for o in chain['options']:
         by_expiry[o['expiry']].append(o)
+    spot = implied_spot(chain, by_expiry)
     levels, points = defaultdict(list), {'put': defaultdict(list), 'call': defaultdict(list)}
     trading_days = lambda e: int(np.busday_count(asof.date(), e))
     for expiry, options in sorted(by_expiry.items()):
@@ -99,15 +122,19 @@ def fit_surface(ticker: str, index_now: float, getter=og.fetch) -> dict:
         atm = float(np.median([o['iv'] for o in near if 0.03 < o['iv'] < 3] or [0]))
         if not atm:
             continue
+        # Cboe quotes volatility on calendar time; the lab prices on trading time. The same
+        # option price on both clocks: vol_trading^2 x years_trading = vol_calendar^2 x years_calendar.
+        calendar = og.years_to(expiry, asof)
+        years = trading_years(asof, expiry)
+        atm_calendar, atm = atm, atm * math.sqrt(calendar / years)
         levels[dte_bucket(days)].append(atm / (index_now / 100))  # The index is in points: 17.3 = 17.3%.
-        years = og.years_to(expiry, asof)
         for o in options:
             side = 'call' if o['call'] else 'put'
             if o['bid'] <= 0 or not 0.03 < o['iv'] < 3 or (o['strike'] < spot) == o['call']:
                 continue  # Out-of-the-money options with a bid only.
             z = math.log(o['strike'] / spot) / (atm * math.sqrt(years))
             if -5 <= z <= 5:
-                points[side][round(z * 4) / 4].append(o['iv'] / atm)
+                points[side][round(z * 4) / 4].append(o['iv'] / atm_calendar)  # Both on the calendar clock.
     level = {b: float(np.median(v)) for b, v in levels.items()}
     for b in range(4):  # Same-day options are fitted from 1-day ones (after the close today's are junk).
         level.setdefault(b, level.get(b + 1) or level.get(b - 1) or 1.0)
@@ -185,13 +212,16 @@ def trade(days: dict, names: list, d: int, at: tuple, dte: int, delta: float, si
     if i is None:
         return None
     expiry_day = names[d + dte]
-    expiry = datetime.strptime(expiry_day, '%Y-%m-%d').replace(hour=16)
     path = today[i:] + [b for n in names[d + 1:d + dte + 1] for b in days[n]]
     spot = np.array([b['c'] for b in path])
     t = [b['t'] for b in path]
-    years = np.array([max((expiry - x).total_seconds(), 0) / (365 * 24 * 3600) for x in t])
     position = {n: k for k, n in enumerate(names[d:d + dte + 1], d)}
     days_left = np.array([(d + dte) - position[x.strftime('%Y-%m-%d')] for x in t])
+    # Trading time, as option desks count it: only market hours decay an option, so a
+    # weekend or a night is not "two free days" (calendar time made Friday sales look rich).
+    bar = (today[1]['t'] - today[0]['t']).total_seconds() / 60 if len(today) > 1 else 5
+    session_left = np.array([max(16 * 60 - (x.hour * 60 + x.minute) - bar, 0) for x in t])
+    years = (session_left + 390 * days_left) / (252 * 390)
     index = np.array([b['index'] for b in path])
     atm_path = index / 100 * np.array([surface['level'][dte_bucket(int(x))] for x in days_left])
     call = side == 'call'
@@ -453,6 +483,9 @@ def report(lab: dict, title: str = 'Strategy Lab', data: str = 'Yahoo 5-minute p
              '- A rule set that held up is a candidate for the dry-run autopilot, not proof. Its live record decides.',
              '- Today\'s skew is applied to every past day; in a selloff real skew steepens, so puts were dearer '
              '(more credit, but also costlier to close) than modeled.',
+             '- Checked against real Cboe prices (2026-10-21 close): 1-5 day puts priced 0-20% high and calls 0-30% '
+             'low, so put-spread results lean optimistic and call-spread results conservative. Same-day options '
+             'could not be checked (after the close their quotes are gone) and are the least certain.',
              f'- Data: {data}; VIX for SPY, VXN for QQQ; skew from Cboe ({", ".join(f"{t} {s["asof"]}" for t, s in lab["surfaces"].items())}).',
              '', f'Run again: `python localtools/strategy_lab.py{" hourly" if "hourly" in data else ""}` ({lab["seconds"]}s).']
     return '\n'.join(lines) + '\n'

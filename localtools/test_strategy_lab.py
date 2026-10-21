@@ -39,6 +39,26 @@ class PricingTests(unittest.TestCase):
         self.assertAlmostEqual(float(sl.leg_vol(FLAT_SKEW, 16, 1, 100, 100, 1 / 365, 'put')), 0.16, places=3)
 
 
+class ClockTests(unittest.TestCase):
+    def test_only_market_hours_count(self):
+        friday_close = datetime(2026, 10, 23, 16, 0)
+        # From Friday's close to Monday's close: one trading day, not three calendar days.
+        self.assertAlmostEqual(sl.trading_years(friday_close, datetime(2026, 10, 26).date()), 1 / 252)
+        self.assertAlmostEqual(sl.trading_years(datetime(2026, 10, 21, 12, 45), datetime(2026, 10, 21).date()),
+                               195 / (252 * 390))
+
+    def test_the_stock_price_comes_from_the_option_quotes(self):
+        # After hours Cboe's price drifts; the quotes still say 500 (call - put + strike).
+        options = []
+        for k in (498, 499, 500, 501, 502):
+            call, put = max(500 - k, 0) + 1.0, max(k - 500, 0) + 1.0
+            options += [{'strike': k, 'call': True, 'bid': call - 0.01, 'ask': call + 0.01, 'expiry': datetime(2026, 10, 23).date()},
+                        {'strike': k, 'call': False, 'bid': put - 0.01, 'ask': put + 0.01, 'expiry': datetime(2026, 10, 23).date()}]
+        chain = {'price': 496.0, 'asof': datetime(2026, 10, 21, 18, 0), 'options': options}
+        by_expiry = {datetime(2026, 10, 23).date(): options}
+        self.assertAlmostEqual(sl.implied_spot(chain, by_expiry), 500.0)
+
+
 class TradeTests(unittest.TestCase):
     def test_a_calm_day_keeps_the_credit_and_a_crash_is_stopped(self):
         calm = days_of([[500.0] * 78])
