@@ -32,11 +32,16 @@ SEARCH_FOCUSED = r"""() => { const e = document.activeElement; if (!e || e === d
 # Outlines the order buttons for the owner at hand-off and returns where the
 # first one is, so the mouse can rest on it (a hover, never a click).
 SHOW_ORDER_BUTTONS = r"""(pattern) => { const re = new RegExp(pattern, 'i'); const found = [];
+  if (!document.getElementById('dots-press-here')) {  // Blinks until the owner presses it.
+    const s = document.createElement('style'); s.id = 'dots-press-here';
+    s.textContent = '@keyframes dotsPressHere{0%,100%{outline-color:#f59e0b;box-shadow:0 0 0 0 #f59e0b99}50%{outline-color:transparent;box-shadow:0 0 18px 6px #f59e0b99}}'
+      + '[data-dots-press-here]{outline:4px solid #f59e0b!important;outline-offset:2px;animation:dotsPressHere 1s ease-in-out infinite}';
+    document.head.appendChild(s); }
   for (const e of document.querySelectorAll('button,a,[role=button],input[type=submit]')) {
     const t = (e.getAttribute('aria-label') || e.innerText || e.value || '').trim();
     const r = e.getBoundingClientRect();
     if (t && re.test(t) && r.width > 1 && r.height > 1) {
-      e.style.outline = '4px solid #f59e0b'; e.style.outlineOffset = '2px';
+      e.setAttribute('data-dots-press-here', '');
       found.push({label: t.slice(0, 60), x: r.x + r.width / 2, y: r.y + r.height / 2});
     }
   } return found; }"""
