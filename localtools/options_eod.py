@@ -5,6 +5,7 @@ York, e.g. from a scheduled task; the options_review tool does the same on deman
 import json
 import time
 
+import option_history
 import options_guide as og
 
 
@@ -36,11 +37,17 @@ def main() -> dict:
     for ticker in og.TICKERS:
         journal.save_bars(ticker, og.minute_bars(ticker))
         closes[ticker] = {d['date']: d['close'] for d in og.fetch(f'charts/historical/{ticker}.json', 3600)['data'][-30:]}
-        ivs.update({o['symbol']: o['iv'] for o in og.parse_chain(og.fetch(f'options/{ticker}.json'))['options']})
+        document = og.fetch(f'options/{ticker}.json')
+        ivs.update({o['symbol']: o['iv'] for o in og.parse_chain(document)['options']})
+        option_history.save_cboe(ticker, document, og.now_eastern().date().isoformat())  # Real history from now on.
     journal.settle(closes)
     journal.settle_managed(og.now_eastern(), ivs)
     summary = journal.summary()
     summary['autopilot_today'] = autopilot_report(journal)
+    try:  # A little more past history each day, within the free key's limit.
+        summary['option_history'] = option_history.fetch_next(log=lambda *a: None)
+    except LookupError as error:
+        summary['option_history'] = str(error)
     return summary
 
 
