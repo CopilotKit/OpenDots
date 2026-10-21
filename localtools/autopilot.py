@@ -198,6 +198,18 @@ class Orders:
             return db.execute("SELECT COUNT(*) FROM autopilot_orders WHERE day=? AND side='entry' AND result IN ('submitted', 'dry_run')",
                               (day.isoformat(),)).fetchone()[0]
 
+    def refused_since(self, ts: float) -> set:
+        with closing(sqlite3.connect(self.path)) as db:
+            return {r[0] for r in db.execute("SELECT trade FROM autopilot_orders WHERE result='refused' AND ts>=?", (ts,))}
+
+    def entries(self, days: int = 30) -> list[dict]:
+        """The trades it opened (live) or would have opened (dry run), oldest first."""
+        with closing(sqlite3.connect(self.path)) as db:
+            db.row_factory = sqlite3.Row
+            rows = db.execute("SELECT * FROM autopilot_orders WHERE side='entry' AND result IN ('submitted', 'dry_run') "
+                              'AND ts>=? ORDER BY ts', (time.time() - days * 86400,))
+            return [{**dict(r), 'detail': json.loads(r['detail'])} for r in rows]
+
     def recent(self, limit: int = 20) -> list[dict]:
         with closing(sqlite3.connect(self.path)) as db:
             db.row_factory = sqlite3.Row
@@ -325,12 +337,16 @@ async def place(page, side: str, trade: str, legs: list, qty: int, limit: float 
         found.append('Robinhood does not show these legs as closing a position (no open position?).')
     if side == 'entry' and closing_words:
         found.append('Robinhood shows these legs as closing a position, not opening one.')
+    notes = []
+    if mode == 'dry_run':  # An unfunded account still shows how the day would have gone.
+        notes = [p for p in found if 'buying power' in p]
+        found = [p for p in found if p not in notes]
     if found:
         return stop('refused', found)
     buttons = [b for b in await page.query_selector_all('button') if SUBMIT.search((await b.inner_text()).strip())]
     if mode == 'dry_run':
         return stop('dry_run', [f'Would press "{(await buttons[0].inner_text()).strip()}".' if buttons
-                                else 'No submit button was found on the review screen.'])
+                                else 'No submit button was found on the review screen.'] + notes)
     if len(buttons) != 1:
         return stop('refused', [f'Expected one submit button on the review screen, found {len(buttons)}.'])
     if mode != state()['mode']:  # Turned off while checking.
@@ -350,7 +366,12 @@ def command(request: dict) -> dict:
         turn_on(str(request.get('pin', '')), str(request.get('mode', 'dry_run')), journal)
     elif request.get('cmd') == 'off':
         turn_off()
-    return {'state': state(), 'pin_set': pin_set(), 'record': record(journal),
+    import options_watch
+    try:
+        picks = options_watch.pick_results(journal, Orders(), og.now_eastern(), days=14)
+    except Exception as error:  # Price data down: the switch still works.
+        picks = {'error': f'{type(error).__name__}: {error}'}
+    return {'state': state(), 'pin_set': pin_set(), 'record': record(journal), 'picks': picks,
             'minimum': {'scored': MIN_SCORED, 'win_rate': MIN_WIN_RATE},
             'open': [{'id': r['id'], 'kind': r['kind'], 'ticker': r['ticker'], 'entry': r['entry']} for r in journal.open_trades()],
             'orders': Orders().recent(10)}

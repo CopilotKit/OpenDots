@@ -32,7 +32,7 @@ import subprocess
 import sys
 import time
 from contextlib import closing
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import options_guide as og
@@ -187,14 +187,70 @@ ENTRY_EVERY_S = 300
 PRICE_SLIP = 0.10  # An entry's live mid may be at most 10% worse than the suggestion's.
 
 
-async def enter(journal: og.Journal, orders, et: datetime, find, set_up, place, say=notify) -> dict | None:
+def bars_for(journal: og.Journal, ticker: str, start, now: datetime, minutes=today_bars) -> list[dict]:
+    """Saved minute prices from `start` to now, with today's live ones if not saved yet."""
+    bars = journal.load_bars(ticker, start, now.date())
+    if not any(b['time'].date() == now.date() for b in bars):
+        try:
+            bars += minutes(ticker)
+        except Exception:
+            pass  # Price data down: scored with what is saved.
+    return bars
+
+
+def pick_results(journal: og.Journal, orders, now: datetime, days: int = 30, minutes=today_bars) -> dict:
+    """How each autopilot pick did (live) or would have done (dry run): replayed
+    from the price it used, managed by its rules (profit target, stop, 3:45pm on
+    expiry day; trailing stop as the listener runs it), per pick and per day."""
+    picks = []
+    for order in orders.entries(days):
+        rows = journal._rows('id=?', (order['trade'],))
+        if not rows:
+            continue
+        data = json.loads(rows[0]['data'])
+        limit = order['detail'].get('limit') or abs(data['price'])
+        entered = og.eastern(datetime.fromtimestamp(order['ts'], timezone.utc))
+        state = watch({'id': order['trade'], 'ts': order['ts'], 'opened_ts': order['ts'], 'entry': limit,
+                       'data': json.dumps(data)}, bars_for(journal, data['ticker'], entered.date(), now, minutes))
+        exit_ = state['events'][0] if state['events'] else None
+        expired = now.date() > date.fromisoformat(data['expiry']) or (
+            now.date() == date.fromisoformat(data['expiry']) and now.hour >= 16)
+        picks.append({'day': order['day'], 'time': entered.strftime('%H:%M'), 'trade': order['trade'],
+                      'mode': order['mode'], 'kind': data['kind'], 'ticker': data['ticker'], 'expiry': data['expiry'],
+                      'price': limit, 'pnl': exit_['pnl'] if exit_ else state['now_pnl'],
+                      'how': (exit_['event'] if exit_ else 'held to expiry' if expired else 'still open'),
+                      'closed_at': exit_['time'] if exit_ else None})
+    days_out: dict = {}
+    for p in picks:
+        d = days_out.setdefault(p['day'], {'day': p['day'], 'picks': 0, 'wins': 0, 'pnl': 0.0, 'open': 0})
+        d['picks'] += 1
+        if p['how'] == 'still open':
+            d['open'] += 1
+        elif p['pnl'] is not None:
+            d['wins'] += p['pnl'] > 0
+            d['pnl'] = round(d['pnl'] + p['pnl'], 2)
+    return {'picks': picks[::-1], 'days': sorted(days_out.values(), key=lambda d: d['day'], reverse=True),
+            'note': 'Replayed from each pick\'s price with the stock\'s minute prices (a model of the option '
+                    'prices; real fills differ by cents).'}
+
+
+async def enter(journal: og.Journal, orders, et: datetime, find, set_up, place, say=notify,
+                minutes=today_bars) -> dict | None:
     """Autopilot entries: the best suggestion that passes every check is set up
     at the live mid and placed (dry run: stopped at the review). One per pass."""
     import autopilot
     mode = autopilot.state()['mode']
     if mode == 'off' or journal.open_trades():
         return None
+    if mode == 'dry_run':
+        # One trade at a time, as live: the last pick must have closed (by its rules) first.
+        today = [p for p in pick_results(journal, orders, et, 1, minutes)['picks'] if p['day'] == et.date().isoformat()]
+        if today and today[0]['how'] == 'still open':
+            return None
+    tried = orders.refused_since(time.time() - 1800)  # A refused suggestion waits half an hour.
     for suggestion in find():
+        if suggestion.get('id') in tried:
+            continue
         problems = autopilot.check_entry(journal, orders, suggestion, mode, et)
         if problems:
             continue

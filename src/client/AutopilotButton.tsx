@@ -24,6 +24,16 @@ type Status = {
     mode: string;
     result: string;
   }[];
+  picks?: {
+    days?: {
+      day: string;
+      picks: number;
+      wins: number;
+      open: number;
+      pnl: number;
+    }[];
+    error?: string;
+  };
   error?: string;
 };
 
@@ -195,6 +205,30 @@ export function AutopilotButton() {
               ))}
             </tbody>
           </table>
+          {!!status.picks?.days?.length && (
+            <table className="autopilot-record">
+              <caption>
+                How its picks did (dry run: would have done), managed by the
+                rules
+              </caption>
+              <tbody>
+                {status.picks.days.slice(0, 7).map((day) => (
+                  <tr key={day.day}>
+                    <td>{day.day}</td>
+                    <td>
+                      {day.picks} pick{day.picks === 1 ? '' : 's'}
+                    </td>
+                    <td>
+                      {day.wins} of {day.picks - day.open} won
+                    </td>
+                    <td>
+                      {day.pnl >= 0 ? '+' : '-'}${Math.abs(day.pnl).toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
           {status.orders.length > 0 && (
             <ul className="autopilot-orders">
               {status.orders.slice(0, 5).map((order) => (

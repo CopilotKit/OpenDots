@@ -183,6 +183,14 @@ class PlaceTests(Base):
         self.assertEqual((result['result'], result['pressed'], submitted), ('submitted', 'Submit order', True))
         self.assertEqual([o['result'] for o in self.orders.recent()][:1], ['submitted'])
 
+    def test_an_unfunded_account_still_dry_runs_but_never_goes_live(self):
+        broke = 'Sell to Open</p><p>Not Enough Buying Power'
+        result, submitted = asyncio.run(self.run_place('dry_run', words=broke))
+        self.assertEqual((result['result'], submitted), ('dry_run', False))
+        self.assertIn('buying power', ' '.join(result['why']))
+        result, submitted = asyncio.run(self.run_place('live', words=broke))
+        self.assertEqual((result['result'], submitted), ('refused', False))
+
 
 class EnterTests(Base):
     def test_the_listener_enters_the_first_suggestion_that_passes(self):
@@ -212,6 +220,79 @@ class EnterTests(Base):
 
         asyncio.run(ow.enter(self.journal, self.orders, OPEN_ET, lambda: [good], worse, place, said.append))
         self.assertIn('worse than planned', placed_with[-1][1][0])
+
+
+class PickTests(Base):
+    """Each pick is scored from the price it used, managed by its rules."""
+
+    def bars(self, path):
+        return [{'time': OPEN_ET.replace(hour=10) + timedelta(minutes=i), 'price': p} for i, p in enumerate(path)]
+
+    def pick(self, minute: int, data=SPREAD, limit=0.30, mode='dry_run'):
+        trade = self.journal.add({**data, 'legs': [{**l, 'strike': l['strike'] + minute / 1000} for l in data['legs']]}
+                                 if minute else data)
+        self.orders.add(trade, 'entry', mode, mode if mode == 'dry_run' else 'submitted', {'limit': limit})
+        with og.closing(og.sqlite3.connect(self.journal.path)) as db, db:  # Placed at 10:00 + minute New York.
+            stamp = (OPEN_ET.replace(hour=14, minute=0) + timedelta(minutes=minute)).replace(tzinfo=og.timezone.utc).timestamp()
+            db.execute('UPDATE autopilot_orders SET ts=?, day=? WHERE trade=?', (stamp, OPEN_ET.date().isoformat(), trade))
+        return trade
+
+    def test_picks_are_scored_per_pick_and_per_day(self):
+        far = {**SPREAD, 'expiry': '2026-10-21', 'days': 0,
+               'legs': [{**SPREAD['legs'][0], 'strike': 760}, {**SPREAD['legs'][1], 'strike': 759}]}
+        self.pick(0, far, 0.10)
+        rising = [770 + i / 60 for i in range(350)]  # SPY drifts up from 770: the same-day put spread decays.
+        now = OPEN_ET.replace(hour=16, minute=30)
+        results = ow.pick_results(self.journal, self.orders, now, minutes=lambda t: self.bars(rising))
+        self.assertEqual(len(results['picks']), 1)
+        pick = results['picks'][0]
+        self.assertEqual((pick['mode'], pick['ticker'], pick['price']), ('dry_run', 'SPY', 0.10))
+        self.assertNotEqual(pick['how'], 'still open')
+        self.assertGreater(pick['pnl'], 0)
+        self.assertEqual(results['days'][0]['picks'], 1)
+        self.assertEqual(results['days'][0]['wins'], 1)
+
+    def test_dry_run_keeps_one_trade_at_a_time_and_skips_refused_suggestions(self):
+        ap.set_pin('482913')
+        saved = {'mode': 'dry_run', 'until': time.time() + 600, 'at': time.time()}
+        saved['sig'] = ap._sign(saved)
+        (ap.HOME / 'state.json').write_text(json.dumps(saved))
+        self.pick(0)  # Placed at 10:00, nothing has moved: still open by its rules.
+        flat = [770.0] * 60
+        found = []
+
+        async def nothing(*args):
+            found.append(args)
+            return {'limit': 0.30}
+
+        et = OPEN_ET.replace(hour=11)
+        self.assertIsNone(asyncio.run(ow.enter(self.journal, self.orders, et, lambda: [{**SPREAD, 'id': 'x'}],
+                                               nothing, nothing, lambda a: None, lambda t: self.bars(flat))))
+        self.assertEqual(found, [])  # Waited for the open pick.
+        # With no pick open, a suggestion refused in the last half hour is skipped.
+        self.orders = ap.Orders(Path(self.directory.name) / 'other.sqlite')
+        self.journal = og.Journal(Path(self.directory.name) / 'other.sqlite')
+        s = {**SPREAD, 'id': self.journal.add(SPREAD)}
+        self.orders.add(s['id'], 'entry', 'dry_run', 'refused', {})
+        self.assertIsNone(asyncio.run(ow.enter(self.journal, self.orders, et, lambda: [s], nothing, nothing,
+                                               lambda a: None, lambda t: self.bars(flat))))
+        self.assertEqual(found, [])
+
+    def test_the_end_of_day_report_tells_the_owner(self):
+        import options_eod
+        self.pick(0)
+        said = []
+        real_notify, real_now = ow.notify, og.now_eastern
+        ow.notify, og.now_eastern = said.append, lambda: OPEN_ET.replace(hour=16, minute=15)
+        try:
+            real_bars = ow.today_bars
+            ow.today_bars = lambda t: self.bars([770 + i / 60 for i in range(300)])
+            alert = options_eod.autopilot_report(self.journal)
+        finally:
+            ow.notify, og.now_eastern, ow.today_bars = real_notify, real_now, real_bars
+        self.assertEqual(said, [alert])
+        self.assertIn('Autopilot (dry run) today: 1 pick', alert['title'])
+        self.assertIn('SPY decay spread at $0.30', alert['message'])
 
 
 if __name__ == '__main__':
