@@ -44,7 +44,24 @@ LOTTO_QTY = 10
 LOTTO_TARGET = 0.05
 SHORT_DELTA = (0.10, 0.25)
 MIN_POP = 0.80  # Credit spreads: the owner's 80% win-rate target (2026-10-21).
-CREDIT_KINDS = ('decay spread', 'day credit spread')
+CREDIT_KINDS = ('decay spread', 'day credit spread', 'edge: fading fear puts', 'edge: stretched calls')
+# Edges from the edge finder (2026-10-21, Site Maps/Robinhood/Edge Finder.md): conditions that
+# lifted $1-wide credit spreads on two years of modeled trades, on the early days and on the
+# later days the choice never saw. Traded exactly as tested: held to the 3:45pm exit, stop 3x.
+VOL_INDEX = {'SPY': '_VIX', 'QQQ': '_VXN'}
+EDGES = {
+    'edge: fading fear puts': {
+        'side': 'put', 'trading_days': 2, 'delta': (0.15, 0.20),
+        'test': lambda c: c['vix_vs_20d'] < -0.0474,
+        'when': 'the VIX (VXN for QQQ) is more than 4.7% below its 20-day average: fear is fading',
+        'lab': 'early days ~86-92% wins, +$3-6 a trade; unseen days ~90-92%, +$5-6 (selling every day lost ~$1-4)'},
+    'edge: stretched calls': {
+        'side': 'call', 'trading_days': 5, 'delta': (0.17, 0.23),
+        'test': lambda c: c['ma20_z'] >= 1.38,
+        'when': 'price is 1.38+ standard deviations above its 20-day average: the run-up is stretched',
+        'lab': 'early and unseen days ~84% wins, about +$7 a trade (selling every day broke even or lost)'},
+}
+EDGE_EXIT = {'keep': None, 'stop_x': 3.0, 'trail': False}
 # Signals that showed an edge in the edge lab (round 1, 2026-10-21; Edge List.md),
 # with the exits they were tested with and their unseen-days result at limit fills.
 EDGE_SIGNALS = {
@@ -204,9 +221,30 @@ def market(ticker: str, getter=fetch) -> dict:
         ones = [{'time': datetime.fromisoformat(b['datetime']), 'o': b['price']['open'], 'h': b['price']['high'],
                  'l': b['price']['low'], 'c': b['price']['close'], 'v': (b.get('volume') or {}).get('stock_volume') or 0}
                 for b in getter(f'charts/intraday/{ticker}.json').get('data', []) if b.get('datetime')]
+    try:
+        edge = edge_conditions(ticker, chain, getter)
+    except Exception as error:  # No index data: the edge finders stay quiet.
+        edge = {'error': str(error)}
     return {**chain, 'ticker': ticker, 'minutes': minutes, 'daily': daily, 'forecast_vol': sigma,
-            'trend': trend(minutes), 'bars5': five_minute(ones),
+            'trend': trend(minutes), 'bars5': five_minute(ones), 'edge': edge,
             'expected_move_today': round(chain['price'] * (sigma or chain['iv30']) * math.sqrt(left), 2)}
+
+
+def edge_conditions(ticker: str, chain: dict, getter=fetch) -> dict:
+    """The edge finder's two conditions now, measured as it measured them: against the
+    previous 20 daily closes (today's own close left out)."""
+    if ticker not in VOL_INDEX:
+        raise LookupError(f'No edge conditions for {ticker}.')
+    today = chain['asof'].date().isoformat()
+    earlier = lambda symbol: [float(d['close']) for d in getter(f'charts/historical/{symbol}.json', 3600)['data']
+                              if d['date'] < today][-20:]
+    index_closes, closes = earlier(VOL_INDEX[ticker]), earlier(ticker)
+    index_now = float(getter(f'quotes/{VOL_INDEX[ticker]}.json', 60)['data']['current_price'])
+    spread = float(np.std(closes, ddof=1))
+    return {'vix': index_now, 'vix_avg20': round(float(np.mean(index_closes)), 2),
+            'vix_vs_20d': round(index_now / float(np.mean(index_closes)) - 1, 4),
+            'ma20': round(float(np.mean(closes)), 2),
+            'ma20_z': round((chain['price'] - float(np.mean(closes))) / spread, 2) if spread else 0.0}
 
 
 # Candidate finders ----------------------------------------------------------
@@ -274,6 +312,52 @@ def credit_spreads(m: dict, top: int = 3) -> list[dict]:
                                'passes the short strike.' if days else 'Same day: close at 30-40% of the credit '
                                'or by 3:45pm; close at once if price reaches the short strike.')})
     out.sort(key=lambda c: c['ev'] / c['max_loss'], reverse=True)
+    return out[:top]
+
+
+def edge_spreads(m: dict, top: int = 2) -> list[dict]:
+    """The edge finder's two trades, only when their condition holds now: a $1-wide
+    credit spread, short leg in the tested delta range, expiring the tested number of
+    trading days out; held to the 3:45pm exit with a stop at 3x the credit."""
+    c, et, out = m.get('edge') or {}, m['asof'], []
+    if 'vix_vs_20d' not in c:
+        return out
+    for kind, rule in EDGES.items():
+        if not rule['test'](c):
+            continue
+        expiry = next((e for e in sorted({o['expiry'] for o in m['options']})
+                       if int(np.busday_count(et.date(), e)) == rule['trading_days']), None)
+        if expiry is None:
+            continue
+        call = rule['side'] == 'call'
+        legs = by_strike([o for o in m['options'] if o['expiry'] == expiry and o['call'] == call])
+        target = sum(rule['delta']) / 2
+        shorts = sorted((o for o in legs.values() if rule['delta'][0] <= abs(o['delta']) <= rule['delta'][1] and o['bid'] > 0),
+                        key=lambda o: abs(abs(o['delta']) - target))
+        for short in shorts:
+            k1 = short['strike']
+            long = legs.get(k1 + 1 if call else k1 - 1)  # $1 wide, as tested.
+            if not long:
+                continue
+            credit = round(short['bid'] - long['ask'], 2)
+            limit = round(mid(short) - mid(long), 2)
+            max_loss = round((1 - credit) * 100 + 4 * FEE, 2)
+            if limit < 0.05 or max_loss > MAX_LOSS:
+                continue
+            side = rule['side']
+            out.append({
+                'kind': kind, 'ticker': m['ticker'], 'expiry': expiry.isoformat(), 'days': (expiry - et.date()).days,
+                'legs': [{'action': 'sell', 'symbol': short['symbol'], 'type': side, 'strike': k1, 'iv': short['iv']},
+                         {'action': 'buy', 'symbol': long['symbol'], 'type': side, 'strike': long['strike'], 'iv': long['iv']}],
+                'qty': 1, 'price': credit, 'limit': limit, 'max_loss': max_loss, 'max_gain': round(limit * 100 - 4 * FEE, 2),
+                'pop': round(1 - abs(short['delta']), 3), 'ev': None, 'short_delta': short['delta'], 'short_iv': short['iv'],
+                'exit': dict(EDGE_EXIT), 'conditions': c,
+                'why': (f'Edge: {rule["when"]} (now {c["vix_vs_20d"]:+.1%} vs its average, price {c["ma20_z"]:+.2f} std devs '
+                        f'from its 20-day average). {side.title()} credit spread {k1:g}/{long["strike"]:g}, '
+                        f'{rule["trading_days"]} trading days out, short {abs(short["delta"]):.2f} delta: '
+                        f'about ${limit:.2f} at the mid. Edge finder: {rule["lab"]}.'),
+                'manage': 'As tested: hold to 3:45pm on expiry day; close if the spread costs 3x the credit. No early profit-taking.'})
+            break
     return out[:top]
 
 
@@ -633,8 +717,11 @@ def track(data: dict, entered: datetime, bars: list[dict], ivs: dict | None = No
     credit = data['price'] > 0
     fees = 2 * FEE * len(data['legs']) * data['qty']  # Open and close.
     entry = abs(data['price'])
-    # Profit target and stop, as each suggestion's management line says.
-    target = 0.35 * entry if data['days'] == 0 else 0.45 * entry  # Credit kept.
+    # Profit target and stop, as each suggestion's management line says (edge trades: as tested).
+    rule = data.get('exit') or {}
+    keep = rule['keep'] if 'keep' in rule else (0.35 if data['days'] == 0 else 0.45)
+    target = keep * entry if keep is not None else None  # Credit kept; None: no early profit-taking.
+    stop_x = rule.get('stop_x', 2)
     def mark_at(bar, scale=1.0):
         """What closing would cost (credit) or bring (debit) per share at this bar."""
         years = max((datetime(expiry.year, expiry.month, expiry.day, 16) - bar['time']).total_seconds(), 0) / (365 * 24 * 3600)
@@ -676,9 +763,9 @@ def track(data: dict, entered: datetime, bars: list[dict], ivs: dict | None = No
         seen = {e['event'] for e in events}
         hit = None
         if credit:
-            if 'profit target' not in seen and entry - mark >= target:
+            if 'profit target' not in seen and target is not None and entry - mark >= target:
                 hit = 'profit target'
-            elif 'stop' not in seen and mark >= 2 * entry:
+            elif 'stop' not in seen and mark >= stop_x * entry:
                 hit = 'stop'
         elif data.get('exit'):  # An edge-lab signal: its tested exits.
             rule = data['exit']
@@ -713,10 +800,10 @@ def minute_bars(ticker: str, getter=fetch) -> list[dict]:
 
 
 # Tools for the Dots ---------------------------------------------------------
-FINDERS = {'credit': credit_spreads, 'debit': debit_spreads, 'lotto': lottos, 'signal': signal_spreads}
+FINDERS = {'credit': credit_spreads, 'debit': debit_spreads, 'lotto': lottos, 'signal': signal_spreads, 'edge': edge_spreads}
 
 
-def suggest(journal: Journal, ticker: str = '', kinds: str = 'credit,debit,lotto,signal', getter=fetch, et=None) -> dict:
+def suggest(journal: Journal, ticker: str = '', kinds: str = 'credit,debit,lotto,signal,edge', getter=fetch, et=None) -> dict:
     et = et or now_eastern()
     if not market_open(et):
         return {'suggestions': [], 'note': 'The market is closed (9:30am-4pm New York, weekdays).'}
@@ -763,7 +850,7 @@ def register(tool, journal: Journal | None = None, getter=fetch) -> None:
                 'expected_move_today': m['expected_move_today'], 'trend': m['trend']}
 
     @tool()
-    def options_suggest(ticker: str = '', kinds: str = 'credit,debit,lotto,signal') -> dict:
+    def options_suggest(ticker: str = '', kinds: str = 'credit,debit,lotto,signal,edge') -> dict:
         """Find trades within the owner's rules (SPY/QQQ/TSLA, up to 14 days out,
         defined risk, $100 max loss, $40 for debit spreads and lottos, one trade at
         a time, $60 daily loss limit). kinds: credit, debit, lotto. Each comes

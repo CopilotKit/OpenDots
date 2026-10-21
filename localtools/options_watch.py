@@ -61,9 +61,10 @@ def watch(row: dict, bars: list[dict]) -> dict:
     lock_at = max(LOCK_MIN, LOCK_SHARE * abs(row['entry']) * 100 * data['qty'])
     events = [{**e, 'mark': next((p['mark'] for p in points if p['time'] == e['time']), None)} for e in result['events']]
     peak, floor = None, None
+    trails = (data.get('exit') or {}).get('trail', True)  # Edge trades run as tested: no trailing stop.
     for i, p in enumerate(points):
         peak = p['pnl'] if peak is None else max(peak, p['pnl'])
-        if peak >= lock_at:
+        if trails and peak >= lock_at:
             floor = max(FLOOR_MIN, FLOOR_KEEP * peak)
             if p['pnl'] <= floor and i and not any(e['event'] == 'trailing stop' for e in events):
                 bar = [b for b in bars if b['time'] >= entered][i]
@@ -184,6 +185,9 @@ async def check(journal: og.Journal, alerts: Alerts, now: datetime, set_up, minu
 
 
 ENTRY_EVERY_S = 300
+# What the autopilot trades: the edge finder's two edges (2026-10-21), so the dry run builds
+# their record. The other kinds stay suggestions for the owner.
+AUTOPILOT_KINDS = 'edge'
 PRICE_SLIP = 0.10  # An entry's live mid may be at most 10% worse than the suggestion's.
 
 
@@ -314,7 +318,7 @@ async def main() -> None:
                                          autopilot.max_loss_allowed(s['kind']), orders, extra, title)
 
         def find():
-            return og.suggest(journal).get('suggestions', [])
+            return og.suggest(journal, kinds=AUTOPILOT_KINDS).get('suggestions', [])
 
         last_entry = 0.0
         while True:

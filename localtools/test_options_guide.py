@@ -12,11 +12,11 @@ ASOF = '2026-10-21 15:00:00'  # UTC: 11:00 in New York.
 TODAY = date(2026, 10, 21)
 
 
-def chain(price=500.0, vol=0.30, bids=True):
+def chain(price=500.0, vol=0.30, bids=True, expiries=(0, 3, 20)):
     """A made-up SPY chain priced by Black-Scholes at `vol`, a cent wide."""
     rows = []
     et = og.eastern(datetime.strptime(ASOF, '%Y-%m-%d %H:%M:%S'))
-    for days in (0, 3, 20):
+    for days in expiries:
         expiry = TODAY + timedelta(days=days)
         years = og.years_to(expiry, et)
         for strike in range(470, 531):
@@ -69,6 +69,42 @@ class OptionsGuideTests(unittest.TestCase):
         self.assertEqual({c['kind'] for c in found}, {'decay spread', 'day credit spread'})
         # Implied volatility below what is expected to happen: no edge, nothing to sell.
         self.assertEqual(og.credit_spreads(og.market('SPY', getter_for(chain(vol=0.08), realized=0.30)), top=50), [])
+
+    def test_edge_spreads_only_when_their_condition_holds_and_as_tested(self):
+        def getter(vix_now, closes):
+            # Wednesday 2026-10-21: 2 trading days out is Friday 10-23, 5 is Wednesday 10-28.
+            base = getter_for(chain(vol=0.20, expiries=(0, 2, 7)))
+            history = lambda values: {'data': [{'date': f'2026-09-{i + 1:02d}', 'close': str(v)} for i, v in enumerate(values)]
+                                      + [{'date': '2026-10-21', 'close': '999'}]}  # Today's own close is left out.
+            docs = {'charts/historical/_VIX.json': history([20.0] * 20), 'quotes/_VIX.json': {'data': {'current_price': vix_now}},
+                    'charts/historical/SPY.json': history(closes)}
+            return lambda path, max_age=60: docs[path] if path in docs else base(path, max_age)
+
+        # Fear fading (VIX 18 vs a 20 average) and price stretched (500 vs ~480, std ~1).
+        m = og.market('SPY', getter(18.0, [479 + (i % 3) for i in range(20)]))
+        self.assertEqual((m['edge']['vix_vs_20d'], m['edge']['ma20_z'] > 1.38), (-0.1, True))
+        found = {c['kind']: c for c in og.edge_spreads(m)}
+        self.assertEqual(set(found), {'edge: fading fear puts', 'edge: stretched calls'})
+        puts, calls = found['edge: fading fear puts'], found['edge: stretched calls']
+        self.assertEqual((puts['expiry'], calls['expiry']), ('2026-10-23', '2026-10-28'))
+        for c, (low, high) in ((puts, (0.15, 0.20)), (calls, (0.17, 0.23))):
+            self.assertEqual(abs(c['legs'][0]['strike'] - c['legs'][1]['strike']), 1)
+            self.assertTrue(low <= abs(c['short_delta']) <= high)
+            self.assertEqual(c['exit'], {'keep': None, 'stop_x': 3.0, 'trail': False})
+            self.assertLessEqual(c['max_loss'], og.MAX_LOSS)
+        self.assertEqual(puts['legs'][0]['type'], 'put')
+        # Neither condition: nothing.
+        calm = og.market('SPY', getter(21.0, [500 + (i % 3) for i in range(20)]))
+        self.assertEqual(og.edge_spreads(calm), [])
+
+    def test_edge_trades_replay_with_their_tested_exits(self):
+        data = {'kind': 'edge: fading fear puts', 'ticker': 'SPY', 'expiry': '2026-10-23', 'days': 2, 'qty': 1, 'price': 0.20,
+                'exit': {'keep': None, 'stop_x': 3.0, 'trail': False},
+                'legs': [{'action': 'sell', 'type': 'put', 'strike': 490, 'iv': 0.2},
+                         {'action': 'buy', 'type': 'put', 'strike': 489, 'iv': 0.2}]}
+        bars = [{'time': datetime(2026, 10, 21, 10, 0) + timedelta(minutes=i), 'price': 500 + i / 100} for i in range(300)]
+        result = og.track(data, datetime(2026, 10, 21, 10, 0), bars)
+        self.assertNotIn('profit target', [e['event'] for e in result['events']])  # No early profit-taking.
 
     def test_lottos_need_a_bid_and_stay_cheap(self):
         m = og.market('SPY', getter_for(chain(vol=0.30)))
