@@ -640,7 +640,12 @@ def track(data: dict, entered: datetime, bars: list[dict], ivs: dict | None = No
         years = max((datetime(expiry.year, expiry.month, expiry.day, 16) - bar['time']).total_seconds(), 0) / (365 * 24 * 3600)
         value = 0.0
         for leg in data['legs']:
-            vol = (leg.get('iv') or ivs.get(leg.get('symbol')) or 0.2) * scale
+            # The leg's own volatility, logged with it; older suggestions lack it, so
+            # the short leg's (also logged), then the chain's only if it is sane: after
+            # the close, expiring options show junk volatility or none.
+            chain_iv = ivs.get(leg.get('symbol'))
+            vol = (leg.get('iv') or data.get('short_iv')
+                   or (chain_iv if chain_iv and 0.03 < chain_iv < 2 else None) or 0.2) * scale
             worth = float(bs_price(bar['price'], leg['strike'], years, vol, leg['type'] == 'call'))
             value += worth if leg['action'] == 'buy' else -worth
         return -value if credit else value
