@@ -123,6 +123,7 @@ export const toolGroups = {
       'options_suggest',
       'options_record',
       'options_review',
+      'robinhood_options_set_up',
     ],
   },
   site_mapping: {

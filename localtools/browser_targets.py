@@ -469,4 +469,6 @@ def register_target_tools(tool, browser, save_image, ensure_control, store=None)
     register_mapping_tools(tool, browser, store, DESCRIBE, TEACH_STATUS, reference_image, current_ref)
     from site_routines import register_routine_tools
     register_routine_tools(tool, browser, store, resolve, current_ref, scan, ensure_control)
+    from robinhood_ticket import register_robinhood_tools
+    register_robinhood_tools(tool, browser, ensure_control)
     return recall_name
