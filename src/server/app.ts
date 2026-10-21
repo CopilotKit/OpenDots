@@ -102,6 +102,7 @@ export function createApp({
     c.json({
       settings: store.settings(),
       tasks: store.tasks(),
+      goals: store.goals(),
       memories: store.memories(),
       mode: config.mode,
       configured: configured(config),
@@ -238,6 +239,47 @@ export function createApp({
     store.deleteMemory(c.req.param('id'))
       ? c.json({ ok: true })
       : c.json({ error: 'Memory not found.' }, 404),
+  );
+  const goalFields = {
+    title: z.string().trim().min(1).max(120),
+    description: z.string().trim().max(4000),
+    status: z.enum(['active', 'paused', 'completed', 'cancelled']),
+    progress: z.number().int().min(0).max(100),
+    reminderAt: z.number().int().min(1).max(8_640_000_000_000_000).nullable(),
+  };
+  app.post('/api/goals', async (c) => {
+    const parsed = z
+      .object({
+        title: goalFields.title,
+        description: goalFields.description.optional().default(''),
+        status: goalFields.status.optional().default('active'),
+        progress: goalFields.progress.optional().default(0),
+        reminderAt: goalFields.reminderAt.optional().default(null),
+      })
+      .strict()
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success)
+      return c.json({ error: 'Enter valid goal details.' }, 400);
+    return c.json(store.createGoal(parsed.data), 201);
+  });
+  app.put('/api/goals/:id', async (c) => {
+    const parsed = z
+      .object(goalFields)
+      .strict()
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success)
+      return c.json({ error: 'Enter valid goal details.' }, 400);
+    const goal = store.updateGoal(c.req.param('id'), parsed.data);
+    return goal ? c.json(goal) : c.json({ error: 'Goal not found.' }, 404);
+  });
+  app.post('/api/goals/:id/reminder/dismiss', (c) => {
+    const goal = store.dismissGoalReminder(c.req.param('id'));
+    return goal ? c.json(goal) : c.json({ error: 'Goal not found.' }, 404);
+  });
+  app.delete('/api/goals/:id', (c) =>
+    store.deleteGoal(c.req.param('id'))
+      ? c.json({ ok: true })
+      : c.json({ error: 'Goal not found.' }, 404),
   );
   app.onError((error, c) => {
     console.error('API request failed:', error.name);
