@@ -45,6 +45,12 @@ LOTTO_TARGET = 0.05
 SHORT_DELTA = (0.10, 0.25)
 MIN_POP = 0.80  # Credit spreads: the owner's 80% win-rate target (2026-10-21).
 CREDIT_KINDS = ('decay spread', 'day credit spread')
+# Signals that showed an edge in the edge lab (round 1, 2026-10-21; Edge List.md),
+# with the exits they were tested with and their unseen-days result at limit fills.
+EDGE_SIGNALS = {
+    'VWAP rejection': {'target': 0.5, 'stop': 0.5, 'minutes': 30, 'lab': '+$2.85 a trade over 42 unseen-day trades, 48% wins'},
+    'MACD cross + RSI 30/70': {'target': 1.0, 'stop': 0.3, 'minutes': 60, 'lab': '+$1.99 a trade over 25 unseen-day trades'},
+}
 DEBIT_DELTA = (0.30, 0.55)
 CBOE = 'https://cdn.cboe.com/api/global/delayed_quotes'
 DB = Path(__file__).parent.parent / 'data' / 'options-guide.sqlite'
@@ -190,12 +196,24 @@ def market(ticker: str, getter=fetch) -> dict:
     daily = [d['close'] for d in getter(f'charts/historical/{ticker}.json', 3600).get('data', [])[-60:]]
     sigma = forecast_vol(daily, minutes)
     left = years_to_close(chain['asof'])
+    try:
+        if getter is not fetch:
+            raise LookupError('tests and replays use the given data only')
+        ones = yahoo_minutes(ticker)  # Close to real time: the signals need it.
+    except Exception:
+        ones = [{'time': datetime.fromisoformat(b['datetime']), 'o': b['price']['open'], 'h': b['price']['high'],
+                 'l': b['price']['low'], 'c': b['price']['close'], 'v': (b.get('volume') or {}).get('stock_volume') or 0}
+                for b in getter(f'charts/intraday/{ticker}.json').get('data', []) if b.get('datetime')]
     return {**chain, 'ticker': ticker, 'minutes': minutes, 'daily': daily, 'forecast_vol': sigma,
-            'trend': trend(minutes),
+            'trend': trend(minutes), 'bars5': five_minute(ones),
             'expected_move_today': round(chain['price'] * (sigma or chain['iv30']) * math.sqrt(left), 2)}
 
 
 # Candidate finders ----------------------------------------------------------
+def mid(option: dict) -> float:
+    return (option['bid'] + option['ask']) / 2
+
+
 def by_strike(options: list[dict]) -> dict:
     return {o['strike']: o for o in options}
 
@@ -246,7 +264,7 @@ def credit_spreads(m: dict, top: int = 3) -> list[dict]:
                     'kind': kind, 'ticker': m['ticker'], 'expiry': expiry.isoformat(), 'days': days,
                     'legs': [{'action': 'sell', 'symbol': short['symbol'], 'type': side, 'strike': k1, 'iv': short['iv']},
                              {'action': 'buy', 'symbol': long['symbol'], 'type': side, 'strike': k2, 'iv': long['iv']}],
-                    'qty': 1, 'price': credit, 'max_loss': max_loss, 'max_gain': round(credit * 100 - 4 * FEE, 2),
+                    'qty': 1, 'price': credit, 'limit': round(mid(short) - mid(long), 2), 'max_loss': max_loss, 'max_gain': round(credit * 100 - 4 * FEE, 2),
                     'pop': round(edge['pop'], 3), 'ev': round(edge['ev'], 2), 'ev_at_implied': round(implied['ev'], 2),
                     'short_delta': short['delta'], 'short_iv': short['iv'], 'theta_per_day': round((short['theta'] - long['theta']) * -100, 2),
                     'why': (f'{side.title()} credit spread {k1:g}/{k2:g}: collect ${credit:.2f} (${credit * 100:.0f}); '
@@ -293,13 +311,96 @@ def debit_spreads(m: dict, top: int = 2) -> list[dict]:
                 'kind': 'debit spread', 'ticker': m['ticker'], 'expiry': expiry.isoformat(), 'days': days,
                 'legs': [{'action': 'buy', 'symbol': long['symbol'], 'type': 'call' if call else 'put', 'strike': k1, 'iv': long['iv']},
                          {'action': 'sell', 'symbol': short['symbol'], 'type': 'call' if call else 'put', 'strike': k2, 'iv': short['iv']}],
-                'qty': 1, 'price': -debit, 'max_loss': cost, 'max_gain': round(abs(k2 - k1) * 100 - cost, 2),
+                'qty': 1, 'price': -debit, 'limit': round(mid(long) - mid(short), 2), 'max_loss': cost, 'max_gain': round(abs(k2 - k1) * 100 - cost, 2),
                 'pop': round(stats['pop'], 3), 'ev': round(stats['ev'], 2), 'breakeven': round(breakeven, 2),
                 'why': (f'{"Call" if call else "Put"} debit spread {k1:g}/{k2:g} for ${debit:.2f} (${cost:.0f}), with '
                         f'the trend ({m["trend"]["why"]}). Pays if price ends past {breakeven:.2f}; '
                         f'{stats["pop"]:.0%} chance at forecast volatility, which assumes no trend: the trend is the bet.'),
                 'manage': 'Take profit at +50-100% of the debit; it can expire worthless (the debit is the most it can lose).'})
     out.sort(key=lambda c: c['ev'], reverse=True)
+    return out[:top]
+
+
+def yahoo_minutes(ticker: str, max_age: float = 30) -> list[dict]:
+    """Today's 1-minute bars from Yahoo Finance (close to real time, where Cboe's
+    are ~15 minutes late): [{'time': New York datetime, 'o','h','l','c','v'}]."""
+    import requests
+    key = f'yahoo:{ticker}'
+    hit = _cache.get(key)
+    if hit and time.time() - hit[0] < max_age:
+        return hit[1]
+    response = requests.get(f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d',
+                            timeout=20, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+    response.raise_for_status()
+    result = response.json()['chart']['result'][0]
+    offset = result['meta'].get('gmtoffset', -14400)
+    quote = result['indicators']['quote'][0]
+    bars = []
+    for i, stamp in enumerate(result.get('timestamp') or []):
+        values = [quote[k][i] for k in ('open', 'high', 'low', 'close', 'volume')]
+        if None in values:
+            continue
+        t = datetime.fromtimestamp(stamp, timezone.utc).replace(tzinfo=None) + timedelta(seconds=offset)
+        if 9 * 60 + 30 <= t.hour * 60 + t.minute < 16 * 60:
+            bars.append({'time': t, 'o': values[0], 'h': values[1], 'l': values[2], 'c': values[3], 'v': values[4]})
+    _cache[key] = (time.time(), bars)
+    return bars
+
+
+def five_minute(minutes: list[dict], now: datetime | None = None) -> list[dict]:
+    """1-minute bars -> finished 5-minute bars (the forming one is left out)."""
+    groups: dict = {}
+    for b in minutes:
+        start = b['time'].replace(minute=b['time'].minute - b['time'].minute % 5, second=0, microsecond=0)
+        g = groups.setdefault(start, {'t': start, 'o': b['o'], 'h': b['h'], 'l': b['l'], 'c': b['c'], 'v': 0})
+        g['h'], g['l'], g['c'], g['v'] = max(g['h'], b['h']), min(g['l'], b['l']), b['c'], g['v'] + b['v']
+    bars = [groups[k] for k in sorted(groups)]
+    latest = now or (minutes[-1]['time'] + timedelta(minutes=1) if minutes else None)
+    return [b for b in bars if latest is None or b['t'] + timedelta(minutes=5) <= latest]
+
+
+def signal_spreads(m: dict, top: int = 2) -> list[dict]:
+    """The edge-lab signals that fired on the latest finished 5-minute bar: a
+    same-day $1 debit spread in their direction (SPY, QQQ), within the $40 debit
+    limit, with the exits they were tested with."""
+    from edge_lab import signals
+    day = m.get('bars5') or []
+    if m['ticker'] == 'TSLA' or len(day) < 12:
+        return []  # TSLA's $2.50 strikes do not fit $40; the signals need an hour of bars.
+    out = []
+    for i, name, up in signals(day, None, m.get('history5') or []):
+        if i != len(day) - 1 or name not in EDGE_SIGNALS:
+            continue
+        rule = EDGE_SIGNALS[name]
+        expiry = m['asof'].date()
+        legs = sorted((o for o in m['options'] if o['expiry'] == expiry and o['call'] == up), key=lambda o: o['strike'])
+        strikes = by_strike(legs)
+        price = day[-1]['c']
+        # From the money outwards until the spread fits the $40 debit limit.
+        ordered = sorted((k for k in strikes if (k >= price - 0.5 if up else k <= price + 0.5)), key=lambda k: abs(k - price))
+        for k1 in ordered:
+            k2 = k1 + 1 if up else k1 - 1
+            if k2 not in strikes:
+                continue
+            long, short = strikes[k1], strikes[k2]
+            limit = round(mid(long) - mid(short), 2)
+            cost = round(limit * 100 + 4 * FEE, 2)
+            if limit < 0.05 or cost > MAX_DEBIT:
+                continue
+            side = 'call' if up else 'put'
+            out.append({
+                'kind': f'signal: {name}', 'ticker': m['ticker'], 'expiry': expiry.isoformat(), 'days': 0,
+                'legs': [{'action': 'buy', 'symbol': long['symbol'], 'type': side, 'strike': k1, 'iv': long['iv']},
+                         {'action': 'sell', 'symbol': short['symbol'], 'type': side, 'strike': k2, 'iv': short['iv']}],
+                'qty': 1, 'price': -limit, 'limit': limit, 'max_loss': cost, 'max_gain': round(100 - cost, 2),
+                'pop': None, 'ev': None, 'exit': {k: rule[k] for k in ('target', 'stop', 'minutes')},
+                'signal_bar': day[-1]['t'].strftime('%H:%M'),
+                'why': (f'{name} on the {day[-1]["t"]:%H:%M} 5-minute bar ({"bullish" if up else "bearish"}): '
+                        f'{side} debit spread {k1:g}/{k2:g} for ${limit:.2f} (${cost:.0f}) at the mid. '
+                        f'Edge lab: {rule["lab"]}.'),
+                'manage': (f'Limit order at the mid, never market. Sell at +{rule["target"]:.0%} (${limit * (1 + rule["target"]):.2f}), '
+                           f'stop at -{rule["stop"]:.0%} (${limit * (1 - rule["stop"]):.2f}), or after {rule["minutes"]} minutes.')})
+            break
     return out[:top]
 
 
@@ -348,7 +449,7 @@ def lottos(m: dict, top: int = 3) -> list[dict]:
         out.append({
             'kind': 'lotto', 'ticker': m['ticker'], 'expiry': option['expiry'].isoformat(), 'days': days,
             'legs': [{'action': 'buy', 'symbol': option['symbol'], 'type': side, 'strike': option['strike'], 'iv': option['iv']}],
-            'qty': LOTTO_QTY, 'price': -option['ask'], 'max_loss': round(cost, 2), 'max_gain': None,
+            'qty': LOTTO_QTY, 'price': -option['ask'], 'limit': round(max(mid(option), 0.01), 2), 'max_loss': round(cost, 2), 'max_gain': None,
             'pop': round(stats['pop'], 3), 'ev': round(stats['ev'], 2), 'reach_target': round(reach, 3),
             'touch_target': round(min(1.0, 2 * reach), 3), 'target_underlying': round(target_price, 2),
             'why': (f'{LOTTO_QTY} x {m["ticker"]} {option["strike"]:g} {side} at ${option["ask"]:.2f} '
@@ -574,6 +675,14 @@ def track(data: dict, entered: datetime, bars: list[dict], ivs: dict | None = No
                 hit = 'profit target'
             elif 'stop' not in seen and mark >= 2 * entry:
                 hit = 'stop'
+        elif data.get('exit'):  # An edge-lab signal: its tested exits.
+            rule = data['exit']
+            if mark >= entry * (1 + rule['target']):
+                hit = 'profit target'
+            elif mark <= entry * (1 - rule['stop']):
+                hit = 'stop'
+            elif (bar['time'] - entered).total_seconds() >= rule['minutes'] * 60:
+                hit = 'time exit'
         elif 'profit target' not in seen and (mark >= LOTTO_TARGET if data['kind'] == 'lotto' else mark >= 1.5 * entry):
             hit = 'profit target'
         if not hit and 'time exit 3:45pm' not in seen and bar['time'].date() == expiry and \
@@ -599,10 +708,10 @@ def minute_bars(ticker: str, getter=fetch) -> list[dict]:
 
 
 # Tools for the Dots ---------------------------------------------------------
-FINDERS = {'credit': credit_spreads, 'debit': debit_spreads, 'lotto': lottos}
+FINDERS = {'credit': credit_spreads, 'debit': debit_spreads, 'lotto': lottos, 'signal': signal_spreads}
 
 
-def suggest(journal: Journal, ticker: str = '', kinds: str = 'credit,debit,lotto', getter=fetch, et=None) -> dict:
+def suggest(journal: Journal, ticker: str = '', kinds: str = 'credit,debit,lotto,signal', getter=fetch, et=None) -> dict:
     et = et or now_eastern()
     if not market_open(et):
         return {'suggestions': [], 'note': 'The market is closed (9:30am-4pm New York, weekdays).'}
@@ -615,17 +724,22 @@ def suggest(journal: Journal, ticker: str = '', kinds: str = 'credit,debit,lotto
     found = []
     for name in [t.strip().upper() for t in (ticker or ','.join(TICKERS)).split(',') if t.strip()]:
         m = market(name, getter)
+        # Earlier days' prices warm up the signals' RSI and MACD at the open.
+        earlier = journal.load_bars(name, et.date() - timedelta(days=7), et.date() - timedelta(days=1))
+        m['history5'] = [b['c'] for b in five_minute([{'time': b['time'], 'o': b['price'], 'h': b['price'],
+                                                       'l': b['price'], 'c': b['price'], 'v': 0} for b in earlier])][-120:]
         for kind in [k.strip() for k in kinds.split(',') if k.strip() in FINDERS]:
             for candidate in FINDERS[kind](m):
                 candidate['id'] = journal.add(candidate)
                 candidate['quote_time'] = m['asof'].strftime('%H:%M New York (delayed ~15 min)')
                 found.append(candidate)
-    found.sort(key=lambda c: c['ev'] / max(c['max_loss'], 1), reverse=True)
+    found.sort(key=lambda c: (c['ev'] if c['ev'] is not None else 5) / max(c['max_loss'], 1), reverse=True)
     found = found[:6]
-    plain = [f"{i}. [{c['id']}] {c['kind']}, {c['ticker']} expiring {c['expiry']}: {c['why']} Max loss ${c['max_loss']:.0f}. "
+    plain = [f"{i}. [{c['id']}] {c['kind']}, {c['ticker']} expiring {c['expiry']}: {c['why']} Limit ${c.get('limit', abs(c['price'])):.2f} at the mid. Max loss ${c['max_loss']:.0f}. "
              f"{c['manage']}{' ' + c['warning'] if c.get('warning') else ''}" for i, c in enumerate(found, 1)]
     return {'say_to_owner': '\n'.join(plain) or 'Nothing fits the rules right now.', 'suggestions': found, 'loss_today': lost,
-            'note': ('Quotes are delayed ~15 minutes: check the live price on Robinhood before setting up. '
+            'note': ('Option quotes are delayed ~15 minutes: check the live mid on Robinhood and use a limit order '
+                     'at it (never market) before setting up. '
                      'The owner presses the order button; record the fill with options_record.')}
 
 
@@ -644,11 +758,13 @@ def register(tool, journal: Journal | None = None, getter=fetch) -> None:
                 'expected_move_today': m['expected_move_today'], 'trend': m['trend']}
 
     @tool()
-    def options_suggest(ticker: str = '', kinds: str = 'credit,debit,lotto') -> dict:
+    def options_suggest(ticker: str = '', kinds: str = 'credit,debit,lotto,signal') -> dict:
         """Find trades within the owner's rules (SPY/QQQ/TSLA, up to 14 days out,
         defined risk, $100 max loss, $40 for debit spreads and lottos, one trade at
         a time, $60 daily loss limit). kinds: credit, debit, lotto. Each comes
         with its odds, expected value, why, and how to manage it, and is logged.
+        'signal' = the edge-lab signals (VWAP rejection, MACD + RSI 30/70) that just
+        fired. Every suggestion has a 'limit' price at the mid: always a limit order.
         Never place the order: set it up on the broker and hand off to the owner."""
         return suggest(journal, ticker, kinds, getter)
 

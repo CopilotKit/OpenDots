@@ -171,6 +171,34 @@ class TrackTests(unittest.TestCase):
         self.assertEqual(og.track(data, start, crash)['managed_exit']['event'], 'stop')
 
 
+class SignalTests(unittest.TestCase):
+    def test_vwap_rejection_becomes_a_limit_priced_debit_spread_with_lab_exits(self):
+        m = og.market('SPY', getter_for(chain(price=500.0, vol=0.30)))
+        start = datetime(2026, 10, 21, 9, 30)
+        closes = [499.0] * 6 + [499.5, 500.5, 501.5, 502.0, 502.5, 502.0, 501.5, 501.0, 500.8, 500.6, 499.8]
+        m['bars5'] = [{'t': start + timedelta(minutes=5 * i), 'o': c, 'h': c + 0.2, 'l': c - 0.2, 'c': c, 'v': 1000}
+                      for i, c in enumerate(closes)]
+        m['history5'] = [499.0 + 0.01 * i for i in range(120)]
+        found = og.signal_spreads(m)
+        rejection = [c for c in found if c['kind'] == 'signal: VWAP rejection']
+        self.assertEqual(len(rejection), 1, found)
+        trade = rejection[0]
+        self.assertEqual(trade['legs'][0]['type'], 'put')  # Bearish.
+        self.assertEqual(trade['legs'][0]['strike'] - trade['legs'][1]['strike'], 1)
+        self.assertEqual(trade['exit'], {'target': 0.5, 'stop': 0.5, 'minutes': 30})
+        self.assertLessEqual(trade['max_loss'], og.MAX_DEBIT)
+        self.assertEqual(-trade['price'], trade['limit'])
+        self.assertIn('never market', trade['manage'])
+        # Only the latest bar counts: the same morning one bar later suggests nothing new.
+        m['bars5'].append({'t': start + timedelta(minutes=5 * len(closes)), 'o': 499.7, 'h': 499.9, 'l': 499.5, 'c': 499.7, 'v': 1000})
+        self.assertFalse([c for c in og.signal_spreads(m) if c['kind'] == 'signal: VWAP rejection'])
+        # Its replay closes by its own exits: after 30 minutes at the latest.
+        bars = [{'time': datetime(2026, 10, 21, 11, 0) + timedelta(minutes=i), 'price': 499.8} for i in range(60)]
+        result = og.track(trade, datetime(2026, 10, 21, 11, 0), bars)
+        self.assertEqual(result['managed_exit']['event'], 'time exit')
+        self.assertEqual(result['managed_exit']['time'], '11:30')
+
+
 def now_today():
     """Today's New York time at 11:00, for the daily limit (it counts today's closes)."""
     et = og.now_eastern()
