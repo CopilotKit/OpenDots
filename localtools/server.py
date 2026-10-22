@@ -664,6 +664,10 @@ import options_guide  # noqa: E402  (registers the options_* trade-finding tools
 
 options_guide.register(tool)
 
+import sports_picks  # noqa: E402  (registers the sports_* paper-parlay tools)
+
+sports_picks.register(tool)
+
 
 if __name__ == "__main__":
     if "--http" in sys.argv:
