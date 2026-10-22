@@ -9,6 +9,7 @@ import { api } from './api';
 import { computerToolResult } from './ComputerToolCard';
 type Receipt = {
   approvalId: string | null;
+  stale?: boolean;
   status: 'running' | 'done';
   result: ConnectionActionResult | null;
 };
@@ -68,7 +69,12 @@ export function ConnectionActionCard({
   const mismatch = !!receipt && receipt.approvalId !== approvalId;
   const own = mismatch ? null : receipt;
   // A receipt that is still running is checked until the server finishes.
-  const running = own?.status === 'running';
+  // One the server flags as stale was interrupted mid-flight (its claim
+  // outlived the orphan TTL): it stops counting as running so the owner can
+  // approve again to retry. The flag is computed server-side so a skewed
+  // local clock never disagrees with the reclaim check.
+  const interrupted = own?.status === 'running' && own.stale === true;
+  const running = own?.status === 'running' && !interrupted;
   useEffect(() => {
     let active = true;
     const load = () =>
@@ -232,11 +238,13 @@ export function ConnectionActionCard({
           </>
         )}
         <small>
-          {running
-            ? 'This action is still running on the server.'
-            : approved || declined || finished
-              ? ''
-              : 'Nothing runs until you approve. These are the exact arguments.'}
+          {interrupted
+            ? 'The previous run was interrupted. Approve again to retry.'
+            : running
+              ? 'This action is still running on the server.'
+              : approved || declined || finished
+                ? ''
+                : 'Nothing runs until you approve. These are the exact arguments.'}
         </small>
       </footer>
     </section>

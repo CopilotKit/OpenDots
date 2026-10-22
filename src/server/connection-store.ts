@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { ORPHANED_ACTION_TTL_MS } from '../shared/connection-types.js';
 import { randomUUID } from 'node:crypto';
 import type {
   Connection,
@@ -140,12 +141,13 @@ export class ConnectionStore {
   action(threadId: string, toolCallId: string) {
     const row = this.db
       .prepare(
-        'SELECT status, result, approvalId FROM mcp_actions WHERE threadId=? AND toolCallId=?',
+        'SELECT status, result, approvalId, createdAt FROM mcp_actions WHERE threadId=? AND toolCallId=?',
       )
       .get(threadId, toolCallId);
     if (!row) return undefined;
     return {
       approvalId: typeof row.approvalId === 'string' ? row.approvalId : null,
+      createdAt: Number(row.createdAt),
       status: String(row.status) as 'running' | 'done',
       result:
         typeof row.result === 'string'
@@ -166,7 +168,11 @@ export class ConnectionStore {
       : undefined;
   }
   // Claim an approved action once. Returns false if it was already claimed,
-  // so a double click or a retried request never executes twice.
+  // so a double click or a retried request never executes twice. A stale
+  // result-less claim (the server stopped before saving the result) is
+  // reclaimed by its own approval: refreshing createdAt wins the row back,
+  // and the WHERE clause keeps fresh claims, saved results, and other
+  // approvals' rows from matching, so the double-claim guard still holds.
   claimAction(
     threadId: string,
     toolCallId: string,
@@ -174,13 +180,21 @@ export class ConnectionStore {
     connectionId: string,
     tool: string,
   ) {
+    const now = Date.now();
     return (
       this.db
         .prepare(
-          "INSERT OR IGNORE INTO mcp_actions (threadId, toolCallId, connectionId, tool, status, result, createdAt, approvalId) VALUES (?, ?, ?, ?, 'running', NULL, ?, ?)",
+          "INSERT INTO mcp_actions (threadId, toolCallId, connectionId, tool, status, result, createdAt, approvalId) VALUES (?, ?, ?, ?, 'running', NULL, ?, ?) ON CONFLICT(threadId, toolCallId) DO UPDATE SET createdAt=excluded.createdAt WHERE mcp_actions.result IS NULL AND mcp_actions.approvalId=excluded.approvalId AND mcp_actions.createdAt < ?",
         )
-        .run(threadId, toolCallId, connectionId, tool, Date.now(), approvalId)
-        .changes > 0
+        .run(
+          threadId,
+          toolCallId,
+          connectionId,
+          tool,
+          now,
+          approvalId,
+          now - ORPHANED_ACTION_TTL_MS,
+        ).changes > 0
     );
   }
   finishAction(

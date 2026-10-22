@@ -11,7 +11,10 @@ import {
 } from '../src/server/connections.js';
 import { connectionTools } from '../src/server/connection-tools.js';
 import { connectionRoutes } from '../src/server/connection-routes.js';
-import type { Connection } from '../src/shared/connection-types.js';
+import {
+  ORPHANED_ACTION_TTL_MS,
+  type Connection,
+} from '../src/shared/connection-types.js';
 const resources: (() => void)[] = [];
 afterEach(() => resources.splice(0).forEach((close) => close()));
 function fixture({ twin = false } = {}) {
@@ -289,6 +292,118 @@ it('runs the stored request once on approval and restores its result', async () 
     { toolCallId: 'tc2', approvalId, arguments: { to: 'evil@example.com' } },
   );
   expect(injected.status).toBe(400);
+});
+it('reclaims a claim orphaned mid-flight and runs it for its approval', async () => {
+  const { dot, connections, workspace, request, sent } = fixture();
+  await connections.add(dot.id, {
+    name: 'Mail',
+    url: 'https://mail.example.com/mcp',
+  });
+  const approvalId = await requestApproval(
+    connections,
+    dot.id,
+    'mail__send_mail',
+    { to: 'a@example.com', body: 'Hi' },
+  );
+  // The server stopped after claiming, before the result was saved: a stale
+  // result-less row is left behind.
+  const stale = Date.now() - ORPHANED_ACTION_TTL_MS - 1_000;
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(stale);
+  workspace.connections.claimAction(
+    'thread',
+    'tc1',
+    approvalId,
+    'conn',
+    'mail__send_mail',
+  );
+  clock.mockRestore();
+  // The receipt flags the orphaned claim as stale on the server clock.
+  const receipt = await request('/conversations/thread/connection-actions/tc1');
+  expect(await receipt.json()).toMatchObject({
+    status: 'running',
+    stale: true,
+  });
+  // The same approval reclaims the orphan and the stored request runs.
+  const approve = () =>
+    request('/conversations/thread/connection-actions', 'POST', {
+      toolCallId: 'tc1',
+      approvalId,
+    });
+  expect(await (await approve()).json()).toEqual({
+    isError: false,
+    text: 'Sent to a@example.com',
+  });
+  expect(sent).toHaveBeenCalledOnce();
+  // The saved result is served on retry; it does not run twice.
+  expect(await (await approve()).json()).toEqual({
+    isError: false,
+    text: 'Sent to a@example.com',
+  });
+  expect(sent).toHaveBeenCalledOnce();
+});
+it("still refuses a fresh running claim and another approval's orphan", async () => {
+  const { dot, connections, workspace, request, sent } = fixture();
+  await connections.add(dot.id, {
+    name: 'Mail',
+    url: 'https://mail.example.com/mcp',
+  });
+  const alice = await requestApproval(connections, dot.id, 'mail__send_mail', {
+    to: 'alice@example.com',
+    body: 'Hi',
+  });
+  const approve = (approvalId: string) =>
+    request('/conversations/thread/connection-actions', 'POST', {
+      toolCallId: 'tc1',
+      approvalId,
+    });
+  // A live run keeps its double-claim guard.
+  workspace.connections.claimAction(
+    'thread',
+    'tc1',
+    alice,
+    'conn',
+    'mail__send_mail',
+  );
+  const liveReceipt = await request(
+    '/conversations/thread/connection-actions/tc1',
+  );
+  expect(await liveReceipt.json()).toMatchObject({
+    status: 'running',
+    stale: false,
+  });
+  const running = await approve(alice);
+  expect(running.status).toBe(409);
+  expect(await running.json()).toEqual({
+    error: 'This action is already running.',
+  });
+  // A stale row still belongs to the approval that claimed it.
+  const stale = Date.now() - ORPHANED_ACTION_TTL_MS - 1_000;
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(stale);
+  workspace.connections.claimAction(
+    'thread',
+    'tc2',
+    alice,
+    'conn',
+    'mail__send_mail',
+  );
+  clock.mockRestore();
+  const bob = await requestApproval(connections, dot.id, 'mail__send_mail', {
+    to: 'bob@example.com',
+    body: 'Hi',
+  });
+  const stolen = await request(
+    '/conversations/thread/connection-actions',
+    'POST',
+    {
+      toolCallId: 'tc2',
+      approvalId: bob,
+    },
+  );
+  expect(stolen.status).toBe(409);
+  expect(await stolen.json()).toEqual({
+    error: 'This action belongs to a different approval request.',
+  });
+  expect(sent).not.toHaveBeenCalled();
 });
 it('binds approvals to the exact tool, even when look-alike names collide', async () => {
   const { dot, connections, request, sent, sentTwin } = fixture({
