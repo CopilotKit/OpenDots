@@ -92,9 +92,19 @@ def in_season(http=None) -> list[str]:
     return [s for s in SPORTS if s in active]
 
 
+SNAPSHOTS = ROOT / 'data' / 'sports-odds'
+
+
 def odds(sport: str, http=None) -> list[dict]:
-    return get(f'/sports/{sport}/odds', {'bookmakers': BOOKS, 'markets': MARKETS, 'oddsFormat': 'decimal'},
-               len(MARKETS.split(',')), http)
+    events = get(f'/sports/{sport}/odds', {'bookmakers': BOOKS, 'markets': MARKETS, 'oddsFormat': 'decimal'},
+                 len(MARKETS.split(',')), http)
+    if http is None:  # Kept: our own odds history, and a record of what each pick was judged on.
+        import gzip
+        now = datetime.now()
+        path = SNAPSHOTS / now.strftime('%Y-%m-%d') / f'{sport}-{now:%H%M}.json.gz'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(gzip.compress(json.dumps(events).encode()))
+    return events
 
 
 def scores(sport: str, http=None) -> list[dict]:
