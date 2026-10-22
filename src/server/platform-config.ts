@@ -8,6 +8,8 @@ const INTELLIGENCE_API_KEY_ENV_NAMES = [
 ] as const;
 export const INTELLIGENCE_KEY_MISSING_LABEL = `${INTELLIGENCE_API_KEY_ENV_NAMES[1]} (or ${INTELLIGENCE_API_KEY_ENV_NAMES[0]})`;
 export const DEFAULT_AGENT_RUN_TIMEOUT_MS = 90_000;
+export const DEFAULT_UNSAFE_HOST_SHELL_TIMEOUT_MS = 30_000;
+export const DEFAULT_UNSAFE_HOST_SHELL_MAX_OUTPUT_BYTES = 65_536;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 export function intelligenceApiKeyFromEnv(
@@ -49,6 +51,11 @@ function firstNonEmptyEnvValue(
   return undefined;
 }
 
+export interface UnsafeHostShellConfig {
+  enabled: boolean;
+  timeoutMs: number;
+  maxOutputBytes: number;
+}
 export interface PlatformConfig extends WebConfig {
   intelligenceKey?: string;
   intelligenceApiUrl?: string;
@@ -73,6 +80,7 @@ export interface PlatformConfig extends WebConfig {
   slackDotId?: string;
   runtimeUrl: string;
   ownerToken?: string;
+  unsafeHostShell?: UnsafeHostShellConfig;
 }
 export function setupStatus(
   config: PlatformConfig,
@@ -103,6 +111,7 @@ export function setupStatus(
     voice: !!(config.voiceKey && config.voiceModel && !missing.length),
     composio: !!config.composioApiKey,
     slack,
+    unsafeHostShell: config.unsafeHostShell?.enabled === true,
     missing,
   };
 }

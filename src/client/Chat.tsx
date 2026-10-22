@@ -5,6 +5,11 @@ import {
   connectionActionTool,
 } from '../shared/connection-types';
 import { ConnectionActionCard } from './ConnectionActionCard';
+import { HostShellActionCard } from './HostShellActionCard';
+import {
+  hostShellActionSchema,
+  hostShellActionTool,
+} from '../shared/host-shell-types';
 import { contextualMessage, type PageContext } from './page-context';
 import { api } from './api';
 import type { Page } from '../server/pages';
@@ -212,6 +217,17 @@ export function Chat({
     },
     [thread.id],
   );
+  useHumanInTheLoop(
+    {
+      name: hostShellActionTool.name,
+      description: hostShellActionTool.description,
+      parameters: hostShellActionSchema,
+      render: (props) => (
+        <HostShellActionCard {...props} threadId={thread.id} />
+      ),
+    },
+    [thread.id],
+  );
   const computerCalls = agent.messages.flatMap((message) =>
     message.role === 'assistant' ? (message.toolCalls ?? []) : [],
   );
@@ -255,7 +271,8 @@ export function Chat({
               call.function.name.startsWith('computer_') ||
               call.function.name === 'COMPOSIO_MANAGE_CONNECTIONS' ||
               call.function.name === pageReviewTool.name ||
-              call.function.name === connectionActionTool.name,
+              call.function.name === connectionActionTool.name ||
+              call.function.name === hostShellActionTool.name,
           ))),
   );
   return (

@@ -15,6 +15,7 @@ const dotSchema = z
     researchAllowed: z.boolean(),
     memoryAllowed: z.boolean(),
     appsAllowed: z.boolean().default(false),
+    unsafeHostShellAllowed: z.boolean().default(false),
     composioToolkits: z
       .array(z.string().regex(/^[a-z0-9_]+$/))
       .max(100)
@@ -111,6 +112,7 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
         data.data.skillDeliveryEnabled,
         data.data.appsAllowed,
         data.data.composioToolkits,
+        data.data.unsafeHostShellAllowed,
       ),
       201,
     );

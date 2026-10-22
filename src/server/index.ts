@@ -10,6 +10,8 @@ import { resolveAppOrigins } from './app-origin.js';
 import { WorkspaceStore } from './workspace.js';
 import { Platform } from './platform.js';
 import {
+  DEFAULT_UNSAFE_HOST_SHELL_MAX_OUTPUT_BYTES,
+  DEFAULT_UNSAFE_HOST_SHELL_TIMEOUT_MS,
   agentRunTimeoutMsFromEnv,
   intelligenceApiKeyFromEnv,
   intelligenceWsUrlFromEnv,
@@ -60,6 +62,11 @@ const config: PlatformConfig = {
   slackDotId: process.env.SLACK_DOT_ID || undefined,
   runtimeUrl: `http://${host === '::1' ? '[::1]' : '127.0.0.1'}:${port}/api/copilotkit`,
   ownerToken,
+  unsafeHostShell: {
+    enabled: process.env.OPENDOTS_ENABLE_UNSAFE_HOST_SHELL === '1',
+    timeoutMs: Number(process.env.OPENDOTS_UNSAFE_HOST_SHELL_TIMEOUT_MS ?? DEFAULT_UNSAFE_HOST_SHELL_TIMEOUT_MS),
+    maxOutputBytes: Number(process.env.OPENDOTS_UNSAFE_HOST_SHELL_MAX_OUTPUT_BYTES ?? DEFAULT_UNSAFE_HOST_SHELL_MAX_OUTPUT_BYTES),
+  },
 };
 const platform = new Platform(store, workspace, config);
 const researchConfig = {

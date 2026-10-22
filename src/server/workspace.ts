@@ -1,5 +1,6 @@
 import { ComputerStore } from './computer-store.js';
 import { ConnectionStore } from './connection-store.js';
+import { HostShellStore } from './host-shell-store.js';
 import { Pages } from './pages.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
@@ -12,6 +13,7 @@ export class WorkspaceStore {
   readonly pages: Pages;
   readonly computers: ComputerStore;
   readonly connections: ConnectionStore;
+  readonly hostShell: HostShellStore;
   constructor(
     path: string,
     readonly ownerId: string,
@@ -29,6 +31,7 @@ export class WorkspaceStore {
       ['dots', 'learningContainerId', 'TEXT'],
       ['dots', 'skillDeliveryEnabled', 'INTEGER NOT NULL DEFAULT 0'],
       ['dots', 'appsAllowed', 'INTEGER NOT NULL DEFAULT 0'],
+      ['dots', 'unsafeHostShellAllowed', 'INTEGER NOT NULL DEFAULT 0'],
       ['dots', 'composioToolkits', "TEXT NOT NULL DEFAULT '[]'"],
       ['dots', 'composioSessionId', 'TEXT'],
       ['dots', 'composioPolicyHash', 'TEXT'],
@@ -57,6 +60,7 @@ export class WorkspaceStore {
     }
     this.computers = new ComputerStore(this.db);
     this.connections = new ConnectionStore(this.db);
+    this.hostShell = new HostShellStore(this.db);
     this.pages = new Pages(this.db, (id) =>
       this.spaces().some((space) => space.id === id),
     );
@@ -116,6 +120,7 @@ export class WorkspaceStore {
         researchAllowed: !!row.researchAllowed,
         memoryAllowed: !!row.memoryAllowed,
         appsAllowed: !!row.appsAllowed,
+        unsafeHostShellAllowed: !!row.unsafeHostShellAllowed,
         composioToolkits: JSON.parse(String(row.composioToolkits ?? '[]')),
         skillDeliveryEnabled: !!row.skillDeliveryEnabled,
       })) as unknown as Dot[];
@@ -134,6 +139,7 @@ export class WorkspaceStore {
     skillDeliveryEnabled = false,
     appsAllowed = false,
     composioToolkits: string[] = [],
+    unsafeHostShellAllowed = false,
   ): Dot {
     this.validateSpaceAccess(spaceId, spaceIds);
     validateLearningSettings(learningContainerId, skillDeliveryEnabled);
@@ -146,6 +152,7 @@ export class WorkspaceStore {
       researchAllowed,
       memoryAllowed,
       appsAllowed,
+      unsafeHostShellAllowed,
       composioToolkits: [...new Set(composioToolkits)].sort(),
       composioSessionId: null,
       composioPolicyHash: null,
@@ -157,7 +164,7 @@ export class WorkspaceStore {
     try {
       this.db
         .prepare(
-          'INSERT INTO dots (id, spaceId, name, instructions, researchAllowed, memoryAllowed, createdAt, learningContainerId, skillDeliveryEnabled, appsAllowed, composioToolkits) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO dots (id, spaceId, name, instructions, researchAllowed, memoryAllowed, createdAt, learningContainerId, skillDeliveryEnabled, appsAllowed, composioToolkits, unsafeHostShellAllowed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         )
         .run(
           dot.id,
@@ -171,6 +178,7 @@ export class WorkspaceStore {
           +skillDeliveryEnabled,
           +appsAllowed,
           JSON.stringify(dot.composioToolkits),
+          +unsafeHostShellAllowed,
         );
       for (const id of dot.spaceIds)
         this.db.prepare('INSERT INTO dot_spaces VALUES (?, ?)').run(dot.id, id);
@@ -203,6 +211,7 @@ export class WorkspaceStore {
       | 'memoryAllowed'
       | 'appsAllowed'
       | 'composioToolkits'
+      | 'unsafeHostShellAllowed'
     > & {
       spaceId?: string;
       spaceIds?: string[];
@@ -226,7 +235,7 @@ export class WorkspaceStore {
     try {
       this.db
         .prepare(
-          'UPDATE dots SET name=?, instructions=?, researchAllowed=?, memoryAllowed=?, learningContainerId=?, skillDeliveryEnabled=?, appsAllowed=?, composioToolkits=? WHERE id=?',
+          'UPDATE dots SET name=?, instructions=?, researchAllowed=?, memoryAllowed=?, learningContainerId=?, skillDeliveryEnabled=?, appsAllowed=?, composioToolkits=?, unsafeHostShellAllowed=? WHERE id=?',
         )
         .run(
           patch.name,
@@ -237,6 +246,7 @@ export class WorkspaceStore {
           +skillDeliveryEnabled,
           +patch.appsAllowed,
           JSON.stringify([...new Set(patch.composioToolkits)].sort()),
+          +(patch.unsafeHostShellAllowed ?? current.unsafeHostShellAllowed ?? false),
           id,
         );
       this.db

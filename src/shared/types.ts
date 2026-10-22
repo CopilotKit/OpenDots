@@ -86,6 +86,7 @@ export interface Dot {
   researchAllowed: boolean;
   memoryAllowed: boolean;
   appsAllowed: boolean;
+  unsafeHostShellAllowed?: boolean;
   composioToolkits: string[];
   composioSessionId?: string | null;
   composioPolicyHash?: string | null;
@@ -119,6 +120,7 @@ export interface SetupStatus {
   voice: boolean;
   composio: boolean;
   slack: string;
+  unsafeHostShell?: boolean;
   missing: string[];
 }
 export interface WorkspaceState {

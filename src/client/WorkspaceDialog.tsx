@@ -51,6 +51,9 @@ export function WorkspaceDialog({
       ? (dialog.dot?.appsAllowed ?? false)
       : state.settings.appsAllowed,
   );
+  const [unsafeHostShell, setUnsafeHostShell] = useState(
+    dialog.type === 'dot' ? (dialog.dot?.unsafeHostShellAllowed ?? false) : false,
+  );
   const [composioToolkits, setComposioToolkits] = useState(
     dialog.type === 'dot'
       ? (dialog.dot?.composioToolkits ?? []).join(', ')
@@ -158,6 +161,7 @@ export function WorkspaceDialog({
                 researchAllowed: research,
                 memoryAllowed: memory,
                 appsAllowed: apps,
+                unsafeHostShellAllowed: unsafeHostShell,
                 composioToolkits: composioToolkits
                   .split(',')
                   .map((slug) => slug.trim())
@@ -311,6 +315,26 @@ export function WorkspaceDialog({
                   </small>
                 </span>
               </label>
+              {dialog.type === 'dot' && (
+                <label className="permission-row">
+                  <input
+                    type="checkbox"
+                    checked={unsafeHostShell}
+                    disabled={!workspace.setup.unsafeHostShell}
+                    onChange={(event) => setUnsafeHostShell(event.target.checked)}
+                  />
+                  <span>
+                    <strong>Unsafe host shell</strong>
+                    <small>
+                      Allow this Dot to request commands on the OpenDots host.
+                      Each command still requires owner approval.
+                      {!workspace.setup.unsafeHostShell
+                        ? ' Set OPENDOTS_ENABLE_UNSAFE_HOST_SHELL=1 on the server to make this available.'
+                        : ''}
+                    </small>
+                  </span>
+                </label>
+              )}
               {workspace.setup.composio && (
                 <label className="permission-row">
                   <input
