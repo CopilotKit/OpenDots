@@ -55,7 +55,7 @@ npx copilotkit@latest local connect
 npx copilotkit@latest local connect --approve-connection
 ```
 
-`local connect` previews the changes; the approved command writes the local API URL, gateway WebSocket URL, and project key to `.env`. OpenDots accepts these directly. Do not run `project select` afterward: it selects a hosted project. Add `OPENAI_API_KEY` and `OPENAI_MODEL` for the app, then restart `npm run dev`. Setup's Learning model is separate from the app's model.
+`local connect` previews the changes; the approved command writes the local API URL, gateway WebSocket URL, and project key to `.env`. OpenDots accepts these directly. Do not run `project select` afterward: it selects a hosted project. Configure the app's [model provider](#model-provider), then restart `npm run dev`. Setup's Learning model is separate from the app's model.
 
 Send a message and verify it appears in the local dashboard (`npx copilotkit@latest local login`). Use `local status` to inspect service health. Threads, Automatic Learning, and Channels are included; User Memory and Product Analytics are not. Channels require a public HTTPS address reachable by Slack or Teams.
 
@@ -72,8 +72,10 @@ Edit `.env` on the server and restart after changes:
 | `INTELLIGENCE_API_KEY`                               | Project credential for conversation persistence                        |
 | `INTELLIGENCE_API_URL`                               | API endpoint override for your Intelligence deployment                 |
 | `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_WS_URL` | Gateway WebSocket override (CLI name preferred; legacy name supported) |
+| `MODEL_PROVIDER`                                     | `openai` (default) or `ollama`; see [Model provider](#model-provider)  |
 | `OPENAI_API_KEY`, `OPENAI_MODEL`                     | Model credential and model identifier                                  |
 | `OPENAI_BASE_URL`                                    | Compatible model API endpoint                                          |
+| `OLLAMA_MODEL`, `OLLAMA_BASE_URL`                    | Ollama model and endpoint; no API key                                  |
 | `OWNER_ID`                                           | Stable identity used for this deployment's conversations               |
 | `DATABASE_PATH`                                      | SQLite file containing pages, workspace and work metadata              |
 | `OWNER_TOKEN`                                        | Application access token; required for external bindings               |
@@ -84,6 +86,33 @@ Edit `.env` on the server and restart after changes:
 A non-empty `INTELLIGENCE_GATEWAY_WS_URL` takes precedence over `INTELLIGENCE_WS_URL`. Without either WebSocket override, OpenDots uses the hosted gateway. Set both the API and gateway endpoints when connecting a self-hosted deployment.
 
 The model environment variable names follow the configured provider adapter. Provider credentials belong in `.env`, not client-side variables or source code. Conversation history lives in the configured Intelligence project; copying the SQLite file alone does not back up that history.
+
+## Model provider
+
+Dot turns and research briefs use an OpenAI-compatible Chat Completions API. Select the provider with `MODEL_PROVIDER` in `.env` and restart:
+
+| `MODEL_PROVIDER`   | Settings                                                                                     |
+| ------------------ | -------------------------------------------------------------------------------------------- |
+| `openai` (default) | `OPENAI_API_KEY`, `OPENAI_MODEL`, optional `OPENAI_BASE_URL`                                 |
+| `ollama`           | `OLLAMA_MODEL`, optional `OLLAMA_BASE_URL` (default `http://localhost:11434/v1`); no API key |
+
+### Ollama
+
+Install [Ollama](https://ollama.com/download), pull a model that supports tool calling, and select it:
+
+```sh
+ollama pull llama3.2
+```
+
+```dotenv
+MODEL_PROVIDER=ollama
+OLLAMA_MODEL=llama3.2
+# OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+Restart `npm run dev`. The setup card and **Settings & setup** show the provider and endpoint. **Check Ollama** asks the server to list the endpoint's models and reports whether Ollama is running and the configured model has been pulled, with the command to fix either. It does not run a conversation turn. A base URL without a path, such as `http://localhost:11434`, uses `/v1`. `OPENAI_*` model settings are ignored while Ollama is selected.
+
+Dots depend on tool calls for pages, research, and other actions. Choose a model with tool support. Small local models follow tool instructions less reliably than hosted ones; `llama3.2:1b`, for example, often sends malformed tool arguments, so prefer a 3B or larger model. Conversations still require CopilotKit Intelligence, and calls still use the OpenAI Realtime API configured with `VOICE_API_KEY`. With Docker Compose, `localhost` is the app container: set `OLLAMA_BASE_URL` to an address of the Ollama host that the container can reach, such as `http://host.docker.internal:11434/v1` with Docker Desktop.
 
 ## Pages and page conversations
 
