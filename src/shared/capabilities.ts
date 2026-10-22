@@ -131,7 +131,7 @@ export const toolGroups = {
     label: 'Sports picks (paper parlays)',
     description:
       "Find 2-pick parlays where DraftKings pays more than the fair odds, keep the paper record, and settle it from final scores. Never places bets: the owner presses Place Bet.",
-    tools: ['sports_parlays', 'sports_record'],
+    tools: ['sports_parlays', 'sports_nba_props', 'sports_record'],
   },
   site_mapping: {
     label: 'Site mapping (pages and data)',

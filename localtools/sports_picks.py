@@ -177,6 +177,9 @@ def parlays(found: list[dict], top: int = 3) -> list[dict]:
 
 def describe(leg: dict) -> str:
     game = f'{leg["away"]} at {leg["home"]}'
+    if leg['market'] == 'player_points':
+        return (f'{leg["player"]} {leg["name"].lower()} {leg["point"]:g} points ({game}) at {leg["price"]:.2f}, '
+                f'our chance {leg["fair"]:.0%}')
     if leg['market'] == 'h2h':
         what = f'{leg["name"]} to win'
     elif leg['market'] == 'spreads':
@@ -217,24 +220,22 @@ class Journal:
         with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('UPDATE parlays SET placed=1 WHERE id=?', (identity,))
 
+    def close(self, identity: str, status: str, payout: float) -> None:
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('UPDATE parlays SET status=?, payout=?, settled_ts=? WHERE id=?',
+                       (status, payout, time.time(), identity))
+
     def settle(self, finals: dict) -> int:
-        """finals: {event id: {'home': score, 'away': score, 'home_team', 'away_team'}} for completed games."""
+        """finals: {event id: {'home': score, 'away': score, 'home_team', 'away_team'}} for completed
+        games. Player-prop parlays are settled from box scores instead (nba_props.run_settle)."""
         settled = 0
         for row in self.rows("status='open'"):
+            if any(leg['market'] == 'player_points' for leg in row['data']['legs']):
+                continue
             results = [leg_result(leg, finals.get(leg['event'])) for leg in row['data']['legs']]
             if None in results:
                 continue  # A game not finished (or not found yet).
-            if 'lost' in results:
-                status, payout = 'lost', -STAKE
-            else:
-                price = 1.0
-                for leg, result in zip(row['data']['legs'], results):
-                    if result == 'won':
-                        price *= leg['price']  # A pushed leg drops out, as sportsbooks settle it.
-                status, payout = ('won', round(STAKE * (price - 1), 2)) if price > 1 else ('push', 0.0)
-            with closing(sqlite3.connect(self.path)) as db, db:
-                db.execute('UPDATE parlays SET status=?, payout=?, settled_ts=? WHERE id=?',
-                           (status, payout, time.time(), row['id']))
+            self.close(row['id'], *outcome(row['data']['legs'], results))
             settled += 1
         return settled
 
@@ -248,6 +249,17 @@ class Journal:
                 'profit': round(sum(r['payout'] for r in done), 2), 'expected_profit': round(expected, 2),
                 'roi': round(sum(r['payout'] for r in done) / (STAKE * len(done)), 3) if done else None,
                 'real_bets_placed': sum(r['placed'] for r in done)}
+
+
+def outcome(legs: list[dict], results: list[str]) -> tuple[str, float]:
+    """A parlay's status and paper payout from its legs' results."""
+    if 'lost' in results:
+        return 'lost', -STAKE
+    price = 1.0
+    for leg, result in zip(legs, results):
+        if result == 'won':
+            price *= leg['price']  # A pushed leg drops out, as sportsbooks settle it.
+    return ('won', round(STAKE * (price - 1), 2)) if price > 1 else ('push', 0.0)
 
 
 def leg_result(leg: dict, final: dict | None) -> str | None:
@@ -301,7 +313,8 @@ def run_picks(journal: Journal | None = None, http=None, say=None) -> dict:
 
 def run_settle(journal: Journal | None = None, http=None) -> dict:
     journal = journal or Journal()
-    open_sports = {leg['sport'] for r in journal.rows("status='open'") for leg in r['data']['legs']}
+    open_sports = {leg['sport'] for r in journal.rows("status='open'") for leg in r['data']['legs']
+                   if leg['market'] != 'player_points'}  # Props settle from free box scores.
     finals = {}
     for sport in sorted(open_sports):
         try:

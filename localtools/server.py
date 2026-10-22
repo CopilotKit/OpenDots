@@ -668,6 +668,10 @@ import sports_picks  # noqa: E402  (registers the sports_* paper-parlay tools)
 
 sports_picks.register(tool)
 
+import nba_props  # noqa: E402  (registers the NBA points-props tool)
+
+nba_props.register(tool)
+
 
 if __name__ == "__main__":
     if "--http" in sys.argv:
