@@ -1,7 +1,7 @@
 """Owner-only order buttons: on these sites the Dots prepare a trade (ticker,
-contracts, quantity) and the owner presses the button that places the order.
+contracts, quantity) or a bet slip, and the owner presses the button that places it.
 
-Listed in browser-policy.json as {"ownerPressesOrders": ["robinhood.com"]}. The
+Listed in browser-policy.json as {"ownerPressesOrders": ["robinhood.com", "draftkings.com"]}. The
 guard holds in every mode: unattended mode answers "allowed" to confirmations,
 so asking first is not enough (2026-10-21). Choosing Buy or Sell, Call or Put,
 an expiry or a strike stays allowed; that is the preparation.
@@ -16,11 +16,14 @@ from urllib.parse import urlparse
 
 POLICY_FILE = Path(os.environ.get("LOCALTOOLS_BROWSER_POLICY", Path(__file__).parent / "browser-policy.json"))
 
-# Controls that place, review or send an order.
+# Controls that place, review or send an order, or place a bet (sportsbooks: "Place Bet",
+# "Place $10.00 Bet", "Accept odds and place"). Adding a pick to the bet slip stays allowed.
 ORDER = re.compile(
     r"\b(review|submit|place|confirm|send|preview)\b[^.\n]{0,20}\border\b"
     r"|\border\b[^.\n]{0,20}\b(review|submit|place|confirm|send)\b"
-    r"|\bswipe up\b|^\s*submit\b|\bplace trade\b",
+    r"|\bswipe up\b|^\s*submit\b|\bplace trade\b"
+    r"|\b(place|submit|confirm)\b(?:[^.\n]|(?<=\d)\.(?=\d)){0,30}\b(bets?|wagers?|parlays?|picks?)\b"
+    r"|\bbet now\b|\baccept\b[^.\n]{0,30}\b(odds|place)\b",
     re.I,
 )
 
