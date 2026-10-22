@@ -34,6 +34,8 @@ import sports_picks as sp
 
 MIN_EDGE = 0.05          # Our chance x DraftKings' price at least 5% above break-even.
 MARKET_FLOOR = -0.02     # The other books' fair price may not say it is worse than this.
+MAX_EDGE = 0.25          # Beyond this, our model is more likely wrong than the whole market.
+MIN_SEASON_GAMES = 3     # Games this season before a player's props are judged.
 MIN_MINUTES = 20.0
 MIN_GAMES = 8
 SPORT = 'basketball_nba'
@@ -100,11 +102,27 @@ def projection(games: list[dict], factor: float = 1.0) -> dict | None:
     return {'mean': max(minutes * rate * factor, 0.5), 'minutes': minutes, 'rate': rate, 'games': len(recent)}
 
 
-def spread() -> tuple[float, float]:
+def spread():
+    """The fitted shape (bias, variance and the real distribution of misses), or the default."""
     try:
-        return tuple(json.loads(SPREAD_FILE.read_text()))
+        saved = json.loads(SPREAD_FILE.read_text())
+        return saved if isinstance(saved, dict) else DEFAULT_SPREAD
     except (OSError, ValueError):
         return DEFAULT_SPREAD
+
+
+def chance(mean: float, line: float, shape) -> float:
+    """P(points > line). With a fitted shape: the projection corrected for its average miss,
+    and the misses' real distribution (scaled to this player's spread) - no assumed curve."""
+    if not isinstance(shape, dict):
+        return chance_over(mean, line, *shape)
+    import numpy as np
+    centre = mean + shape['bias']
+    sd = math.sqrt(max(shape['a'] * centre + shape['b'] * centre * centre, 1.0))
+    z = (line - centre) / sd
+    quantiles = np.array(shape['quantiles'])
+    below = float(np.interp(z, quantiles, np.linspace(0, 1, len(quantiles))))
+    return min(max(1 - below, 1e-4), 1 - 1e-4)
 
 
 def chance_over(mean: float, line: float, a: float, b: float) -> float:
@@ -130,7 +148,7 @@ def samples(rows: list[dict], start: str, end: str) -> list[tuple[float, int, di
             continue
         p = projection(h.player_before(r['player'], r['date']), h.opponent_factor(r['opponent'], r['date']))
         if p and p['minutes'] >= 15:
-            out.append((p['mean'], r['pts'], p))
+            out.append((p['mean'], r['pts'], {**p, 'date': r['date']}))
     return out
 
 
@@ -147,19 +165,45 @@ def fit_spread(data) -> tuple[float, float]:
     return max(float(a), 1.05), max(float(b), 0.0)
 
 
+def fit_shape(data) -> dict:
+    """The projection's average miss, its spread (variance = a*mean + b*mean^2) and the real
+    distribution of standardized misses (101 quantiles)."""
+    import numpy as np
+    bias = statistics.mean(pts - mean for mean, pts, _ in data)
+    shifted = [(mean + bias, pts, p) for mean, pts, p in data]
+    a, b = fit_spread(shifted)
+    z = sorted((pts - m) / math.sqrt(max(a * m + b * m * m, 1.0)) for m, pts, _ in shifted)
+    return {'bias': bias, 'a': a, 'b': b, 'quantiles': [float(q) for q in np.quantile(z, np.linspace(0, 1, 101))]}
+
+
+def drift(recent, shape) -> float:
+    """How far projections have missed lately (the last ~3 weeks, at least 300 player games),
+    beyond the fitted bias: late-season scoring, pace changes. 0 without enough games."""
+    if len(recent) < 300:
+        return 0.0
+    return statistics.mean(pts - mean for mean, pts, _ in recent) - shape['bias']
+
+
 def calibrate(rows: list[dict] | None = None, log=print) -> dict:
-    """Fit the spread on the first half of last season, then judge the model's chances on
+    """Fit the shape on the first half of last season, then judge the model's chances on
     the second half with lines around each projection (real past prop lines are not free)."""
     rows = rows or nba_data.load(log=log)
     fit = samples(rows, '2025-11-15', '2026-01-31')
-    a, b = fit_spread(fit)
+    shape = fit_shape(fit)
+    a, b = shape['a'], shape['b']
     test = samples(rows, '2026-02-01', '2026-04-13')
     buckets = defaultdict(lambda: [0, 0, 0.0])
     loss, naive_loss, n = 0.0, 0.0, 0
+    from bisect import bisect_left
+    pool = sorted(fit + test, key=lambda s: s[2]['date'])
+    dates = [s[2]['date'] for s in pool]
     for mean, pts, p in test:
+        day = p['date']
+        window = pool[bisect_left(dates, (date.fromisoformat(day) - timedelta(days=21)).isoformat()):bisect_left(dates, day)]
+        mean = mean + drift(window, shape)  # Only earlier days' misses.
         for offset in (-4, -2, 0, 2, 4):
             line = math.floor(mean) + 0.5 + offset  # Half-point lines around the projection.
-            q = chance_over(mean, line, a, b)
+            q = chance(mean, line, shape)
             over = pts > line
             bucket = buckets[min(int(q * 10), 9)]
             bucket[0] += 1
@@ -174,10 +218,11 @@ def calibrate(rows: list[dict] | None = None, log=print) -> dict:
             n += 1
     table = [{'predicted': round(v[2] / v[0], 3), 'happened': round(v[1] / v[0], 3), 'n': v[0]}
              for k, v in sorted(buckets.items()) if v[0]]
-    result = {'spread': [round(a, 3), round(b, 4)], 'fit_games': len(fit), 'test_games': len(test),
-              'log_loss': round(loss / n, 4), 'naive_log_loss': round(naive_loss / n, 4),
-              'bias': round(statistics.mean(pts - mean for mean, pts, _ in test), 2), 'calibration': table}
-    SPREAD_FILE.write_text(json.dumps([a, b]))
+    result = {'spread': [round(a, 3), round(b, 4)], 'fit_bias': round(shape['bias'], 2), 'fit_games': len(fit),
+              'test_games': len(test), 'log_loss': round(loss / n, 4), 'naive_log_loss': round(naive_loss / n, 4),
+              'test_bias_before_correction': round(statistics.mean(pts - mean for mean, pts, _ in test), 2),
+              'calibration': table}
+    SPREAD_FILE.write_text(json.dumps(shape))
     REPORT.write_text(json.dumps(result, indent=1))
     return result
 
@@ -194,7 +239,7 @@ def prop_odds(event_id: str, http=None) -> dict:
     return data
 
 
-def evaluate(event: dict, h: History, out_list: dict, now: datetime, a: float, b: float) -> list[dict]:
+def evaluate(event: dict, h: History, out_list: dict, now: datetime, shape, shift: float = 0.0) -> list[dict]:
     """Every DraftKings points prop in a game, with our chance, the market's and the edges."""
     books = {bk['key']: bk for bk in event.get('bookmakers', [])}
     if sp.DK not in books:
@@ -218,23 +263,28 @@ def evaluate(event: dict, h: History, out_list: dict, now: datetime, a: float, b
         if not games:
             continue
         team = games[-1]['team']
+        if team not in (event['home_team'], event['away_team']):
+            continue  # Changed teams: his old games describe a different role.
+        this_season = [g for g in games if g['date'] >= season_start(day)]
+        if len(this_season) < MIN_SEASON_GAMES:
+            continue  # Early season: summer moves changed roles the model cannot see yet.
         opponent = event['away_team'] if team == event['home_team'] else event['home_team']
         p = projection(games, h.opponent_factor(opponent, day))
         if not p or p['minutes'] < MIN_MINUTES:
             continue
-        over = chance_over(p['mean'], point, a, b)
+        over = chance(p['mean'] + shift, point, shape)
         fair_market = []
         for key, prices in by_book.items():
             if key != sp.DK and 'Over' in prices and 'Under' in prices:
                 inv = 1 / prices['Over'] + 1 / prices['Under']
                 fair_market.append((1 / prices['Over']) / inv)
         market_over = statistics.median(fair_market) if len(fair_market) >= 2 else None
-        for side, chance, market in (('Over', over, market_over), ('Under', 1 - over, None if market_over is None else 1 - market_over)):
+        for side, ours, market in (('Over', over, market_over), ('Under', 1 - over, None if market_over is None else 1 - market_over)):
             price = dk[side]
             out.append({'event': event['id'], 'sport': SPORT, 'home': event['home_team'], 'away': event['away_team'],
                         'start': event['commence_time'], 'market': 'player_points', 'player': player,
-                        'name': side, 'point': point, 'price': price, 'fair': round(chance, 4),
-                        'edge': round(chance * price - 1, 4),
+                        'name': side, 'point': point, 'price': price, 'fair': round(ours, 4),
+                        'edge': round(ours * price - 1, 4),
                         'market_edge': None if market is None else round(market * price - 1, 4),
                         'projection': round(p['mean'], 1), 'minutes': round(p['minutes'], 1),
                         'source': f'model ({p["games"]} games; {len(fair_market)} other books)'})
@@ -242,13 +292,26 @@ def evaluate(event: dict, h: History, out_list: dict, now: datetime, a: float, b
 
 
 def qualifies(leg: dict) -> bool:
-    return leg['edge'] >= MIN_EDGE and (leg['market_edge'] is None or leg['market_edge'] >= MARKET_FLOOR)
+    """Our edge, confirmed by the market not disagreeing (at least 2 other books required), and
+    not so large that it is more likely our model is wrong than the whole market."""
+    return (MIN_EDGE <= leg['edge'] <= MAX_EDGE and leg['market_edge'] is not None
+            and leg['market_edge'] >= MARKET_FLOOR)
+
+
+def season_start(day: str) -> str:
+    """The start of the season `day` falls in (from nba_data.SEASONS)."""
+    starts = [start for _, start, _ in nba_data.SEASONS if start <= day]
+    return max(starts) if starts else '0000'
 
 
 def run_picks(journal: sp.Journal | None = None, http=None, rows=None, say=None, now=None) -> dict:
     journal = journal or sp.Journal()
     now = now or datetime.now(timezone.utc)
-    a, b = spread()
+    shape = spread()
+    today = (now - timedelta(hours=4)).date()
+    all_rows = rows if rows is not None else nba_data.load(log=lambda *x: None)
+    shift = drift(samples(all_rows, (today - timedelta(days=21)).isoformat(), today.isoformat()), shape)         if isinstance(shape, dict) else 0.0
+    rows = all_rows
     h = History(rows if rows is not None else nba_data.load(log=lambda *x: None))
     window = {'commenceTimeFrom': (now + timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M:%SZ'),
               'commenceTimeTo': (now + timedelta(hours=sp.LOOKAHEAD_H)).strftime('%Y-%m-%dT%H:%M:%SZ')}
@@ -257,7 +320,7 @@ def run_picks(journal: sp.Journal | None = None, http=None, rows=None, say=None,
     legs, skipped = [], []
     for e in events:
         try:
-            legs += evaluate({**e, **prop_odds(e['id'], http)}, h, hurt, now, a, b)
+            legs += evaluate({**e, **prop_odds(e['id'], http)}, h, hurt, now, shape, shift)
         except RuntimeError as error:  # Credits low.
             skipped.append(str(error))
             break

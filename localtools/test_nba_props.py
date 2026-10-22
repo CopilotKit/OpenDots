@@ -48,27 +48,42 @@ class PropTests(unittest.TestCase):
     def tearDown(self):
         self.directory.cleanup()
 
-    def event(self, over, under, others=(), when='2026-03-01T00:30:00Z'):
-        def bk(key, o, u, point=24.5):
+    def event(self, over, under, others=(), when='2026-03-01T00:30:00Z', point=24.5, home='New York Knicks'):
+        def bk(key, o, u):
             return {'key': key, 'markets': [{'key': 'player_points', 'outcomes': [
                 {'name': 'Over', 'description': 'Jalen Brunson', 'price': o, 'point': point},
                 {'name': 'Under', 'description': 'Jalen Brunson', 'price': u, 'point': point}]}]}
-        return {'id': 'e1', 'home_team': 'New York Knicks', 'away_team': 'Boston Celtics', 'commence_time': when,
+        return {'id': 'e1', 'home_team': home, 'away_team': 'Boston Celtics', 'commence_time': when,
                 'bookmakers': [bk('draftkings', over, under)] + [bk(k, o, u) for k, o, u in others]}
 
-    def test_a_prop_qualifies_only_with_our_edge_and_no_market_disagreement(self):
-        h = nb.History(history(points=(20,) * 20))  # Averages 20; the line is 24.5.
-        legs = {l['name']: l for l in nb.evaluate(self.event(1.9, 1.9), h, {}, None, 1.6, 0.06)}
-        self.assertGreater(legs['Under']['fair'], 0.7)
+    def test_a_prop_qualifies_only_with_our_edge_and_the_market_agreeing(self):
+        h = nb.History(history(points=(20,) * 20))  # Averages 20.
+        agree = [('fanduel', 2.1, 1.75), ('betmgm', 2.1, 1.75)]  # The market leans under too.
+        legs = {l['name']: l for l in nb.evaluate(self.event(1.9, 1.9, agree, point=21.5), h, {}, None, (1.6, 0.06))}
+        self.assertTrue(nb.MIN_EDGE <= legs['Under']['edge'] <= nb.MAX_EDGE, legs['Under']['edge'])
+        self.assertGreaterEqual(legs['Under']['market_edge'], nb.MARKET_FLOOR)
         self.assertTrue(nb.qualifies(legs['Under']))
         self.assertFalse(nb.qualifies(legs['Over']))
-        # Other books price the under far higher (the market knows something): not taken.
-        doubt = {l['name']: l for l in nb.evaluate(self.event(1.9, 1.9, [('fanduel', 1.25, 4.0), ('betmgm', 1.25, 4.0)]),
-                                                   h, {}, None, 1.6, 0.06)}
+        # No other books to check against: not taken.
+        alone = {l['name']: l for l in nb.evaluate(self.event(1.9, 1.9, point=21.5), h, {}, None, (1.6, 0.06))}
+        self.assertFalse(nb.qualifies(alone['Under']))
+        # The market prices the under far higher (it knows something): not taken.
+        doubt = {l['name']: l for l in nb.evaluate(self.event(1.9, 1.9, [('fanduel', 1.25, 4.0), ('betmgm', 1.25, 4.0)], point=21.5),
+                                                   h, {}, None, (1.6, 0.06))}
         self.assertLess(doubt['Under']['market_edge'], nb.MARKET_FLOOR)
         self.assertFalse(nb.qualifies(doubt['Under']))
-        # Listed out: nothing.
-        self.assertEqual(nb.evaluate(self.event(1.9, 1.9), h, {'Jalen Brunson': 'Out'}, None, 1.6, 0.06), [])
+        # An edge too big to be real (line far from anything he scores): treated as a model error.
+        huge = {l['name']: l for l in nb.evaluate(self.event(1.9, 1.9, agree, point=30.5), h, {}, None, (1.6, 0.06))}
+        self.assertGreater(huge['Under']['edge'], nb.MAX_EDGE)
+        self.assertFalse(nb.qualifies(huge['Under']))
+        # Listed out, or now on another team: nothing.
+        self.assertEqual(nb.evaluate(self.event(1.9, 1.9, agree), h, {'Jalen Brunson': 'Out'}, None, (1.6, 0.06)), [])
+        self.assertEqual(nb.evaluate(self.event(1.9, 1.9, agree, home='Miami Heat'), h, {}, None, (1.6, 0.06)), [])
+
+    def test_early_season_props_wait_for_games_this_season(self):
+        rows = history(points=(20,) * 20)  # All last season (January).
+        self.assertEqual(nb.evaluate(self.event(1.9, 1.9, [('fanduel', 2.1, 1.75), ('betmgm', 2.1, 1.75)], point=21.5,
+                                                when='2026-10-25T00:30:00Z'), nb.History(rows), {}, None, (1.6, 0.06)), [])
 
     def test_prop_parlays_settle_from_box_scores(self):
         leg = lambda player, side, point, event: {
