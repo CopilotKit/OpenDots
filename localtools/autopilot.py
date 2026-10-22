@@ -195,7 +195,7 @@ class Orders:
     def entries_today(self, day: date) -> int:
         with closing(sqlite3.connect(self.path)) as db:
             # Dry runs count too, so a dry-run day looks like the live day it stands in for.
-            return db.execute("SELECT COUNT(*) FROM autopilot_orders WHERE day=? AND side='entry' AND result IN ('submitted', 'dry_run')",
+            return db.execute("SELECT COUNT(*) FROM autopilot_orders WHERE day=? AND side='entry' AND result IN ('submitted', 'dry_run', 'shadow')",
                               (day.isoformat(),)).fetchone()[0]
 
     def refused_since(self, ts: float) -> set:
@@ -206,7 +206,7 @@ class Orders:
         """The trades it opened (live) or would have opened (dry run), oldest first."""
         with closing(sqlite3.connect(self.path)) as db:
             db.row_factory = sqlite3.Row
-            rows = db.execute("SELECT * FROM autopilot_orders WHERE side='entry' AND result IN ('submitted', 'dry_run') "
+            rows = db.execute("SELECT * FROM autopilot_orders WHERE side='entry' AND result IN ('submitted', 'dry_run', 'shadow') "
                               'AND ts>=? ORDER BY ts', (time.time() - days * 86400,))
             return [{**dict(r), 'detail': json.loads(r['detail'])} for r in rows]
 

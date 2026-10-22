@@ -10,23 +10,28 @@ import options_guide as og
 
 
 def autopilot_report(journal: og.Journal) -> dict | None:
-    """Today's autopilot picks, scored, sent to the owner (toast and app banner)."""
+    """The autopilot's picks (live, dry run, or the shadow record kept while it is off):
+    those made today and those that closed today, scored, sent to the owner (toast and banner)."""
     import autopilot
     import options_watch
     now = og.now_eastern()
+    today = now.date().isoformat()
     results = options_watch.pick_results(journal, autopilot.Orders(journal.path), now, days=14)
-    today = [p for p in results['picks'] if p['day'] == now.date().isoformat()]
-    if not today:
+    opened = [p for p in results['picks'] if p['day'] == today]
+    closed = [p for p in results['picks'] if p.get('closed_day') == today]
+    if not opened and not closed:
         return None
-    day = next(d for d in results['days'] if d['day'] == now.date().isoformat())
-    lines = [f'{p["time"]} {p["ticker"]} {p["kind"]} at ${p["price"]:.2f}: '
-             + (f'still open (now ${p["pnl"]:+.2f})' if p['how'] == 'still open' else f'{p["how"]} ${p["pnl"]:+.2f}')
-             for p in today[::-1]]
-    closed = day['picks'] - day['open']
-    label = 'Autopilot (dry run)' if all(p['mode'] == 'dry_run' for p in today) else 'Autopilot'
-    alert = {'at': time.time(), 'trade': f'report-{day["day"]}', 'event': 'daily report',
-             'title': f'{label} today: {day["picks"]} pick{"s" if day["picks"] != 1 else ""}, ${day["pnl"]:+.2f}',
-             'message': (f'{day["wins"]} of {closed} closed with a profit. ' if closed else '') + ' | '.join(lines)}
+    describe = lambda p: (f'{p["ticker"]} {p["kind"]} from {p["day"][5:]} at ${p["price"]:.2f}: '
+                          + (f'still open (now ${p["pnl"]:+.2f})' if p['how'] == 'still open' else f'{p["how"]} ${p["pnl"]:+.2f}'))
+    made = sum(p['pnl'] for p in closed)
+    modes = {p['mode'] for p in opened + closed}
+    label = 'Autopilot' if 'live' in modes else 'Autopilot (not live)'
+    all_closed = [p for p in results['picks'] if p['how'] != 'still open']
+    record = (f' Last 14 days: {sum(p["pnl"] > 0 for p in all_closed)} of {len(all_closed)} closed picks won, '
+              f'${sum(p["pnl"] for p in all_closed):+.2f}.' if all_closed else '')
+    alert = {'at': time.time(), 'trade': f'report-{today}', 'event': 'daily report',
+             'title': f'{label}: {len(closed)} closed today (${made:+.2f}), {len(opened)} new',
+             'message': ' | '.join(describe(p) for p in closed + opened) + record}
     options_watch.notify(alert)
     return alert
 

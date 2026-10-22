@@ -291,8 +291,30 @@ class PickTests(Base):
         finally:
             ow.notify, og.now_eastern, ow.today_bars = real_notify, real_now, real_bars
         self.assertEqual(said, [alert])
-        self.assertIn('Autopilot (dry run) today: 1 pick', alert['title'])
-        self.assertIn('SPY decay spread at $0.30', alert['message'])
+        self.assertIn('Autopilot (not live):', alert['title'])
+        self.assertIn('1 new', alert['title'])
+        self.assertIn('SPY decay spread from 10-21 at $0.30', alert['message'])
+
+    def test_with_the_autopilot_off_picks_are_recorded_but_nothing_is_touched(self):
+        flat = [770.0] * 60
+        touched, said = [], []
+
+        async def browser(*args):
+            touched.append(args)
+            return {'limit': 0.30}
+
+        s = {**SPREAD, 'id': self.journal.add(SPREAD)}
+        et = OPEN_ET.replace(hour=11)
+        result = asyncio.run(ow.enter(self.journal, self.orders, et, lambda: [s], browser, browser, said.append,
+                                      lambda t: self.bars(flat)))
+        self.assertEqual(result, {'result': 'shadow', 'trade': s['id']})
+        self.assertEqual(touched, [])  # No Robinhood set-up, no button.
+        self.assertIn('Shadow pick', said[0]['title'])
+        self.assertEqual(self.journal.open_trades(), [])
+        self.assertEqual([o['mode'] for o in self.orders.entries()], ['shadow'])
+        # Still open by its rules: no second pick (one at a time, like live).
+        self.assertIsNone(asyncio.run(ow.enter(self.journal, self.orders, et, lambda: [s], browser, browser,
+                                               said.append, lambda t: self.bars(flat))))
 
 
 if __name__ == '__main__':

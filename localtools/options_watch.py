@@ -223,7 +223,9 @@ def pick_results(journal: og.Journal, orders, now: datetime, days: int = 30, min
                       'mode': order['mode'], 'kind': data['kind'], 'ticker': data['ticker'], 'expiry': data['expiry'],
                       'price': limit, 'pnl': exit_['pnl'] if exit_ else state['now_pnl'],
                       'how': (exit_['event'] if exit_ else 'held to expiry' if expired else 'still open'),
-                      'closed_at': exit_['time'] if exit_ else None})
+                      'closed_at': exit_['time'] if exit_ else None,
+                      'closed_day': (f'{data["expiry"][:4]}-{exit_["day"]}' if exit_ else
+                                     data['expiry'] if expired else None)})
     days_out: dict = {}
     for p in picks:
         d = days_out.setdefault(p['day'], {'day': p['day'], 'picks': 0, 'wins': 0, 'pnl': 0.0, 'open': 0})
@@ -244,20 +246,31 @@ async def enter(journal: og.Journal, orders, et: datetime, find, set_up, place, 
     at the live mid and placed (dry run: stopped at the review). One per pass."""
     import autopilot
     mode = autopilot.state()['mode']
-    if mode == 'off' or journal.open_trades():
+    if journal.open_trades():
         return None
-    if mode == 'dry_run':
+    if mode != 'live':
         # One trade at a time, as live: the last pick must have closed (by its rules) first.
-        today = [p for p in pick_results(journal, orders, et, 1, minutes)['picks'] if p['day'] == et.date().isoformat()]
-        if today and today[0]['how'] == 'still open':
+        last = pick_results(journal, orders, et, 14, minutes)['picks']
+        if last and last[0]['how'] == 'still open':
             return None
     tried = orders.refused_since(time.time() - 1800)  # A refused suggestion waits half an hour.
     for suggestion in find():
         if suggestion.get('id') in tried:
             continue
-        problems = autopilot.check_entry(journal, orders, suggestion, mode, et)
+        problems = autopilot.check_entry(journal, orders, suggestion, 'dry_run' if mode == 'off' else mode, et)
         if problems:
             continue
+        if mode == 'off':
+            # Shadow record: the autopilot is off, so nothing is opened or pressed. The pick is
+            # logged at the suggestion's mid (Cboe, ~15 minutes delayed) and scored like a dry run.
+            legs = ' / '.join(f'{l["action"]} {l["strike"]:g}{l["type"][0].upper()}' for l in suggestion['legs'])
+            orders.add(suggestion['id'], 'entry', 'shadow', 'shadow',
+                       {'legs': suggestion['legs'], 'qty': suggestion['qty'], 'limit': suggestion['limit']})
+            say({'at': time.time(), 'trade': suggestion['id'], 'event': 'shadow pick', 'ticker': suggestion['ticker'],
+                 'title': f'Shadow pick: {suggestion["ticker"]} {suggestion["kind"]}',
+                 'message': f'{legs} {suggestion["expiry"]} at about ${suggestion["limit"]:.2f}. Recorded only '
+                            '(autopilot off): scored at 4:15pm with the rest.'})
+            return {'result': 'shadow', 'trade': suggestion['id']}
         ready = await set_up(suggestion)
         credit = suggestion['price'] > 0
         planned = suggestion.get('limit', abs(suggestion['price']))
