@@ -20,6 +20,7 @@ import {
   Plus,
   Search,
   Settings2,
+  Target,
   Trash2,
   X,
 } from 'lucide-react';
@@ -46,6 +47,7 @@ import { ThreadList } from './ThreadList';
 import { ResultPane } from './ResultPane';
 import { TaskRow } from './TaskPresentation';
 import { TaskActions } from './TaskActions';
+import { GoalsPanel } from './GoalsPanel';
 import { WorkspaceDialog, type Dialog } from './WorkspaceDialog';
 import { submitComposerOnEnter } from './chat-composer';
 
@@ -62,9 +64,9 @@ export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceState>();
   const [selectedDot, setSelectedDot] = useState('');
   const [selectedThread, setSelectedThread] = useState<string>();
-  const [view, rawSetView] = useState<'chat' | 'tasks' | 'memories' | 'space'>(
-    'chat',
-  );
+  const [view, rawSetView] = useState<
+    'chat' | 'tasks' | 'goals' | 'memories' | 'space'
+  >('chat');
   const dirtyPage = useRef(false);
   const [spaceId, setSpaceId] = useState('');
   const [pageId, setPageId] = useState<string>();
@@ -473,6 +475,17 @@ export function App() {
         )}
         <div className="sidebar-bottom">
           <button
+            className={`nav-item ${view === 'goals' ? 'active' : ''}`}
+            onClick={() => {
+              setView('goals');
+              setMobile(false);
+            }}
+          >
+            <Target size={17} />
+            <span>Goals & reminders</span>
+            {state.goals.length > 0 && <small>{state.goals.length}</small>}
+          </button>
+          <button
             className={`nav-item ${view === 'tasks' ? 'active' : ''}`}
             onClick={() => {
               setView('tasks');
@@ -539,9 +552,11 @@ export function App() {
                 ? dot.name
                 : view === 'tasks'
                   ? 'Activity'
-                  : view === 'space'
-                    ? 'Pages'
-                    : 'Memories'}
+                  : view === 'goals'
+                    ? 'Goals & reminders'
+                    : view === 'space'
+                      ? 'Pages'
+                      : 'Memories'}
             </strong>
           </div>
           <div className="top-actions">
@@ -775,12 +790,16 @@ export function App() {
                 <h1>
                   {view === 'memories'
                     ? 'Memories'
-                    : 'A little follow-through.'}
+                    : view === 'goals'
+                      ? 'Goals & reminders'
+                      : 'A little follow-through.'}
                 </h1>
                 <p>
                   {view === 'memories'
                     ? 'Preferences you choose to share with your Dots.'
-                    : 'Scheduled turns run on the server in their original conversation.'}
+                    : view === 'goals'
+                      ? 'Keep responsibilities, progress, and one-time reminders in your workspace.'
+                      : 'Scheduled turns run on the server in their original conversation.'}
                 </p>
               </div>
               {view === 'memories' && (
@@ -793,7 +812,9 @@ export function App() {
                 </button>
               )}
             </div>
-            {view === 'memories' ? (
+            {view === 'goals' ? (
+              <GoalsPanel goals={state.goals} mutate={mutate} />
+            ) : view === 'memories' ? (
               <>
                 <div className="memory-grid">
                   {state.memories.map((memory) => (

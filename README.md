@@ -207,6 +207,7 @@ CopilotKit SDK telemetry collects usage metadata separately from conversation pe
 | Slack                      | Managed Channels SDK declaration with workspace and user allowlists                                                                     |
 | Calls                      | WebRTC speech, delegated compute, bounded sessions, hangup, and timeline receipts                                                       |
 | Background work            | Scheduled server-side turns in their original conversation, with pause and retry controls                                               |
+| Goals and reminders        | SQLite-backed responsibilities, editable progress and status, and one dismissible one-time reminder per goal                            |
 | Browser                    | Separate read-only public-page service with page capture and navigation limits                                                          |
 | Dot computers              | Per-Dot browser profiles, files, shell, takeover, permissions, and action records through OpenBot                                       |
 | Connections                | Per-Dot MCP servers, Composio connected apps, per-tool access, and owner approval for MCP write actions                                 |
@@ -221,13 +222,13 @@ Local checks cover setup, persistence, permissions, SDK failure handling, and br
 
 Automatic Learning routing and skill delivery are configured locally. Cloud schedules, eligible-thread counts, and published-skill delivery still need connected-service verification. Skills require review and publication in Intelligence; existing conversations without a container are not enrolled retroactively.
 
-This is a single-owner starting point. Shared editing, invitations, file uploads, and interactive page embeds are not included. Schedules are recurring instructions, not a complete goal or event-trigger system. Specialist Dots have separate roles and conversations; multi-Dot group conversations and automatic delegation are further work.
+This is a single-owner starting point. Shared editing, invitations, file uploads, and interactive page embeds are not included. Goals and their one-time reminders are managed in the workspace; due reminders appear there for the owner to dismiss, and do not send external notifications or trigger agent work. Recurring schedules remain a separate feature. Specialist Dots have separate roles and conversations; multi-Dot group conversations and automatic delegation are further work.
 
 ### Extending the template
 
 - Add identity, Space membership, and shared page editing for multi-user deployments.
 - Add file attachments and richer page content.
-- Add event triggers and a persistent responsibility lifecycle.
+- Add optional notification delivery for reminders with explicit provider setup and owner controls.
 - Extend tools and approval flows for your own workflows.
 - Add richer artifacts, connected-app context, and specialist coordination.
 

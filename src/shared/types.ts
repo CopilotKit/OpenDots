@@ -57,6 +57,18 @@ export interface Memory {
   text: string;
   createdAt: number;
 }
+export type GoalStatus = 'active' | 'paused' | 'completed' | 'cancelled';
+export interface Goal {
+  id: string;
+  title: string;
+  description: string;
+  status: GoalStatus;
+  progress: number;
+  reminderAt: number | null;
+  reminderDismissedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
 export interface Detail {
   task: Task;
   runs: Run[];
@@ -65,6 +77,7 @@ export interface Detail {
 export interface State {
   settings: Settings;
   tasks: Task[];
+  goals: Goal[];
   memories: Memory[];
   mode: 'sample' | 'live';
   configured: boolean;
