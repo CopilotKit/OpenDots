@@ -1,23 +1,24 @@
 export type Status =
-  | 'queued'
-  | 'running'
-  | 'paused'
-  | 'completed'
-  | 'failed'
-  | 'interrupted'
-  | 'cancelled';
+  'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export interface Settings {
   name: string;
   paused: boolean;
   researchAllowed: boolean;
   memoryAllowed: boolean;
-  appsAllowed: boolean;
 }
+export type Trigger =
+  | { type: 'interval' }
+  | { type: 'daily'; time: string; days: number[] }
+  | { type: 'file'; folder: string; pattern: string };
 export interface Task {
   id: string;
   prompt: string;
   status: Status;
   intervalSeconds: number | null;
+  /** JSON-encoded Trigger; null means interval/manual. */
+  trigger?: string | null;
+  /** Context from the event that fired a trigger, used by the next run. */
+  pendingInput?: string | null;
   nextRunAt: number | null;
   createdAt: number;
   updatedAt: number;
@@ -85,13 +86,15 @@ export interface Dot {
   instructions: string;
   researchAllowed: boolean;
   memoryAllowed: boolean;
-  appsAllowed: boolean;
-  composioToolkits: string[];
-  composioSessionId?: string | null;
-  composioPolicyHash?: string | null;
   createdAt: number;
   learningContainerId?: string | null;
   skillDeliveryEnabled?: boolean;
+  /** Ollama model for this Dot; null uses the platform default. */
+  model?: string | null;
+  /** Granted tool groups (see shared/capabilities.ts). */
+  toolGroups?: string[];
+  /** Reason step by step before answering (slower, better for planning). */
+  thinking?: boolean;
 }
 export interface Conversation {
   id: string;
@@ -117,11 +120,18 @@ export interface SetupStatus {
   model: boolean;
   browser: boolean;
   voice: boolean;
-  composio: boolean;
   slack: string;
   missing: string[];
 }
+export interface ModelSettings {
+  defaultModel: string;
+  plannerModel: string;
+  visionModel: string;
+  available: string[];
+}
 export interface WorkspaceState {
+  models?: ModelSettings;
+  mcpGroups?: string[];
   spaces: Space[];
   dots: Dot[];
   conversations: Conversation[];

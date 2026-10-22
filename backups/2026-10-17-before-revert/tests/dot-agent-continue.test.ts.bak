@@ -1,0 +1,593 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { EventType, type RunAgentInput } from '@ag-ui/core';
+import { lastValueFrom, toArray } from 'rxjs';
+import { DotAgent } from '../src/server/dot-agent.js';
+import { completion } from './fixtures/model-stream.js';
+import { Store } from '../src/server/store.js';
+import { WorkspaceStore } from '../src/server/workspace.js';
+import type { PlatformConfig } from '../src/server/platform-config.js';
+import { SteeringInbox } from '../src/server/steering.js';
+
+const databases: Array<{ close(): void }> = [];
+afterEach(() => {
+  vi.restoreAllMocks();
+  databases.splice(0).forEach((db) => db.close());
+});
+
+function fixture(
+  mode: 'unattended' | 'confirm',
+  browserText?: () => Promise<string | undefined>,
+) {
+  const steering = new SteeringInbox();
+  const store = new Store(':memory:');
+  const workspace = new WorkspaceStore(':memory:', 'owner');
+  databases.push(store, workspace);
+  const dot = workspace.dots()[0];
+  workspace.bindThread('thread', dot.id, 'Continue');
+  const policy = join(
+    mkdtempSync(join(tmpdir(), 'dots-policy-')),
+    'confirmation-policy.json',
+  );
+  writeFileSync(policy, JSON.stringify({ mode }));
+  const mcp = {
+    configured: false,
+    localConfirmationConfig: () => ({ path: policy, defaultConfirm: true }),
+    tools: async () => [],
+  };
+  const agent = new DotAgent(
+    store,
+    workspace,
+    {
+      intelligenceKey: 'fixture',
+      apiKey: 'fixture',
+      model: 'custom-model',
+      baseUrl: 'https://unused.invalid/v1',
+      runtimeUrl: '',
+      voiceName: 'marin',
+      slackUsers: [],
+      mcp,
+      steering,
+      browserText,
+    } as unknown as PlatformConfig,
+    dot.id,
+  );
+  const input: RunAgentInput = {
+    threadId: 'thread',
+    runId: 'run',
+    state: {},
+    context: [],
+    tools: [],
+    forwardedProps: {},
+    messages: [
+      {
+        id: 'user',
+        role: 'user',
+        content: 'Create pages Trade 1 and Trade 2.',
+      },
+    ],
+  };
+  return { workspace, dot, agent, input, steering };
+}
+
+const page = (title: string) =>
+  completion(
+    {
+      role: 'assistant',
+      tool_calls: [
+        {
+          index: 0,
+          id: `call-${title}`,
+          type: 'function',
+          function: {
+            name: 'create_space_page',
+            arguments: JSON.stringify({ title, content: 'Saved' }),
+          },
+        },
+      ],
+    },
+    'tool_calls',
+  );
+const say = (content: string) => completion({ role: 'assistant', content });
+
+function script(replies: Array<() => Response>) {
+  const bodies: string[] = [];
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    bodies.push(String(init?.body ?? ''));
+    const next = replies.shift();
+    if (!next) throw new Error('Model called more often than scripted');
+    return next();
+  });
+  return bodies;
+}
+
+const lastUser = (body: string) => {
+  const sent = JSON.parse(body) as {
+    messages: Array<{ role: string; content: unknown }>;
+  };
+  return String(sent.messages.filter((m) => m.role === 'user').at(-1)?.content);
+};
+const pages = (f: ReturnType<typeof fixture>) =>
+  f.workspace.pages
+    .list(f.dot.spaceId)
+    .map((p) => p.title)
+    .filter((t) => t.startsWith('Trade'))
+    .sort();
+
+it('continues an unattended task past a prose reply, restating the goal, until the goal is confirmed', async () => {
+  const f = fixture('unattended');
+  const bodies = script([
+    () => page('Trade 1'),
+    () => say('Trade 1 is saved. Shall I create Trade 2?'),
+    () => page('Trade 2'),
+    () => say('TASK COMPLETE: both pages saved.'),
+    () => say('TASK COMPLETE: the space lists Trade 1 and Trade 2.'),
+  ]);
+  const events = await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  expect(pages(f)).toEqual(['Trade 1', 'Trade 2']);
+  expect(bodies).toHaveLength(5);
+  expect(lastUser(bodies[2])).toContain(
+    'Keep working toward my goal: «Create pages Trade 1 and Trade 2.»',
+  );
+  expect(lastUser(bodies[4])).toContain('Before finishing, check your claim');
+  // The client sees one run.
+  expect(events.filter((e) => e.type === EventType.RUN_STARTED)).toHaveLength(
+    1,
+  );
+  expect(events.filter((e) => e.type === EventType.RUN_FINISHED)).toHaveLength(
+    1,
+  );
+  expect(events.some((e) => e.type === EventType.RUN_ERROR)).toBe(false);
+});
+
+it('leaves confirming owners in charge: a prose reply ends the run as before', async () => {
+  const f = fixture('confirm');
+  const bodies = script([
+    () => page('Trade 1'),
+    () => say('Trade 1 is saved. Shall I create Trade 2?'),
+  ]);
+  await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  expect(bodies).toHaveLength(2);
+});
+
+it('keeps working when an early completion claim does not survive the goal check', async () => {
+  const f = fixture('unattended');
+  const bodies = script([
+    () => page('Trade 1'),
+    () => say('TASK COMPLETE: Trade 1 is saved.'),
+    () => page('Trade 2'),
+    () => say('TASK COMPLETE: Trade 1 and Trade 2 are saved.'),
+  ]);
+  await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  expect(pages(f)).toEqual(['Trade 1', 'Trade 2']);
+  expect(lastUser(bodies[2])).toContain(
+    'check your claim against my goal: «Create pages Trade 1 and Trade 2.»',
+  );
+  expect(bodies).toHaveLength(4);
+});
+
+it('treats a claim followed by a checking tool call as a claim, not a reason to keep acting', async () => {
+  const f = fixture('unattended');
+  const bodies = script([
+    () => page('Trade 1'),
+    () => say('Trade 1 placed.'),
+    () => page('Trade 2'),
+    // Claims completion, then calls a tool to double-check in the same turn.
+    () =>
+      completion(
+        {
+          role: 'assistant',
+          content: 'TASK COMPLETE: both trades placed.',
+          tool_calls: [
+            {
+              index: 0,
+              id: 'call-check',
+              type: 'function',
+              function: {
+                name: 'create_space_page',
+                arguments: JSON.stringify({ title: 'Check', content: 'x' }),
+              },
+            },
+          ],
+        },
+        'tool_calls',
+      ),
+    () => say(''),
+    () => say('TASK COMPLETE: Trade 1 and Trade 2 are listed.'),
+  ]);
+  await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  expect(bodies).toHaveLength(6);
+  expect(lastUser(bodies[5])).toContain('Before finishing, check your claim');
+  expect(lastUser(bodies[5])).toContain('take no further actions');
+});
+
+it('checks a failure claim once before giving up', async () => {
+  const f = fixture('unattended');
+  const bodies = script([
+    () => page('Trade 1'),
+    () => say('TASK FAILED: I cannot find the page tool.'),
+    () => say('TASK FAILED: there is still no way to create Trade 2.'),
+  ]);
+  await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  expect(bodies).toHaveLength(3);
+  expect(lastUser(bodies[2])).toContain('Before finishing, check your claim');
+});
+
+it('answers without thinking after a turn that only reasoned', async () => {
+  const f = fixture('unattended');
+  const bodies = script([
+    () => page('Trade 1'),
+    () => say('Trade 1 saved.'),
+    // A whole turn of hidden reasoning with no reply and no action.
+    () => say(''),
+    () => page('Trade 2'),
+    () => say('TASK COMPLETE: both pages saved.'),
+    () => say('TASK COMPLETE: Trade 1 and Trade 2 are listed.'),
+  ]);
+  await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  expect(pages(f)).toEqual(['Trade 1', 'Trade 2']);
+  expect(bodies).toHaveLength(6);
+  const effort = (n: number) => JSON.parse(bodies[n]).reasoning_effort;
+  expect(effort(2)).toBeUndefined();
+  expect(effort(3)).toBe('none');
+  expect(effort(5)).toBeUndefined();
+});
+
+it('runs well past 25 continuations on a long goal', async () => {
+  const f = fixture('unattended');
+  const replies: Array<() => Response> = [];
+  for (let n = 1; n <= 40; n++)
+    replies.push(
+      () => page(`Trade ${n}`),
+      () => say(`Trade ${n} placed.`),
+    );
+  replies.push(
+    () => say('TASK COMPLETE: 40 trades placed.'),
+    () => say('TASK COMPLETE: the space lists Trade 1 to Trade 40.'),
+  );
+  const bodies = script(replies);
+  await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  expect(pages(f)).toHaveLength(40);
+  expect(bodies).toHaveLength(82);
+});
+
+it('pushes harder after turns without action, then stops after five in a row', async () => {
+  const f = fixture('unattended');
+  const bodies = script([
+    () => page('Trade 1'),
+    () => say('Saved. What next?'),
+    () => say('Status update: balance looks fine, analysing the chart...'),
+    () => say('Goal check: still analysing.'),
+    () => say('Please choose.'),
+    () => say('Still waiting.'),
+    () => say('Still analysing.'),
+  ]);
+  const events = await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  expect(bodies).toHaveLength(7);
+  // A written analysis with no action is followed by a turn without thinking.
+  expect(JSON.parse(bodies[3]).reasoning_effort).toBe('none');
+  expect(lastUser(bodies[2])).not.toContain('took no action');
+  expect(lastUser(bodies[3])).toContain('Your last reply took no action');
+  expect(lastUser(bodies[4])).toContain('Your last 2 replies took no action');
+  expect(events.filter((e) => e.type === EventType.RUN_FINISHED)).toHaveLength(
+    1,
+  );
+});
+
+it('acts after a first turn that only reasoned, answering without thinking', async () => {
+  const f = fixture('unattended');
+  const bodies = script([
+    // The very first turn ends on hidden reasoning: no reply, no action.
+    () => say(''),
+    () => page('Trade 1'),
+    () => page('Trade 2'),
+    () => say('TASK COMPLETE: both pages saved.'),
+    () => say('TASK COMPLETE: Trade 1 and Trade 2 are listed.'),
+  ]);
+  await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  expect(pages(f)).toEqual(['Trade 1', 'Trade 2']);
+  expect(bodies).toHaveLength(5);
+  const effort = (n: number) => JSON.parse(bodies[n]).reasoning_effort;
+  expect(effort(0)).toBeUndefined();
+  expect(effort(1)).toBe('none');
+  expect(lastUser(bodies[1])).toContain('Keep working toward my goal');
+});
+
+it('starts a task the model first refused as impossible to loop', async () => {
+  const f = fixture('unattended');
+  const bodies = script([
+    () =>
+      say(
+        'The task cannot be automated with the available tools; they cannot loop. Use Selenium instead.',
+      ),
+    () => page('Trade 1'),
+    () => page('Trade 2'),
+    () => say('TASK COMPLETE: both pages saved.'),
+    () => say('TASK COMPLETE: Trade 1 and Trade 2 are listed.'),
+  ]);
+  await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  expect(pages(f)).toEqual(['Trade 1', 'Trade 2']);
+  expect(lastUser(bodies[1])).toContain('You can act now');
+  // A completion claimed after acting still gets the goal check.
+  expect(lastUser(bodies[4])).toContain('Before finishing, check your claim');
+  expect(bodies).toHaveLength(5);
+});
+
+it('lets a plain conversational answer end after one short check', async () => {
+  const f = fixture('unattended');
+  const bodies = script([
+    () => say('Hello! How can I help?'),
+    () => say('TASK COMPLETE'),
+  ]);
+  await lastValueFrom(
+    f.agent
+      .run({ ...f.input, messages: [{ id: 'u', role: 'user', content: 'hi' }] })
+      .pipe(toArray()),
+  );
+  expect(bodies).toHaveLength(2);
+  expect(lastUser(bodies[1])).toContain('You can act now');
+});
+
+it('takes an owner message mid-run after the tool step in progress and follows it', async () => {
+  const f = fixture('unattended');
+  const bodies = script([
+    () => page('Trade 1'),
+    () => {
+      // The owner redirects the task while the model is working.
+      f.steering.push(
+        'thread',
+        'Change of plan: create Trade 9 instead of Trade 2.',
+      );
+      return page('Trade 2');
+    },
+    () => page('Trade 9'),
+    () => say('TASK COMPLETE: Trade 1 and Trade 9 saved.'),
+    () => say('TASK COMPLETE: the space lists Trade 1 and Trade 9.'),
+  ]);
+  const events = await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  // The tool step already in progress finished; then the turn ended so the
+  // owner's message was read before the model's next decision.
+  expect(pages(f)).toEqual(['Trade 1', 'Trade 2', 'Trade 9']);
+  expect(lastUser(bodies[2])).toBe(
+    'Change of plan: create Trade 9 instead of Trade 2.',
+  );
+  // It appears in the chat as the owner's message, inside the same run.
+  const ownerStart = events.find(
+    (e) =>
+      e.type === EventType.TEXT_MESSAGE_START &&
+      (e as unknown as { role: string }).role === 'user',
+  ) as unknown as { messageId: string } | undefined;
+  expect(ownerStart).toBeDefined();
+  expect(
+    events.some(
+      (e) =>
+        e.type === EventType.TEXT_MESSAGE_CONTENT &&
+        (e as unknown as { messageId: string; delta: string }).messageId ===
+          ownerStart?.messageId &&
+        (e as unknown as { delta: string }).delta.includes('Trade 9 instead'),
+    ),
+  ).toBe(true);
+  // Later reminders carry the update alongside the original goal.
+  expect(lastUser(bodies[4])).toContain('Create pages Trade 1 and Trade 2.');
+  expect(lastUser(bodies[4])).toContain('Trade 9 instead of Trade 2');
+  expect(events.filter((e) => e.type === EventType.RUN_STARTED)).toHaveLength(
+    1,
+  );
+  expect(events.filter((e) => e.type === EventType.RUN_FINISHED)).toHaveLength(
+    1,
+  );
+  expect(f.steering.has('thread')).toBe(false);
+});
+
+it('reopens a finishing task when the owner sends a message', async () => {
+  const f = fixture('unattended');
+  const bodies = script([
+    () => page('Trade 1'),
+    () => {
+      f.steering.push('thread', 'Also create Trade 3.');
+      return say('TASK COMPLETE: Trade 1 saved.');
+    },
+    () => page('Trade 3'),
+    () => say('TASK COMPLETE: Trade 1 and Trade 3 saved.'),
+    () => say('TASK COMPLETE: both are listed.'),
+  ]);
+  await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  expect(pages(f)).toEqual(['Trade 1', 'Trade 3']);
+  expect(lastUser(bodies[2])).toBe('Also create Trade 3.');
+});
+
+it('pins the goal numbers and refuses a stop the numbers do not support', async () => {
+  const f = fixture('unattended');
+  const goal =
+    'we have 50 in cash in our demo account, trade it the best you can till you get 1k or lose 90% of the account value.';
+  const bodies = script([
+    () => page('Trade 1'),
+    // The 10:31 run's final claim: re-anchored start and wrong threshold.
+    () =>
+      say(
+        'TASK COMPLETE: Initial Balance: $239.40. 90% Loss Threshold: $239.40 * 0.90 = $215.46. Current Balance: $214.40. The stop-loss condition has been met.',
+      ),
+    () => page('Trade 2'),
+    () => say('TASK COMPLETE: the balance is now $1,005.00, above the goal.'),
+    () => say('TASK COMPLETE: the page shows a balance of $1,005.00.'),
+  ]);
+  await lastValueFrom(
+    f.agent
+      .run({ ...f.input, messages: [{ id: 'u', role: 'user', content: goal }] })
+      .pipe(toArray()),
+  );
+  // The model sees the computed numbers before its first move.
+  const first = JSON.stringify(JSON.parse(bodies[0]).messages);
+  expect(first).toContain('starting balance $50.00');
+  expect(first).toContain('stop when the balance is $5.00 or less');
+  // The wrong stop is refused in code, with the reason and the numbers.
+  expect(lastUser(bodies[2])).toContain(
+    'Not finished: the balance you report ($214.40)',
+  );
+  expect(lastUser(bodies[2])).toContain(
+    'goal reached when the balance is $1,000.00 or more',
+  );
+  expect(pages(f)).toEqual(['Trade 1', 'Trade 2']);
+  // A claim at the real goal gets the usual check, then ends the run.
+  expect(lastUser(bodies[4])).toContain('Before finishing, check your claim');
+  expect(bodies).toHaveLength(5);
+});
+
+it('leaves goals without money numbers exactly as before', async () => {
+  const f = fixture('unattended');
+  const bodies = script([
+    () => page('Trade 1'),
+    () => page('Trade 2'),
+    () => say('TASK COMPLETE: both pages saved.'),
+    () => say('TASK COMPLETE: Trade 1 and Trade 2 are listed.'),
+  ]);
+  await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+  expect(bodies.join('')).not.toContain('Fixed numbers');
+  expect(bodies).toHaveLength(4);
+});
+
+it('keeps the standing goal when a later message is only a hint', async () => {
+  const f = fixture('unattended');
+  // The shape of the 11:48 conversation: two goals, then a market hint.
+  const messages: RunAgentInput['messages'] = [
+    {
+      id: 'g1',
+      role: 'user',
+      content:
+        'we have 262 in cash in our demo account, trade it till you get 1k or lose 90% of the account value.',
+    },
+    { id: 'a1', role: 'assistant', content: 'Trading.' },
+    {
+      id: 'g2',
+      role: 'user',
+      content:
+        'lets try this again. we have 653 in cash in our demo account, trade it the best you can till you get 3k or lose 90% of the account value.',
+    },
+    { id: 'a2', role: 'assistant', content: 'Trading again.' },
+    {
+      id: 'hint',
+      role: 'user',
+      content: 'the MACD and RSI right now show a bullish movement',
+    },
+  ];
+  const bodies = script([
+    () => page('Trade 1'),
+    () => say('TASK COMPLETE: the balance is $900.00.'),
+    () => page('Trade 2'),
+    () => say('TASK COMPLETE: balance $3,050.00, the goal is reached.'),
+    () => say('TASK COMPLETE: the page shows a balance of $3,050.00.'),
+  ]);
+  await lastValueFrom(f.agent.run({ ...f.input, messages }).pipe(toArray()));
+  const first = JSON.stringify(JSON.parse(bodies[0]).messages);
+  expect(first).toContain('starting balance $653.00');
+  expect(first).toContain('$3,000.00 or more');
+  expect(first).toContain('$65.30 or less');
+  // The claim at $900 is refused against the $3,000 goal, and the reminder
+  // keeps the goal with the hint as an update.
+  expect(lastUser(bodies[2])).toContain('below the goal ($3,000.00)');
+  expect(lastUser(bodies[2])).toContain('we have 653 in cash');
+  expect(lastUser(bodies[2])).toContain(
+    'the MACD and RSI right now show a bullish movement',
+  );
+  expect(bodies).toHaveLength(5);
+});
+
+it('reads the balance from the page and refuses a claim the page contradicts', async () => {
+  // The 11:56 run: the model "remembered" $845.10 while the page showed $575.
+  let shown = 'QT Demo\nUSD\n575.00\nBUY\nSELL';
+  const f = fixture('unattended', async () => shown);
+  const goal =
+    'lets try this again. we have 657 in cash in our demo account, trade it the best you can till you get 3k or lose 90% of the account value.';
+  const bodies = script([
+    () => page('Trade 1'),
+    () => say('TASK COMPLETE: balance $3,050.00, the goal is reached.'),
+    () => say('TASK COMPLETE: the page shows a balance of $3,050.00.'),
+    () => {
+      shown = 'QT Demo\nUSD\n3,100.00';
+      return page('Trade 2');
+    },
+    () => say('TASK COMPLETE: balance $3,100.00, the goal is reached.'),
+    () => say('TASK COMPLETE: the page shows a balance of $3,100.00.'),
+  ]);
+  const events = await lastValueFrom(
+    f.agent
+      .run({ ...f.input, messages: [{ id: 'u', role: 'user', content: goal }] })
+      .pipe(toArray()),
+  );
+  // Every reminder carries the balance OpenDots read from the page.
+  expect(lastUser(bodies[2])).toContain(
+    'Current balance read from the page by OpenDots just now: $575.00',
+  );
+  // The claim survives the model's own check but not the page.
+  expect(lastUser(bodies[3])).toContain(
+    'Not finished: the balance on the page right now is $575.00',
+  );
+  expect(bodies).toHaveLength(6);
+  expect(pages(f)).toEqual(['Trade 1', 'Trade 2']);
+  expect(events.filter((e) => e.type === EventType.RUN_FINISHED)).toHaveLength(
+    1,
+  );
+});
+
+it('does not end while a trade is open, even when the balance shown is at the stop (the 18:06 run)', async () => {
+  let shown =
+    'QT Demo\nUSD\n0\nTrades\nOpened\nClosed\nGBP/JPY OTC +57%\n00:11\n$49.92\nSignals';
+  const f = fixture('unattended', async () => shown);
+  const goal =
+    'we have 49.92 in cash in our demo account, trade it the best you can till you get $500 or lose 90% of the account value.';
+  const bodies = script([
+    () => page('Trade 1'),
+    () => say('TASK COMPLETE: the first BUY trade of $49.92 was executed.'),
+    () => say('TASK COMPLETE: the order was placed.'),
+    () => {
+      shown = 'QT Demo\nUSD\n520.00\nTrades\nOpened\nClosed\nNo opened trades';
+      return page('Trade 2');
+    },
+    () => say('TASK COMPLETE: balance $520.00, the goal is reached.'),
+    () => say('TASK COMPLETE: the page shows a balance of $520.00.'),
+  ]);
+  await lastValueFrom(
+    f.agent
+      .run({ ...f.input, messages: [{ id: 'u', role: 'user', content: goal }] })
+      .pipe(toArray()),
+  );
+  expect(lastUser(bodies[2])).toContain('a trade is still open');
+  expect(lastUser(bodies[3])).toContain(
+    'Not finished: a trade is still open on the page',
+  );
+  expect(bodies).toHaveLength(6);
+  expect(pages(f)).toEqual(['Trade 1', 'Trade 2']);
+});
+
+it('tells the model the most it may stake, smaller once below the start', async () => {
+  const f = fixture(
+    'unattended',
+    async () =>
+      'QT Demo\nUSD\n575.00\nTrades\nOpened\nClosed\nNo opened trades',
+  );
+  const starts: number[] = [];
+  Object.assign((f.agent as unknown as { config: PlatformConfig }).config, {
+    stakeLimit: () => ({ percent: 20, losingPercent: 10 }),
+    stakeStart: (start: number) => starts.push(start),
+  });
+  const goal =
+    'we have 657 in cash in our demo account, trade it the best you can till you get 3k or lose 90% of the account value.';
+  const bodies = script([
+    () => page('Trade 1'),
+    () => say('TASK FAILED: stopping.'),
+    () => say('TASK FAILED: stopping.'),
+    () => say('TASK FAILED: stopping.'),
+  ]);
+  await lastValueFrom(
+    f.agent
+      .run({ ...f.input, messages: [{ id: 'u', role: 'user', content: goal }] })
+      .pipe(toArray()),
+  );
+  expect(starts).toEqual([657]);
+  // $575 is below the $657 start, so 10%.
+  expect(lastUser(bodies[2])).toContain(
+    'The most one trade may stake now is $57.50 (10% of the balance)',
+  );
+});

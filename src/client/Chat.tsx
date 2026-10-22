@@ -1,15 +1,10 @@
 import { PageReviewCard } from './PageReviewCard';
+import { executionReceipt as summarizeExecution } from '../shared/execution-receipt';
 import { pageReviewSchema, pageReviewTool } from '../shared/page-review';
-import {
-  connectionActionSchema,
-  connectionActionTool,
-} from '../shared/connection-types';
-import { ConnectionActionCard } from './ConnectionActionCard';
 import { contextualMessage, type PageContext } from './page-context';
 import { api } from './api';
 import type { Page } from '../server/pages';
 import { useEffect, useRef, useState } from 'react';
-import { CopilotKitCoreErrorCode } from '@copilotkit/core';
 import {
   CopilotChatToolCallsView,
   useRenderTool,
@@ -22,6 +17,7 @@ import {
   ArrowUp,
   Clock3,
   Link2,
+  Paperclip,
   Phone,
   PhoneOff,
   Square,
@@ -36,8 +32,6 @@ import type { CallReceipt, Conversation, Dot } from '../shared/types';
 import { Mascot } from './Mascot';
 import { useVoice } from './useVoice';
 import { CallView } from './CallView';
-import { shouldSubmitComposerOnKeyDown } from './chat-composer';
-
 export function Chat({
   thread,
   dot,
@@ -97,31 +91,86 @@ export function Chat({
   const [draft, setDraft] = useState('');
   const [source, setSource] = useState('');
   const [sourceOpen, setSourceOpen] = useState(false);
+  const [attachments, setAttachments] = useState<
+    { name: string; path: string }[]
+  >([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  // Attachments are saved on this PC; the Dot opens them with its local tools.
+  const attach = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setUploading(true);
+    setError('');
+    try {
+      for (const file of [...files]) {
+        if (file.size > 20_000_000)
+          throw new Error(`${file.name} is larger than 20 MB.`);
+        const data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result).split(',')[1]);
+          reader.onerror = () =>
+            reject(new Error(`Could not read ${file.name}.`));
+          reader.readAsDataURL(file);
+        });
+        const saved = await api<{ name: string; path: string }>(
+          '/uploads',
+          'POST',
+          { name: file.name, type: file.type || 'text/plain', data },
+        );
+        setAttachments((current) => [...current, saved]);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Attachment failed.');
+    } finally {
+      setUploading(false);
+      if (fileInput.current) fileInput.current.value = '';
+    }
+  };
   const [error, setError] = useState('');
-  const [runError, setRunError] = useState('');
-  const chatError = error || runError;
+  const [turnError, setTurnError] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [connectAttempt, setConnectAttempt] = useState(0);
   const [running, setRunning] = useState(false);
+  const [executionReceipt, setExecutionReceipt] = useState('');
+  // Status of messages sent to a task while it runs (see steer below).
+  const [steerNote, setSteerNote] = useState('');
   const voice = useVoice(thread.id, onSaved, agent.messages.at(-1)?.id);
   const sent = useRef(false);
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    if (!/network|fetch|connection/i.test(error) || connectAttempt >= 3) return;
+    // Reattach to the persisted run; never resubmit a prompt or replay actions.
+    const timer = setTimeout(
+      () => setConnectAttempt((value) => value + 1),
+      1000 * 2 ** connectAttempt,
+    );
+    return () => clearTimeout(timer);
+  }, [error, connectAttempt]);
+  useEffect(() => {
     const subscription = copilotkit.subscribe({
-      onError: ({ error, code }) => {
-        if (
-          code === CopilotKitCoreErrorCode.AGENT_RUN_ERROR_EVENT ||
-          code === CopilotKitCoreErrorCode.AGENT_RUN_FAILED_EVENT ||
-          code === CopilotKitCoreErrorCode.AGENT_RUN_FAILED ||
-          code === CopilotKitCoreErrorCode.AGENT_THREAD_LOCKED
-        )
-          setRunError(error.message);
-        else setError(error.message);
-      },
+      onError: ({ error }) => setError(error.message),
     });
     const events = agent.subscribe({
-      onRunErrorEvent: ({ event }) => setRunError(event.message),
-      onRunFinishedEvent: ({ outcome }) => {
-        if (outcome === 'success') setRunError('');
+      onMessagesSnapshotEvent: () => setLoaded(true),
+      onRunStartedEvent: () => {
+        setLoaded(true);
+        setRunning(true);
+        setError('');
+        setTurnError(false);
+      },
+      onRunFinishedEvent: () => {
+        setRunning(false);
+        setSteerNote('');
+      },
+      // A steered message lands in the transcript as the owner's message.
+      onTextMessageStartEvent: ({ event }) => {
+        if (event.role === 'user') setSteerNote('');
+      },
+      onRunErrorEvent: ({ event }) => {
+        setRunning(false);
+        setSteerNote('');
+        setTurnError(true);
+        setError(event.message);
       },
     });
     return () => {
@@ -135,7 +184,12 @@ export function Chat({
     void copilotkit
       .connectAgent({ agent })
       .then(() => {
-        if (active) setLoaded(true);
+        if (active) {
+          setLoaded(true);
+          setError((current) =>
+            /network|fetch|connection/i.test(current) ? '' : current,
+          );
+        }
       })
       .catch((e) => {
         if (active)
@@ -146,14 +200,49 @@ export function Chat({
     return () => {
       active = false;
     };
-  }, [agent, copilotkit, isReady]);
-  const send = async (text: string) => {
+  }, [agent, copilotkit, isReady, connectAttempt]);
+  // While a task runs, a message goes to that task instead of being dropped;
+  // the task reads it after its current tool step and keeps going.
+  const steer = async (text: string) => {
+    try {
+      const { waiting } = await api<{ waiting: number }>(
+        `/threads/${encodeURIComponent(thread.id)}/steer`,
+        'POST',
+        { text },
+      );
+      setDraft('');
+      setAttachments([]);
+      setSource('');
+      setSourceOpen(false);
+      setSteerNote(
+        waiting > 1
+          ? `${waiting} messages sent to the running task. It reads them after its current step.`
+          : 'Sent to the running task. It reads it after its current step.',
+      );
+    } catch (e) {
+      setSteerNote(
+        e instanceof Error ? e.message : 'Could not reach the running task.',
+      );
+    }
+  };
+  const send = async (typed: string) => {
+    const text = attachments.length
+      ? `${typed.trim() || 'Please look at the attached file(s).'}\n\nAttached files (open them with your tools):\n${attachments
+          .map((file) => `- ${file.name}: ${file.path}`)
+          .join('\n')}`
+      : typed;
+    if (running && loaded && !paused && text.trim()) {
+      await steer(text);
+      return;
+    }
     if (!text.trim() || running || !loaded || !contextReady || paused) return;
+    setAttachments([]);
     setError('');
-    setRunError('');
+    setTurnError(false);
     setRunning(true);
+    setExecutionReceipt('');
     agent.addMessage({
-      id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+      id: crypto.randomUUID(),
       role: 'user',
       content: contextualMessage(text, pageContext),
     });
@@ -162,13 +251,14 @@ export function Chat({
     setSourceOpen(false);
     try {
       const result = await copilotkit.runAgent({ agent });
+      setExecutionReceipt(summarizeExecution(result.newMessages));
       if (!result.newMessages.some((message) => message.role === 'assistant'))
         throw new Error(
           'The current turn returned no response. Check the runtime connection and retry.',
         );
       onSaved();
     } catch (e) {
-      setRunError(
+      setError(
         e instanceof Error
           ? e.message
           : 'The turn failed. Your conversation remains saved.',
@@ -200,17 +290,6 @@ export function Chat({
       ),
     },
     [thread.id, onSaved],
-  );
-  useHumanInTheLoop(
-    {
-      name: connectionActionTool.name,
-      description: connectionActionTool.description,
-      parameters: connectionActionSchema,
-      render: (props) => (
-        <ConnectionActionCard {...props} threadId={thread.id} />
-      ),
-    },
-    [thread.id],
   );
   const computerCalls = agent.messages.flatMap((message) =>
     message.role === 'assistant' ? (message.toolCalls ?? []) : [],
@@ -253,9 +332,7 @@ export function Chat({
           message.toolCalls?.some(
             (call) =>
               call.function.name.startsWith('computer_') ||
-              call.function.name === 'COMPOSIO_MANAGE_CONNECTIONS' ||
-              call.function.name === pageReviewTool.name ||
-              call.function.name === connectionActionTool.name,
+              call.function.name === pageReviewTool.name,
           ))),
   );
   return (
@@ -372,6 +449,11 @@ export function Chat({
             <span>{dot.name} is thinking</span>
           </div>
         )}
+        {!running && executionReceipt && (
+          <p role="status" className="muted">
+            {executionReceipt}
+          </p>
+        )}
         <div ref={bottom} />
       </div>
       {contextError && (
@@ -382,14 +464,14 @@ export function Chat({
           </button>
         </div>
       )}
-      {(chatError || voice.error) && (
+      {(error || voice.error) && (
         <div className="chat-error" role="alert">
-          {chatError || voice.error}
-          {chatError && (
+          {error || voice.error}
+          {error && (!turnError || /network|fetch|connection/i.test(error)) && (
             <button
               onClick={() => {
                 setError('');
-                setRunError('');
+                setTurnError(false);
                 void copilotkit
                   .connectAgent({ agent })
                   .then(() => setLoaded(true))
@@ -408,6 +490,11 @@ export function Chat({
       />
       <form
         className="chat-composer"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          void attach(e.dataTransfer.files);
+        }}
         onSubmit={(e) => {
           e.preventDefault();
           void send(`${source ? `From ${source}:\n\n` : ''}${draft}`);
@@ -436,7 +523,50 @@ export function Chat({
             </button>
           </div>
         )}
+        {attachments.length > 0 && (
+          <div className="attachment-list">
+            {attachments.map((file) => (
+              <span
+                className="attachment-chip"
+                key={file.path}
+                title={file.path}
+              >
+                <Paperclip size={13} />
+                {file.name}
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`Remove ${file.name}`}
+                  onClick={() =>
+                    setAttachments(
+                      attachments.filter((item) => item.path !== file.path),
+                    )
+                  }
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="chat-compose-row">
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            hidden
+            accept="image/*,.txt,.md,.csv,.json,.pdf"
+            onChange={(e) => void attach(e.target.files)}
+          />
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Attach files"
+            disabled={uploading}
+            onClick={() => fileInput.current?.click()}
+          >
+            <Paperclip size={19} />
+          </button>
           <button
             type="button"
             className="icon-button"
@@ -453,13 +583,13 @@ export function Chat({
             maxLength={4000}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (shouldSubmitComposerOnKeyDown(e)) {
+              if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 e.currentTarget.form?.requestSubmit();
               }
             }}
           />
-          {running ? (
+          {running && (
             <button
               type="button"
               className="send-button"
@@ -468,16 +598,33 @@ export function Chat({
             >
               <Square size={16} />
             </button>
-          ) : (
+          )}
+          {(!running || draft.trim() || attachments.length > 0) && (
             <button
               className="send-button"
-              aria-label="Send message"
-              disabled={!draft.trim() || !loaded || !contextReady || paused}
+              aria-label={running ? 'Send to the running task' : 'Send message'}
+              title={
+                running
+                  ? 'The task reads this after its current step and keeps going'
+                  : undefined
+              }
+              disabled={
+                (!draft.trim() && !attachments.length) ||
+                uploading ||
+                !loaded ||
+                (!running && !contextReady) ||
+                paused
+              }
             >
               <ArrowUp size={19} />
             </button>
           )}
         </div>
+        {steerNote && (
+          <div className="chat-compose-note" role="status">
+            {steerNote}
+          </div>
+        )}
         <div className="chat-compose-note">
           {voiceReady
             ? 'Text and voice, one conversation.'

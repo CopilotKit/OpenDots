@@ -18,3 +18,13 @@ data/
 
 # Local hosted-project selection
 .copilotkit/
+
+# Local tools Python environment and model weights
+localtools/.venv/
+localtools/**/__pycache__/
+*.pt
+localtools/output/
+localtools/browser-profile/
+localtools/vendor/
+localtools/.jev-deps/
+localtools/jev-models/

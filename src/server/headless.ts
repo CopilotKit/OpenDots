@@ -1,9 +1,8 @@
-import { IntelligenceAgent } from '@copilotkit/core';
-import type { Message } from '@ag-ui/core';
+import type { AbstractAgent } from '@ag-ui/client';
+import { EventType, type Message, type RunAgentInput } from '@ag-ui/core';
+import type { InMemoryAgentRunner } from '@copilotkit/runtime/v2';
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
 import { voiceReceiptMessagePrefix } from '../shared/voice-receipt.js';
-import { scheduledTaskMessagePrefix } from '../shared/scheduled-message.js';
 
 export function currentTurnText(messages: Message[], error?: Error): string {
   if (error) throw error;
@@ -15,70 +14,67 @@ export function currentTurnText(messages: Message[], error?: Error): string {
   return content;
 }
 
-const runtimeInfoSchema = z.object({
-  mode: z.literal('intelligence'),
-  intelligence: z.object({ wsUrl: z.url() }),
-  agents: z.record(z.string(), z.unknown()),
-});
-
-export async function runThreadTurn(
-  runtimeUrl: string,
-  headers: Record<string, string>,
-  dotId: string,
+// Server-side turn (scheduled tasks, voice compute) run in-process through the
+// same local runner the chat UI uses, so the turn lands in the same thread.
+export async function runLocalTurn(
+  runner: InMemoryAgentRunner,
+  agent: AbstractAgent,
   threadId: string,
   prompt: string,
   signal: AbortSignal,
   metadata?: Record<string, unknown>,
+  onCompleted?: (messages: Message[]) => void,
 ): Promise<string> {
   signal.throwIfAborted();
-  const response = await fetch(`${runtimeUrl}/info`, { headers, signal });
-  if (!response.ok)
-    throw new Error(`Intelligence runtime returned HTTP ${response.status}.`);
-  const info = runtimeInfoSchema.parse(await response.json());
-  if (!Object.hasOwn(info.agents, dotId))
-    throw new Error('The selected Dot is unavailable in the runtime.');
-  // Core's runtime discovery is browser-only. Use the SDK's Node-compatible
-  // Intelligence agent for voice compute and scheduled server turns.
-  const agent = new IntelligenceAgent({
-    url: info.intelligence.wsUrl,
-    runtimeUrl,
-    agentId: dotId,
-    headers,
-    fetch: (input, init) =>
-      fetch(input, {
-        ...init,
-        signal: init?.signal ? AbortSignal.any([signal, init.signal]) : signal,
-      }),
-  });
+  const history = runner.getThreadMessages(threadId);
+  const message = {
+    id: `${metadata?.opendotsSource === 'voice_receipt' ? voiceReceiptMessagePrefix : ''}${randomUUID()}`,
+    role: 'user',
+    content: prompt,
+    ...(metadata ? { metadata } : {}),
+  } as Message;
+  const messages = [...history, message];
   agent.threadId = threadId;
-  let runError: Error | undefined;
-  const subscription = agent.subscribe({
-    onRunErrorEvent: ({ event }) => {
-      runError = new Error(event.message);
-    },
-  });
-  const stop = () => agent.abortRun();
-  signal.addEventListener('abort', stop, { once: true });
-  try {
-    signal.throwIfAborted();
-    const idPrefix =
-      metadata?.opendotsSource === 'voice_receipt'
-        ? voiceReceiptMessagePrefix
-        : metadata?.opendotsSource === 'scheduled_task'
-          ? scheduledTaskMessagePrefix
-          : '';
-    agent.addMessage({
-      id: `${idPrefix}${randomUUID()}`,
-      role: 'user',
-      content: prompt,
-      ...(metadata ? { metadata } : {}),
+  agent.setMessages(messages);
+  const input: RunAgentInput = {
+    threadId,
+    runId: randomUUID(),
+    messages,
+    tools: [],
+    context: [],
+    state: {},
+    forwardedProps: {},
+  };
+  const known = new Set(messages.map((item) => item.id));
+  return new Promise<string>((resolve, reject) => {
+    let runError: Error | undefined;
+    const stop = () => void runner.stop({ threadId, runId: input.runId });
+    signal.addEventListener('abort', stop, { once: true });
+    const finish = () => {
+      signal.removeEventListener('abort', stop);
+      try {
+        signal.throwIfAborted();
+        onCompleted?.(agent.messages.filter((item) => !known.has(item.id)));
+        resolve(
+          currentTurnText(
+            agent.messages.filter((item) => !known.has(item.id)),
+            runError,
+          ),
+        );
+      } catch (error) {
+        reject(error);
+      }
+    };
+    runner.run({ threadId, agent, input }).subscribe({
+      next: (event) => {
+        if (event.type === EventType.RUN_ERROR)
+          runError = new Error((event as { message?: string }).message);
+      },
+      complete: finish,
+      error: (error: unknown) => {
+        runError = error instanceof Error ? error : new Error(String(error));
+        finish();
+      },
     });
-    const result = await agent.runAgent();
-    signal.throwIfAborted();
-    return currentTurnText(result.newMessages, runError);
-  } finally {
-    signal.removeEventListener('abort', stop);
-    subscription.unsubscribe();
-    await agent.detachActiveRun();
-  }
+  });
 }

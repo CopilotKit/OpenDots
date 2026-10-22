@@ -141,16 +141,8 @@ export class ComputerService {
       signal,
     );
   }
-  private parseUpstream<T>(schema: z.ZodType<T>, raw: unknown): T {
-    const result = schema.safeParse(raw);
-    if (!result.success)
-      throw new Error('Computer service returned an invalid response.', {
-        cause: result.error,
-      });
-    return result.data;
-  }
   private endpoint(id: string, raw: unknown) {
-    const state = this.parseUpstream(stateSchema, raw);
+    const state = stateSchema.parse(raw);
     const ns = this.config.computerNamespace ?? 'opendots';
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(ns))
       throw new Error('Invalid computer namespace.');
@@ -183,10 +175,9 @@ export class ComputerService {
     return url.origin;
   }
   private async existing(id: string, signal?: AbortSignal) {
-    const listing = this.parseUpstream(
-      z.object({ computers: z.array(stateSchema) }),
-      await this.supervisor('/computers', undefined, signal),
-    );
+    const listing = z
+      .object({ computers: z.array(stateSchema) })
+      .parse(await this.supervisor('/computers', undefined, signal));
     return listing.computers.find((c) => c.botId === id);
   }
   private async running(id: string, signal?: AbortSignal) {
@@ -273,8 +264,7 @@ export class ComputerService {
       if (verb === 'take') this.allowed(id, 'browser', 'owner');
       const url = await this.running(id);
       if (verb === 'take') this.allowed(id, 'browser', 'owner');
-      let control: ComputerControl = this.parseUpstream(
-        controlSchema,
+      let control: ComputerControl = controlSchema.parse(
         await this.json(
           `${url}/control`,
           this.token(id),
@@ -284,8 +274,7 @@ export class ComputerService {
         ),
       );
       if (verb === 'take' && !control.request)
-        control = this.parseUpstream(
-          controlSchema,
+        control = controlSchema.parse(
           await this.json(
             `${url}/control/request`,
             this.token(id),
@@ -299,8 +288,7 @@ export class ComputerService {
         control.request &&
         !['waiting', 'taken'].includes(control.request.status)
       )
-        control = this.parseUpstream(
-          controlSchema,
+        control = controlSchema.parse(
           await this.json(
             `${url}/control/request`,
             this.token(id),

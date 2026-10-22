@@ -7,7 +7,6 @@ const settings: Settings = {
   paused: false,
   researchAllowed: true,
   memoryAllowed: true,
-  appsAllowed: false,
 };
 const task: Task = {
   id: 'one',
@@ -46,17 +45,4 @@ it('offers resume for a paused task without claiming to be running', () => {
   );
   expect(html).toContain('Resume task');
   expect(html).not.toContain('Pause schedule');
-});
-it('labels an interrupted task for owner review before retry', () => {
-  const html = renderToStaticMarkup(
-    <TaskActions
-      task={{ ...task, status: 'interrupted' }}
-      settings={settings}
-      busy={false}
-      onAction={() => {}}
-      onSchedule={() => {}}
-    />,
-  );
-  expect(html).toContain('Retry after review');
-  expect(html).not.toContain('Pause task');
 });

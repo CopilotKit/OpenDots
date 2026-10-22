@@ -3,6 +3,8 @@ import {
   ArrowDownToLine,
   ArrowUpRight,
   BookOpen,
+  Globe,
+  GitBranch,
   ExternalLink,
   Monitor,
   X,
@@ -11,6 +13,9 @@ import ReactMarkdown from 'react-markdown';
 import type { Dot, Result, Status } from '../shared/types';
 import { Mascot } from './Mascot';
 import { ComputerPanel } from './ComputerPanel';
+import { BrowserPanel } from './BrowserPanel';
+import { ChangesPanel } from './ChangesPanel';
+import { TeamBoardPanel } from './TeamBoardPanel';
 export function ResultPane({
   latest,
   status,
@@ -26,7 +31,9 @@ export function ResultPane({
   dotState: string;
   onClose: () => void;
 }) {
-  const [resultTab, setResultTab] = useState<'Brief' | 'Computer'>('Computer');
+  const [resultTab, setResultTab] = useState<
+    'Brief' | 'Computer' | 'Browser' | 'Changes' | 'Team'
+  >('Browser');
   const [computerDotId, setComputerDotId] = useState(defaultDotId);
   const computerDot =
     dots.find((dot) => dot.id === computerDotId) ??
@@ -37,11 +44,29 @@ export function ResultPane({
       <div className="pane-header">
         <div className="pane-tabs">
           <button
+            className={resultTab === 'Team' ? 'selected' : ''}
+            onClick={() => setResultTab('Team')}
+          >
+            Team
+          </button>
+          <button
             className={resultTab === 'Brief' ? 'selected' : ''}
             onClick={() => setResultTab('Brief')}
           >
             <BookOpen size={15} />
             Brief
+          </button>
+          <button
+            className={resultTab === 'Browser' ? 'selected' : ''}
+            onClick={() => setResultTab('Browser')}
+          >
+            <Globe size={15} /> Browser
+          </button>
+          <button
+            className={resultTab === 'Changes' ? 'selected' : ''}
+            onClick={() => setResultTab('Changes')}
+          >
+            <GitBranch size={15} /> Changes
           </button>
           <button
             className={resultTab === 'Computer' ? 'selected' : ''}
@@ -58,7 +83,13 @@ export function ResultPane({
           <X size={16} />
         </button>
       </div>
-      {resultTab === 'Computer' ? (
+      {resultTab === 'Team' ? (
+        <TeamBoardPanel dots={dots} onReview={() => setResultTab('Changes')} />
+      ) : resultTab === 'Browser' ? (
+        <BrowserPanel />
+      ) : resultTab === 'Changes' ? (
+        <ChangesPanel />
+      ) : resultTab === 'Computer' ? (
         <>
           <label className="computer-dot-picker">
             Computer for

@@ -1,0 +1,18 @@
+{
+  "autoApproveSites": [
+    "pocketoption.com"
+  ],
+  "pairScanner": {
+    "candle": "15s",
+    "pairs": [
+      "EUR/USD OTC",
+      "GBP/JPY OTC",
+      "AUD/CAD OTC",
+      "CAD/JPY OTC",
+      "EUR/GBP OTC",
+      "AUD/USD OTC",
+      "GBP/USD OTC",
+      "USD/JPY OTC"
+    ]
+  }
+}

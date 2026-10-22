@@ -1,0 +1,23 @@
+{
+  "localtools": {
+    "command": "localtools/.venv/Scripts/python.exe",
+    "args": ["localtools/server.py"],
+    "env": {
+      "PYTHONIOENCODING": "utf-8",
+      "LOCALTOOLS_VISION_MODEL": "gemma4-e4b:latest",
+      "LOCALTOOLS_GROUNDING_MODEL": "qwen3-vl:8b-instruct",
+      "LOCALTOOLS_JEV_URL": "http://127.0.0.1:8017",
+      "LOCALTOOLS_JEV_BACKEND": "visual-jev"
+    }
+  },
+  "file_access": {
+    "enabled": true,
+    "url": "http://localhost:8081"
+  },
+  "code_runner": {
+    "enabled": true,
+    "command": "localtools/.venv/Scripts/python.exe",
+    "args": ["localtools/code-runner.py"],
+    "env": {}
+  }
+}

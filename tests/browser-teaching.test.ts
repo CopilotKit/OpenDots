@@ -1,0 +1,187 @@
+import { describe, expect, it } from 'vitest';
+import { browserRoutes } from '../src/server/browser-routes.js';
+import { LiveBrowser } from '../src/server/browser-live.js';
+import type { McpTools } from '../src/server/mcp-tools.js';
+
+const post = (body: unknown) => ({
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
+describe('owner teaching routes', () => {
+  function fixture() {
+    const calls: unknown[][] = [];
+    const record =
+      (name: string, result: unknown = { ok: true }) =>
+      async (...args: unknown[]) => {
+        calls.push([name, ...args]);
+        return result;
+      };
+    const live = {
+      teachStart: record('start', { status: 'waiting_for_owner' }),
+      teachStatus: record('status', { status: 'marked_not_confirmed' }),
+      teachFinish: record('finish', { id: 't1', name: 'BUY' }),
+      teachCancel: record('cancel', { status: 'cancelled_or_expired' }),
+      targets: record('targets', { targets: [{ id: 't1', name: 'BUY' }] }),
+      forgetTarget: record('forget', { deleted: true }),
+    } as unknown as LiveBrowser;
+    return { app: browserRoutes(live), calls };
+  }
+  it('starts, follows, finishes and cancels teaching', async () => {
+    const { app, calls } = fixture();
+    expect(
+      await (
+        await app.request('/browser/teach', post({ name: ' BUY ' }))
+      ).json(),
+    ).toEqual({ status: 'waiting_for_owner' });
+    expect((await app.request('/browser/teach')).status).toBe(200);
+    expect((await app.request('/browser/teach/finish', post({}))).status).toBe(
+      200,
+    );
+    expect((await app.request('/browser/teach/cancel', post({}))).status).toBe(
+      200,
+    );
+    expect(calls).toEqual([
+      ['start', 'BUY', 'button', 0],
+      ['status'],
+      ['finish'],
+      ['cancel'],
+    ]);
+  });
+  it('teaches chart areas, and needs a name', async () => {
+    const { app, calls } = fixture();
+    await app.request(
+      '/browser/teach',
+      post({ name: 'RSI panel', kind: 'region' }),
+    );
+    expect(calls[0]).toEqual(['start', 'RSI panel', 'region', 0]);
+    expect(
+      (await app.request('/browser/teach', post({ name: '  ' }))).status,
+    ).toBe(400);
+    expect(
+      (await app.request('/browser/teach', post({ name: 'x', kind: 'menu' })))
+        .status,
+    ).toBe(400);
+  });
+  it('lets the first click through for buttons that appear after another click', async () => {
+    const { app, calls } = fixture();
+    await app.request(
+      '/browser/teach',
+      post({ name: 'Double Up', kind: 'button', afterClicks: 1 }),
+    );
+    expect(calls[0]).toEqual(['start', 'Double Up', 'button', 1]);
+    // Chart areas are drawn, so there is no click to let through.
+    await app.request(
+      '/browser/teach',
+      post({ name: 'RSI', kind: 'region', afterClicks: 1 }),
+    );
+    expect(calls[1]).toEqual(['start', 'RSI', 'region', 0]);
+    expect(
+      (await app.request('/browser/teach', post({ name: 'x', afterClicks: 9 })))
+        .status,
+    ).toBe(400);
+  });
+  it('lists and forgets saved buttons for the page on screen', async () => {
+    const { app, calls } = fixture();
+    expect(await (await app.request('/browser/targets')).json()).toEqual({
+      targets: [{ id: 't1', name: 'BUY' }],
+    });
+    expect(
+      (await app.request('/browser/targets/t1/forget', post({}))).status,
+    ).toBe(200);
+    expect(calls.at(-1)).toEqual(['forget', 't1']);
+  });
+});
+
+describe('live browser teaching helpers', () => {
+  function live(
+    viewed: string,
+    tabs: { index: number; url: string; active: boolean }[],
+    targets: unknown[] = [],
+  ) {
+    const calls: [string, unknown][] = [];
+    const results: Record<string, unknown> = {
+      browser_tabs: { tabs },
+      browser_targets: { targets },
+      browser_teach_start: { status: 'waiting_for_owner' },
+    };
+    const mcp = {
+      call: async (_server: string, tool: string, args: unknown) => {
+        calls.push([tool, args]);
+        // The local tools answer as JSON text, or as structured content.
+        return tool === 'browser_targets'
+          ? { structuredContent: { result: results[tool] } }
+          : {
+              content: [
+                { type: 'text', text: JSON.stringify(results[tool] ?? {}) },
+              ],
+            };
+      },
+    } as unknown as McpTools;
+    const browser = new LiveBrowser('http://127.0.0.1:1', 'unused.flag', mcp);
+    const page = { url: () => viewed };
+    (browser as unknown as { page: () => Promise<unknown> }).page = async () =>
+      page;
+    return { browser, calls };
+  }
+  it('teaches on the tab the owner is viewing', async () => {
+    const { browser, calls } = live('https://site.example/desk', [
+      { index: 0, url: 'https://site.example/other', active: true },
+      { index: 1, url: 'https://site.example/desk', active: false },
+    ]);
+    expect(await browser.teachStart('BUY', 'button')).toEqual({
+      status: 'waiting_for_owner',
+    });
+    expect(calls.map(([tool]) => tool)).toEqual([
+      'browser_tabs',
+      'browser_switch_tab',
+      'browser_teach_start',
+    ]);
+    expect(calls[1][1]).toEqual({ index: 1 });
+    expect(calls[2][1]).toEqual({
+      name: 'BUY',
+      kind: 'button',
+      selection: 'click',
+    });
+  });
+  it('passes after_clicks to the local tools only when asked', async () => {
+    const { browser, calls } = live('https://site.example/desk', [
+      { index: 0, url: 'https://site.example/desk', active: true },
+    ]);
+    await browser.teachStart('Double Up', 'button', 1);
+    expect(calls[1][1]).toEqual({
+      name: 'Double Up',
+      kind: 'button',
+      selection: 'click',
+      after_clicks: 1,
+    });
+  });
+  it('does not switch tabs when the viewed tab is already active, and drags for areas', async () => {
+    const { browser, calls } = live('https://site.example/desk', [
+      { index: 0, url: 'https://site.example/desk', active: true },
+    ]);
+    await browser.teachStart('RSI panel', 'region');
+    expect(calls.map(([tool]) => tool)).toEqual([
+      'browser_tabs',
+      'browser_teach_start',
+    ]);
+    expect(calls[1][1]).toEqual({
+      name: 'RSI panel',
+      kind: 'region',
+      selection: 'area',
+    });
+  });
+  it('names taught targets for a run', async () => {
+    const { browser } = live(
+      'https://site.example/desk',
+      [],
+      [
+        { name: 'BUY', kind: 'button' },
+        { name: 'RSI panel', kind: 'region' },
+        { kind: 'button' },
+      ],
+    );
+    expect(await browser.targetNames()).toEqual(['BUY', 'RSI panel (region)']);
+  });
+});

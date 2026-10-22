@@ -54,3 +54,14 @@ it('migrates legacy Space ownership once and never restores revoked access on re
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it('unbinds a deleted conversation so it leaves the chat list', () => {
+  const store = new WorkspaceStore(':memory:', 'owner');
+  const dot = store.dots()[0];
+  store.bindThread('keep', dot.id, 'Keep');
+  store.bindThread('gone', dot.id, 'Gone');
+  store.unbindThread('gone');
+  expect(store.conversations().map((thread) => thread.id)).toEqual(['keep']);
+  expect(() => store.requireThread('gone')).toThrow();
+  store.close();
+});

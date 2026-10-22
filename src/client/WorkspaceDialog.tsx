@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
+import { DotLearning } from './DotLearning';
+import { ConfirmationControl } from './ConfirmationControl';
 import type { Dot, Memory, State, WorkspaceState } from '../shared/types';
-import { ConnectionsSection } from './ConnectionsSection';
 import {
-  setThemePreference,
-  themePreference,
-  type ThemePreference,
-} from './theme';
+  allToolGroups,
+  defaultToolGroups,
+  toolGroups,
+} from '../shared/capabilities';
+const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export type Dialog =
   | { type: 'space' }
   | { type: 'dot'; dot?: Dot; spaceId: string }
@@ -46,16 +48,6 @@ export function WorkspaceDialog({
       ? (dialog.dot?.memoryAllowed ?? true)
       : state.settings.memoryAllowed,
   );
-  const [apps, setApps] = useState(
-    dialog.type === 'dot'
-      ? (dialog.dot?.appsAllowed ?? false)
-      : state.settings.appsAllowed,
-  );
-  const [composioToolkits, setComposioToolkits] = useState(
-    dialog.type === 'dot'
-      ? (dialog.dot?.composioToolkits ?? []).join(', ')
-      : '',
-  );
   const [spaceIds, setSpaceIds] = useState(
     dialog.type === 'dot' ? (dialog.dot?.spaceIds ?? [dialog.spaceId]) : [],
   );
@@ -63,15 +55,37 @@ export function WorkspaceDialog({
     dialog.type === 'dot' ? (dialog.dot?.spaceId ?? dialog.spaceId) : '',
   );
   const [interval, setInterval] = useState('86400');
-  const [learningContainer, setLearningContainer] = useState(
-    dialog.type === 'dot' ? (dialog.dot?.learningContainerId ?? '') : '',
+  // Cloud Learning is unavailable locally; preserve stored values unchanged.
+  const learningContainer =
+    dialog.type === 'dot' ? (dialog.dot?.learningContainerId ?? '') : '';
+  const skillDelivery =
+    dialog.type === 'dot' ? (dialog.dot?.skillDeliveryEnabled ?? false) : false;
+  const [model, setModel] = useState(
+    dialog.type === 'dot' ? (dialog.dot?.model ?? '@default') : '@default',
   );
-  const [skillDelivery, setSkillDelivery] = useState(
-    dialog.type === 'dot' ? (dialog.dot?.skillDeliveryEnabled ?? false) : false,
+  const [thinking, setThinking] = useState(
+    dialog.type === 'dot' ? (dialog.dot?.thinking ?? true) : true,
   );
+  const [groups, setGroups] = useState<string[]>(
+    dialog.type === 'dot'
+      ? (dialog.dot?.toolGroups ?? defaultToolGroups)
+      : defaultToolGroups,
+  );
+  const [models, setModels] = useState({
+    defaultModel: workspace.models?.defaultModel ?? '',
+    plannerModel: workspace.models?.plannerModel ?? '',
+    visionModel: workspace.models?.visionModel ?? '',
+  });
+  const [triggerType, setTriggerType] = useState<'interval' | 'daily' | 'file'>(
+    'interval',
+  );
+  const [time, setTime] = useState('09:00');
+  const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [folder, setFolder] = useState('');
+  const [pattern, setPattern] = useState('*');
+  const available = workspace.models?.available ?? [];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [theme, setTheme] = useState(themePreference);
   const container = useRef<HTMLElement>(null);
   useEffect(() => {
     const previous =
@@ -157,23 +171,17 @@ export function WorkspaceDialog({
                 instructions: text,
                 researchAllowed: research,
                 memoryAllowed: memory,
-                appsAllowed: apps,
-                composioToolkits: composioToolkits
-                  .split(',')
-                  .map((slug) => slug.trim())
-                  .filter(Boolean),
                 learningContainerId: learningContainer.trim() || null,
                 skillDeliveryEnabled: skillDelivery,
+                model,
+                toolGroups: groups,
+                thinking,
               };
             }
             if (dialog.type === 'settings') {
               path = '/settings';
               method = 'PATCH';
-              body = {
-                researchAllowed: research,
-                memoryAllowed: memory,
-                appsAllowed: apps,
-              };
+              body = { researchAllowed: research, memoryAllowed: memory };
             }
             if (dialog.type === 'memory') {
               path = dialog.memory
@@ -187,8 +195,23 @@ export function WorkspaceDialog({
               body = {
                 prompt: text,
                 threadId: dialog.threadId,
-                intervalSeconds: Number(interval),
+                ...(triggerType === 'interval'
+                  ? { intervalSeconds: Number(interval) }
+                  : {
+                      trigger:
+                        triggerType === 'daily'
+                          ? { type: 'daily', time, days }
+                          : { type: 'file', folder, pattern },
+                    }),
               };
+            }
+            if (
+              dialog.type === 'settings' &&
+              !(await mutate('/models', 'PATCH', models))
+            ) {
+              setError('Could not save model settings.');
+              setBusy(false);
+              return;
             }
             if (await mutate(path, method, body)) onClose();
             else
@@ -281,6 +304,43 @@ export function WorkspaceDialog({
               </select>
             </fieldset>
           )}
+          {dialog.type === 'settings' && (
+            <fieldset className="space-access-fields">
+              <legend>Local models</legend>
+              <p className="muted">
+                Dots set to a role follow these choices. Installed in Ollama:{' '}
+                {available.join(', ') || 'none found'}.
+              </p>
+              {(
+                [
+                  ['defaultModel', 'Default (heavier, main work)'],
+                  ['plannerModel', 'Planner (light, routing and planning)'],
+                  ['visionModel', 'Vision (image reading)'],
+                ] as const
+              ).map(([key, label]) => (
+                <div key={key}>
+                  <label className="field-label" htmlFor={`model-${key}`}>
+                    {label}
+                  </label>
+                  <select
+                    id={`model-${key}`}
+                    value={models[key]}
+                    onChange={(e) =>
+                      setModels({ ...models, [key]: e.target.value })
+                    }
+                  >
+                    {[...new Set([models[key], ...available])]
+                      .filter(Boolean)
+                      .map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              ))}
+            </fieldset>
+          )}
           {(dialog.type === 'dot' || dialog.type === 'settings') && (
             <>
               <label className="permission-row">
@@ -311,98 +371,176 @@ export function WorkspaceDialog({
                   </small>
                 </span>
               </label>
-              {workspace.setup.composio && (
-                <label className="permission-row">
-                  <input
-                    type="checkbox"
-                    checked={apps}
-                    onChange={(event) => setApps(event.target.checked)}
-                  />
-                  <span>
-                    <strong>Connected apps</strong>
-                    <small>
-                      Allow access to the owner’s apps through Composio. Global
-                      settings always take precedence.
-                    </small>
-                  </span>
-                </label>
-              )}
             </>
-          )}
-          {dialog.type === 'dot' && workspace.setup.composio && (
-            <fieldset className="space-access-fields">
-              <legend>Connected apps</legend>
-              <label className="field-label" htmlFor="composio-toolkits">
-                Toolkit slugs
-              </label>
-              <input
-                id="composio-toolkits"
-                value={composioToolkits}
-                pattern="[a-z0-9_]+(, *[a-z0-9_]+)*"
-                placeholder="gmail, google_calendar"
-                aria-describedby="composio-toolkits-help"
-                onChange={(event) => setComposioToolkits(event.target.value)}
-              />
-              <p className="muted" id="composio-toolkits-help">
-                Optional comma-separated Composio toolkit slugs. Leave blank to
-                let the Dot search all available toolkits.
-              </p>
-            </fieldset>
           )}
           {dialog.type === 'dot' && (
             <fieldset className="space-access-fields">
-              <legend>Automatic Learning</legend>
-              <label className="field-label" htmlFor="learning-container">
-                Learning container ID
+              <legend>Model</legend>
+              <label className="field-label" htmlFor="dot-model">
+                Local model for this Dot
               </label>
-              <input
-                id="learning-container"
-                value={learningContainer}
-                maxLength={64}
-                pattern="[a-z0-9]+(-[a-z0-9]+)*"
-                placeholder="research-workflow"
-                aria-describedby="learning-help"
-                onChange={(event) => {
-                  setLearningContainer(event.target.value);
-                  if (!event.target.value.trim()) setSkillDelivery(false);
-                }}
-              />
-              <p className="muted" id="learning-help">
-                Create this container in your Intelligence project first. New
-                conversations will contribute evidence to it. Leave blank to
-                keep new conversations out of Learning. Existing conversations
-                retain their original assignment.
-              </p>
+              <select
+                id="dot-model"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              >
+                <option value="@default">
+                  Default role ({workspace.models?.defaultModel || 'not set'})
+                </option>
+                <option value="@planner">
+                  Planner role, light ({workspace.models?.plannerModel})
+                </option>
+                <option value="@vision">
+                  Vision role ({workspace.models?.visionModel})
+                </option>
+                {[...new Set([model, ...available])]
+                  .filter((name) => name && !name.startsWith('@'))
+                  .map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+              </select>
               <label className="permission-row">
                 <input
                   type="checkbox"
-                  checked={skillDelivery}
-                  disabled={!learningContainer.trim()}
-                  onChange={(event) => setSkillDelivery(event.target.checked)}
+                  checked={thinking}
+                  onChange={(e) => setThinking(e.target.checked)}
                 />
                 <span>
-                  <strong>Use published skills</strong>
+                  <strong>Think before answering</strong>
                   <small>
-                    Load reviewed skills from each conversation’s assigned
-                    container. Enable delivery in Intelligence too. Turning this
-                    off stops skill loading; it does not stop evidence
-                    collection.
+                    Better for planning and multi-step work; much slower on
+                    local models. Turn off for quick, simple jobs.
                   </small>
                 </span>
               </label>
-              <a
-                href="https://docs.copilotkit.ai/learning"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Set up Learning and review skills ↗
-              </a>
             </fieldset>
           )}
           {dialog.type === 'dot' && dialog.dot && (
-            <ConnectionsSection dotId={dialog.dot.id} />
+            <DotLearning dotId={dialog.dot.id} onApplied={setText} />
+          )}
+          {dialog.type === 'dot' && (
+            <fieldset className="space-access-fields">
+              <legend>Tools</legend>
+              <p className="muted">
+                Only granted tools are offered to this Dot. Risky actions still
+                ask you first.
+              </p>
+              {[...allToolGroups, ...(workspace.mcpGroups ?? [])].map(
+                (group) => {
+                  const info =
+                    group in toolGroups
+                      ? toolGroups[group as keyof typeof toolGroups]
+                      : {
+                          label: group.replace(/^mcp:/, ''),
+                          description: 'Tools from this MCP server.',
+                        };
+                  return (
+                    <label className="permission-row" key={group}>
+                      <input
+                        type="checkbox"
+                        checked={groups.includes(group)}
+                        onChange={(e) =>
+                          setGroups(
+                            e.target.checked
+                              ? [...groups, group]
+                              : groups.filter((item) => item !== group),
+                          )
+                        }
+                      />
+                      <span>
+                        <strong>{info.label}</strong>
+                        <small>{info.description}</small>
+                      </span>
+                    </label>
+                  );
+                },
+              )}
+            </fieldset>
           )}
           {dialog.type === 'schedule' && (
+            <>
+              <label className="field-label" htmlFor="schedule-trigger">
+                When should it run?
+              </label>
+              <select
+                id="schedule-trigger"
+                value={triggerType}
+                onChange={(e) =>
+                  setTriggerType(e.target.value as typeof triggerType)
+                }
+              >
+                <option value="interval">
+                  Now, then repeat on an interval
+                </option>
+                <option value="daily">Every day at a time</option>
+                <option value="file">
+                  When a new file appears in a folder
+                </option>
+              </select>
+            </>
+          )}
+          {dialog.type === 'schedule' && triggerType === 'daily' && (
+            <>
+              <label className="field-label" htmlFor="schedule-time">
+                Time
+              </label>
+              <input
+                id="schedule-time"
+                type="time"
+                value={time}
+                required
+                onChange={(e) => setTime(e.target.value)}
+              />
+              <div className="weekday-row">
+                {weekdays.map((day, index) => (
+                  <label className="permission-row" key={day}>
+                    <input
+                      type="checkbox"
+                      checked={days.includes(index)}
+                      onChange={(e) =>
+                        setDays(
+                          e.target.checked
+                            ? [...days, index].sort()
+                            : days.filter((d) => d !== index),
+                        )
+                      }
+                    />
+                    <span>{day}</span>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+          {dialog.type === 'schedule' && triggerType === 'file' && (
+            <>
+              <label className="field-label" htmlFor="schedule-folder">
+                Folder to watch
+              </label>
+              <input
+                id="schedule-folder"
+                value={folder}
+                required
+                placeholder="C:\Users\you\Downloads"
+                onChange={(e) => setFolder(e.target.value)}
+              />
+              <label className="field-label" htmlFor="schedule-pattern">
+                File name pattern
+              </label>
+              <input
+                id="schedule-pattern"
+                value={pattern}
+                required
+                placeholder="*.pdf"
+                onChange={(e) => setPattern(e.target.value)}
+              />
+              <p className="muted">
+                The new file path is added to the task for that run.
+              </p>
+            </>
+          )}
+          {dialog.type === 'schedule' && triggerType === 'interval' && (
             <>
               <label className="field-label" htmlFor="schedule-interval">
                 Repeat after each successful run
@@ -419,73 +557,22 @@ export function WorkspaceDialog({
               </select>
               <p className="muted">
                 Runs on the server in this same conversation, even with the tab
-                closed. Failed or interrupted runs wait for manual retry. Review
-                completed work before retrying an interrupted run.
+                closed. Failed runs wait for manual retry.
               </p>
             </>
           )}
-          {dialog.type === 'settings' && (
-            <fieldset className="appearance-fields">
-              <legend>Appearance</legend>
-              <div className="segmented" role="radiogroup">
-                {(['system', 'light', 'dark'] as ThemePreference[]).map(
-                  (option) => (
-                    <label key={option}>
-                      <input
-                        type="radio"
-                        name="theme"
-                        value={option}
-                        checked={theme === option}
-                        onChange={() => {
-                          setTheme(option);
-                          setThemePreference(option);
-                        }}
-                      />
-                      <span>{option[0].toUpperCase() + option.slice(1)}</span>
-                    </label>
-                  ),
-                )}
-              </div>
-              <p className="muted">
-                Saved in this browser. System follows your device.
-              </p>
-            </fieldset>
-          )}
+          {dialog.type === 'settings' && <ConfirmationControl />}
           {dialog.type === 'settings' && (
             <div className="config-note">
               <strong>Service setup</strong>
               <p>
-                {workspace.setup.missing.length ? (
-                  <>
-                    Add{' '}
-                    {workspace.setup.missing.map((name, index) => (
-                      <span key={name}>
-                        {index > 0 && ', '}
-                        <code>{name}</code>
-                      </span>
-                    ))}{' '}
-                    to the server environment, then restart.
-                  </>
-                ) : (
-                  'Text configuration is present. A successful conversation confirms connectivity.'
-                )}
+                {workspace.setup.missing.length
+                  ? `Add ${workspace.setup.missing.join(', ')} to the server environment, then restart.`
+                  : 'Text configuration is present. A successful conversation confirms connectivity.'}
               </p>
               <p>
-                Slack: {workspace.setup.slack.replaceAll('_', ' ')}. Voice:{' '}
-                {workspace.setup.voice
-                  ? 'configuration present'
-                  : 'needs VOICE_API_KEY and VOICE_MODEL'}
-                .
-              </p>
-              <p>
-                Setup and usage metadata is collected by default.{' '}
-                <a
-                  href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP-TELEMETRY.md"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Tracking and opt-out details
-                </a>
+                Local-only mode: conversations, memory and tools stay on this
+                PC. Slack and cloud voice are disabled.
               </p>
               <a
                 href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP.md"

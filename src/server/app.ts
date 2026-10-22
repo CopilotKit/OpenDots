@@ -1,7 +1,14 @@
 import { computerRoutes } from './computer-routes.js';
-import { connectionRoutes } from './connection-routes.js';
+import { browserRoutes } from './browser-routes.js';
+import { teamBoardRoutes } from './team-board-routes.js';
+import {
+  confirmationSchema,
+  readConfirmationPolicy,
+  writeConfirmationPolicy,
+} from './confirmation-policy.js';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
+import { existsSync } from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { Store } from './store.js';
@@ -11,12 +18,30 @@ import type { Platform } from './platform.js';
 import { VoiceService } from './voice.js';
 import { workspaceRoutes } from './workspace-routes.js';
 const interval = z.number().int().min(60).max(31_536_000).nullable();
+const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+function matchesOrigin(actual: string, expected: string): boolean {
+  if (actual === expected) return true;
+  try {
+    const source = new URL(actual);
+    const target = new URL(expected);
+    return (
+      actual === source.origin &&
+      loopbackHosts.has(source.hostname) &&
+      loopbackHosts.has(target.hostname) &&
+      source.protocol === target.protocol &&
+      source.port === target.port
+    );
+  } catch {
+    return false;
+  }
+}
 export interface AppOptions {
   store: Store;
   runner: Runner;
   config: Config;
   ownerToken?: string;
-  origin?: string | string[];
+  origin?: string;
   platform?: Platform;
 }
 export function createApp({
@@ -28,44 +53,50 @@ export function createApp({
   platform,
 }: AppOptions) {
   const app = new Hono();
-  app.use(
-    '/api/*',
-    bodyLimit({
-      maxSize: 1_000_000,
-      onError: (c) => c.json({ error: 'Request is too large.' }, 413),
-    }),
+  const smallBodies = bodyLimit({
+    maxSize: 1_000_000,
+    onError: (c) => c.json({ error: 'Request is too large.' }, 413),
+  });
+  // Chat attachments (base64) may be up to ~20 MB.
+  const uploadBodies = bodyLimit({
+    maxSize: 28_500_000,
+    onError: (c) => c.json({ error: 'Attachment is too large.' }, 413),
+  });
+  // A chat sends its whole conversation with each message; a night of trading
+  // (400 tool results) passed 1 MB and every new message got a 413. The model
+  // still sees only the recent part (fitHistory).
+  const chatBodies = bodyLimit({
+    maxSize: 50_000_000,
+    onError: (c) =>
+      c.json(
+        {
+          error: 'This conversation is too long to continue; start a new chat.',
+        },
+        413,
+      ),
+  });
+  app.use('/api/*', (c, next) =>
+    c.req.path === '/api/uploads'
+      ? uploadBodies(c, next)
+      : c.req.path.startsWith('/api/copilotkit')
+        ? chatBodies(c, next)
+        : smallBodies(c, next),
   );
   app.use('/api/*', async (c, next) => {
     c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
     const requestUrl = new URL(c.req.url);
-    const origins = origin
-      ? Array.isArray(origin)
-        ? origin
-        : [origin]
-      : undefined;
-    const originHostnames = origins
-      ? origins
-          .map((o) => {
-            try {
-              return new URL(o).hostname;
-            } catch {
-              return '';
-            }
-          })
-          .filter(Boolean)
-      : [];
     const allowedHosts = new Set([
       'localhost',
       '127.0.0.1',
       '[::1]',
-      ...originHostnames,
+      ...(origin ? [new URL(origin).hostname] : []),
     ]);
     if (!ownerToken && !allowedHosts.has(requestUrl.hostname))
       return c.json({ error: 'Unrecognized host.' }, 403);
     const requestOrigin = c.req.header('origin');
-    const allowedOrigins = new Set(origins ?? [new URL(c.req.url).origin]);
-    if (requestOrigin && !allowedOrigins.has(requestOrigin))
+    const expectedOrigin = origin ?? new URL(c.req.url).origin;
+    if (requestOrigin && !matchesOrigin(requestOrigin, expectedOrigin))
       return c.json({ error: 'Cross-origin requests are not allowed.' }, 403);
     if (c.req.header('sec-fetch-site') === 'cross-site')
       return c.json({ error: 'Cross-site requests are not allowed.' }, 403);
@@ -91,11 +122,91 @@ export function createApp({
     await next();
   });
   if (platform) app.route('/api', computerRoutes(platform.computers));
-  if (platform)
-    app.route(
-      '/api',
-      connectionRoutes(platform.workspace, platform.connections),
+  if (platform) app.route('/api', browserRoutes(platform.browser));
+  if (platform) app.route('/api', teamBoardRoutes(platform.teamBoard));
+  // Send the owner's message to a running unattended task without stopping it;
+  // the task reads it after the tool step in progress.
+  app.post('/api/threads/:id/steer', async (c) => {
+    if (!platform)
+      return c.json({ error: 'Steering needs the local platform.' }, 503);
+    // The current run loop does not read messages sent mid-run; say so rather
+    // than accept a message that would never reach the task.
+    if (!platform.config.steering)
+      return c.json(
+        {
+          error:
+            'Sending a message to a running task is not available in this version. Press Stop, then send it as a new message.',
+        },
+        409,
+      );
+    const threadId = c.req.param('id');
+    const body = (await c.req.json().catch(() => null)) as {
+      text?: unknown;
+    } | null;
+    if (typeof body?.text !== 'string')
+      return c.json({ error: 'Enter a message for the running task.' }, 400);
+    const policy = platform.config.mcp?.localConfirmationConfig();
+    if (
+      !policy ||
+      readConfirmationPolicy(policy.path, policy.defaultConfirm).mode !==
+        'unattended'
+    )
+      return c.json(
+        {
+          error:
+            'Messages reach a running task only in unattended mode. Send this after the current reply finishes.',
+        },
+        409,
+      );
+    if (!(await platform.runner.isRunning({ threadId })))
+      return c.json(
+        {
+          error:
+            'Nothing is running in this conversation; send it as a normal message.',
+        },
+        409,
+      );
+    try {
+      return c.json(
+        { waiting: platform.steering.push(threadId, body.text) },
+        202,
+      );
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : String(error) },
+        400,
+      );
+    }
+  });
+  app.get('/api/confirmation-policy', (c) => {
+    const config = platform?.config.mcp?.localConfirmationConfig();
+    if (!config)
+      return c.json(
+        {
+          error:
+            'Live confirmation controls require the bundled local PC tools server.',
+        },
+        503,
+      );
+    return c.json(readConfirmationPolicy(config.path, config.defaultConfirm));
+  });
+  app.put('/api/confirmation-policy', async (c) => {
+    const config = platform?.config.mcp?.localConfirmationConfig();
+    if (!config)
+      return c.json(
+        {
+          error:
+            'Live confirmation controls require the bundled local PC tools server.',
+        },
+        503,
+      );
+    const parsed = confirmationSchema.safeParse(
+      await c.req.json().catch(() => null),
     );
+    if (!parsed.success)
+      return c.json({ error: 'Choose confirm or unattended mode.' }, 400);
+    return c.json(writeConfirmationPolicy(config.path, parsed.data));
+  });
   const voice = platform ? new VoiceService(platform) : undefined;
   if (platform && voice) app.route('/api', workspaceRoutes(platform, voice));
   app.get('/api/state', (c) =>
@@ -113,6 +224,21 @@ export function createApp({
         prompt: z.string().trim().min(3).max(4000),
         intervalSeconds: interval.optional(),
         threadId: z.string().optional(),
+        trigger: z
+          .discriminatedUnion('type', [
+            z.object({ type: z.literal('interval') }),
+            z.object({
+              type: z.literal('daily'),
+              time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+              days: z.array(z.number().int().min(0).max(6)).max(7),
+            }),
+            z.object({
+              type: z.literal('file'),
+              folder: z.string().min(3).max(500),
+              pattern: z.string().min(1).max(100),
+            }),
+          ])
+          .optional(),
       })
       .strict()
       .safeParse(await c.req.json().catch(() => null));
@@ -146,9 +272,15 @@ export function createApp({
         );
       }
     }
+    const trigger = parsed.data.trigger;
+    if (trigger?.type === 'file' && !existsSync(trigger.folder))
+      return c.json({ error: 'That folder does not exist.' }, 400);
     const task = store.createTask(
       parsed.data.prompt,
-      parsed.data.intervalSeconds,
+      trigger && trigger.type !== 'interval'
+        ? null
+        : parsed.data.intervalSeconds,
+      trigger && trigger.type !== 'interval' ? JSON.stringify(trigger) : null,
     );
     if (platform && parsed.data.threadId)
       platform.workspace.bindTask(task.id, parsed.data.threadId);
@@ -190,7 +322,6 @@ export function createApp({
         paused: z.boolean().optional(),
         researchAllowed: z.boolean().optional(),
         memoryAllowed: z.boolean().optional(),
-        appsAllowed: z.boolean().optional(),
       })
       .strict()
       .safeParse(await c.req.json().catch(() => null));
@@ -200,8 +331,7 @@ export function createApp({
     if (
       settings.paused ||
       !settings.researchAllowed ||
-      previous.memoryAllowed !== settings.memoryAllowed ||
-      previous.appsAllowed !== settings.appsAllowed
+      previous.memoryAllowed !== settings.memoryAllowed
     )
       runner.abortAll();
     if (settings.paused) voice?.abortAll();

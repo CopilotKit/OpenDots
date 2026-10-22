@@ -483,22 +483,22 @@
   list-style: none;
   padding: 0;
 }
-.document-prose ul[data-type='taskList'] > li {
+.document-prose li[data-type='taskItem'] {
   display: flex;
   align-items: flex-start;
   gap: 11px;
 }
-.document-prose ul[data-type='taskList'] > li > label {
+.document-prose li[data-type='taskItem'] > label {
   flex: 0 0 auto;
   line-height: 1.8;
 }
-.document-prose ul[data-type='taskList'] > li > label input {
+.document-prose li[data-type='taskItem'] > label input {
   accent-color: #536f52;
   width: 15px;
   height: 15px;
   margin-top: 7px;
 }
-.document-prose ul[data-type='taskList'] > li > div {
+.document-prose li[data-type='taskItem'] > div {
   flex: 1;
 }
 .document-prose blockquote {

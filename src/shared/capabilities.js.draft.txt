@@ -1,0 +1,85 @@
+import { defineTool, type ToolDefinition } from '@copilotkit/runtime/v2';
+import { z } from 'zod';
+
+/**
+ * @typedef {object} ScrapePocketOptionsParams
+ * @property {string} url - The URL of the PocketOptions page to scrape (e.g., 'https://pocketoptions.com').
+ * @property {string} [instruction] - Optional instruction for the model on what to look for (e.g., "Find all OTC stocks with RSI > 70").
+ */
+
+/**
+ * Defines the tool for scraping a specific URL from PocketOptions.
+ * This function will be responsible for calling the /browse endpoint in src/browser/index.ts.
+ * @param {string} url - The target URL.
+ * @param {string} [instruction] - Optional instruction for context.
+ * @returns {Promise<{url: string, title: string, text: string, screenshot: string, observationType: 'page_scrape' | 'navigation_check' | 'error', status: 'SUCCESS' | 'FAILED', error?: string, instructionUsed: string}>} Structured Observation from the browser.
+ */
+async function scrapePocketOptionsPage(url: string, instruction: string = "General market overview") {
+    // NOTE: In a real scenario, this would make an HTTP request to http://localhost:4311/browse 
+    // with the provided URL and instruction. For now, we simulate the call structure.
+    console.log(`[Tool Call] Scraping PocketOptions page: ${url} with instruction: "${instruction}"`);
+
+    // --- SIMULATION START (Replace this block with actual fetch logic later) ---
+    try {
+        const response = await fetch('http://localhost:4311/browse', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.BROWSER_SECRET}`, // Assuming BROWSER_SECRET is available in the environment where this tool runs (i.e., server context)
+            },
+            body: JSON.stringify({ url, instruction }),
+        });
+
+        if (!response.ok) {
+            const errorBody = await response.json();
+            throw new Error(errorBody.error || `HTTP Error ${response.status}`);
+        }
+        return await response.json() as { 
+            url: string, 
+            title: string, 
+            text: string, 
+            screenshot: string, 
+            observationType: 'page_scrape' | 'navigation_check' | 'error', 
+            status: 'SUCCESS' | 'FAILED', 
+            error?: string, 
+            instructionUsed: string 
+        };
+
+    } catch (e) {
+        console.error("Error during PocketOptions scraping simulation:", e);
+        return {
+            url,
+            title: "Scraping Failed",
+            text: `Failed to retrieve content for ${url}. Error: ${(e as Error).message}`,
+            screenshot: 'data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', // Tiny 1x1 transparent image
+            observationType: 'error',
+            status: 'FAILED',
+            error: (e as Error).message,
+            instructionUsed: instruction,
+        };
+    }
+    // --- SIMULATION END ---
+}
+
+
+/**
+ * Defines the PocketOptionsScraper tool.
+ */
+export const pocketOptionsScraperTool: ToolDefinition = defineTool({
+    name: 'scrape_pocketoptions_page',
+    description: 'Scrapes a specific URL from PocketOptions to retrieve structured data (text, title, screenshot). Use this when you need to check the current state of a page or verify market conditions.',
+    parameters: z.object({
+        url: z.string().describe('The full URL of the PocketOptions page to scrape.'),
+        instruction: z.string().optional().default("General market overview and ticker list extraction."),
+    }).describe('Parameters for scraping the PocketOptions website.'),
+    async run(params) {
+        return await scrapePocketOptionsPage(params.url, params.instruction);
+    },
+});
+
+// Exporting other tools/functions from capabilities.js if they exist (placeholder imports)
+export const allowsTool = (tool: ToolDefinition | any) => tool && typeof tool.run === 'function';
+export const toolGroups = {
+    browsing: [pocketOptionsScraperTool],
+    // Add other groups here later, e.g., trading, analysis
+};

@@ -27,13 +27,11 @@ export function TaskActions({
           onClick={() => onAction('run')}
         >
           <Play size={14} />
-          {task.status === 'interrupted'
-            ? 'Retry after review'
-            : task.status === 'failed'
-              ? 'Retry task'
-              : task.status === 'paused'
-                ? 'Resume task'
-                : 'Run again'}
+          {task.status === 'failed'
+            ? 'Retry task'
+            : task.status === 'paused'
+              ? 'Resume task'
+              : 'Run again'}
         </button>
       )}
       {task.status === 'completed' && !!task.intervalSeconds && (
