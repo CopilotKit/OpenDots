@@ -9,6 +9,7 @@ import { validateLearningSettings } from '../shared/learning.js';
 import type { CallReceipt, Conversation, Dot, Space } from '../shared/types.js';
 export class WorkspaceStore {
   private db: DatabaseSync;
+  private activeDotRuns = new Map<string, number>();
   readonly pages: Pages;
   readonly computers: ComputerStore;
   readonly connections: ConnectionStore;
@@ -122,6 +123,110 @@ export class WorkspaceStore {
   }
   dot(id: string) {
     return this.dots().find((dot) => dot.id === id);
+  }
+  trackDotRun(id: string) {
+    this.activeDotRuns.set(id, (this.activeDotRuns.get(id) ?? 0) + 1);
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      const count = (this.activeDotRuns.get(id) ?? 1) - 1;
+      if (count) this.activeDotRuns.set(id, count);
+      else this.activeDotRuns.delete(id);
+    };
+  }
+  taskIdsForDot(id: string): string[] {
+    return this.db
+      .prepare(
+        'SELECT task_threads.taskId FROM task_threads JOIN thread_bindings ON thread_bindings.id=task_threads.threadId WHERE thread_bindings.dotId=?',
+      )
+      .all(id)
+      .map((row) => String(row.taskId));
+  }
+  dotDeletionBlocker(id: string): string | undefined {
+    if (this.activeDotRuns.has(id))
+      return 'Wait for this Dot’s active conversation turn to finish before deleting it.';
+    const threadIds = this.db
+      .prepare('SELECT id FROM thread_bindings WHERE dotId=?')
+      .all(id)
+      .map((row) => String(row.id));
+    if (threadIds.length) {
+      const marks = threadIds.map(() => '?').join(',');
+      if (
+        this.db
+          .prepare(
+            `SELECT 1 FROM calls WHERE threadId IN (${marks}) AND endedAt IS NULL LIMIT 1`,
+          )
+          .get(...threadIds)
+      )
+        return 'End this Dot’s active call before deleting it.';
+      if (
+        this.db
+          .prepare(
+            `SELECT 1 FROM mcp_actions WHERE threadId IN (${marks}) AND status='running' LIMIT 1`,
+          )
+          .get(...threadIds)
+      )
+        return 'Wait for this Dot’s connected tool action to finish before deleting it.';
+    }
+    if (
+      this.db
+        .prepare(
+          `SELECT 1 FROM computer_audit WHERE dotId=? AND outcome='pending' LIMIT 1`,
+        )
+        .get(id)
+    )
+      return 'Wait for this Dot’s computer action to finish before deleting it.';
+    return undefined;
+  }
+  deleteDot(
+    id: string,
+  ): { threadIds: string[]; taskIds: string[] } | undefined {
+    if (!this.dot(id)) return undefined;
+    const threadIds = this.db
+      .prepare('SELECT id FROM thread_bindings WHERE dotId=?')
+      .all(id)
+      .map((row) => String(row.id));
+    const taskIds = this.taskIdsForDot(id);
+    const marks = threadIds.map(() => '?').join(',');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      if (threadIds.length) {
+        this.db
+          .prepare(`DELETE FROM calls WHERE threadId IN (${marks})`)
+          .run(...threadIds);
+        this.db
+          .prepare(`DELETE FROM captures WHERE threadId IN (${marks})`)
+          .run(...threadIds);
+        this.db
+          .prepare(`DELETE FROM page_reviews WHERE threadId IN (${marks})`)
+          .run(...threadIds);
+        this.db
+          .prepare(`DELETE FROM mcp_actions WHERE threadId IN (${marks})`)
+          .run(...threadIds);
+        this.db
+          .prepare(`DELETE FROM mcp_approvals WHERE threadId IN (${marks})`)
+          .run(...threadIds);
+        this.db
+          .prepare(`DELETE FROM task_threads WHERE threadId IN (${marks})`)
+          .run(...threadIds);
+        this.db
+          .prepare(`DELETE FROM thread_bindings WHERE id IN (${marks})`)
+          .run(...threadIds);
+      }
+      this.db.prepare('DELETE FROM page_threads WHERE dotId=?').run(id);
+      this.db.prepare('DELETE FROM mcp_approvals WHERE dotId=?').run(id);
+      this.db.prepare('DELETE FROM mcp_connections WHERE dotId=?').run(id);
+      this.db.prepare('DELETE FROM computer_permissions WHERE dotId=?').run(id);
+      this.db.prepare('DELETE FROM computer_audit WHERE dotId=?').run(id);
+      this.db.prepare('DELETE FROM dot_spaces WHERE dotId=?').run(id);
+      this.db.prepare('DELETE FROM dots WHERE id=?').run(id);
+      this.db.exec('COMMIT');
+      return { threadIds, taskIds };
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
   createDot(
     spaceId: string,

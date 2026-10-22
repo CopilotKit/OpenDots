@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { Trash2, X } from 'lucide-react';
 import type { Dot, Memory, State, WorkspaceState } from '../shared/types';
 import { ConnectionsSection } from './ConnectionsSection';
 import {
@@ -24,7 +24,11 @@ export function WorkspaceDialog({
   state: State;
   workspace: WorkspaceState;
   onClose: () => void;
-  mutate: (path: string, method: string, body?: unknown) => Promise<boolean>;
+  mutate: (
+    path: string,
+    method: string,
+    body?: unknown,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [name, setName] = useState(
     dialog.type === 'dot' ? (dialog.dot?.name ?? '') : '',
@@ -71,6 +75,8 @@ export function WorkspaceDialog({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmName, setConfirmName] = useState('');
   const [theme, setTheme] = useState(themePreference);
   const container = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -88,7 +94,7 @@ export function WorkspaceDialog({
           ...(container.current?.querySelectorAll<HTMLElement>(
             'button:not([disabled]),input,textarea,select,a[href]',
           ) ?? []),
-        ];
+        ].filter((item) => !item.closest('[hidden]'));
         if (event.shiftKey && document.activeElement === items[0]) {
           event.preventDefault();
           items.at(-1)?.focus();
@@ -101,9 +107,16 @@ export function WorkspaceDialog({
     document.addEventListener('keydown', key);
     return () => {
       document.removeEventListener('keydown', key);
-      previous?.focus();
+      if (previous?.isConnected) previous.focus();
+      else document.querySelector<HTMLElement>('.dots-nav .dot-nav')?.focus();
     };
   }, []);
+  useEffect(() => {
+    if (confirmDelete)
+      container.current
+        ?.querySelector<HTMLInputElement>('#confirm-dot-name')
+        ?.focus();
+  }, [confirmDelete]);
   const title =
     dialog.type === 'space'
       ? 'A space for something.'
@@ -135,7 +148,66 @@ export function WorkspaceDialog({
         </button>
         <span className="eyebrow">OPENDOTS TEMPLATE</span>
         <h2 id="dialog-title">{title}</h2>
+        {confirmDelete && dialog.type === 'dot' && dialog.dot && (
+          <div className="dot-delete-confirmation">
+            <p>
+              Deleting <strong>{dialog.dot.name}</strong> removes it and its
+              conversations, calls, scheduled tasks, connections, and specialist
+              settings from this workspace. Shared Spaces and pages will remain.
+              Transcripts held by a configured conversation provider may be
+              retained there.
+            </p>
+            <label className="field-label" htmlFor="confirm-dot-name">
+              Type <strong>{dialog.dot.name}</strong> to confirm
+            </label>
+            <input
+              id="confirm-dot-name"
+              value={confirmName}
+              autoComplete="off"
+              onChange={(event) => setConfirmName(event.target.value)}
+            />
+            {error && (
+              <p className="chat-error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="dot-delete-actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => {
+                  setConfirmDelete(false);
+                  setConfirmName('');
+                  setError('');
+                }}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                disabled={busy || confirmName.trim() !== dialog.dot.name}
+                onClick={async () => {
+                  setBusy(true);
+                  setError('');
+                  const result = await mutate(
+                    `/dots/${dialog.dot!.id}`,
+                    'DELETE',
+                  );
+                  if (result.ok) onClose();
+                  else setError(result.error);
+                  setBusy(false);
+                }}
+              >
+                <Trash2 size={14} />
+                {busy ? 'Deleting…' : 'Delete Dot'}
+              </button>
+            </div>
+          </div>
+        )}
         <form
+          hidden={confirmDelete}
           onSubmit={async (e) => {
             e.preventDefault();
             setBusy(true);
@@ -190,9 +262,9 @@ export function WorkspaceDialog({
                 intervalSeconds: Number(interval),
               };
             }
-            if (await mutate(path, method, body)) onClose();
-            else
-              setError('Could not save. Review the workspace error and retry.');
+            const result = await mutate(path, method, body);
+            if (result.ok) onClose();
+            else setError(result.error);
             setBusy(false);
           }}
         >
@@ -510,6 +582,20 @@ export function WorkspaceDialog({
           <button className="primary full" disabled={busy}>
             {busy ? 'Saving…' : 'Save'}
           </button>
+          {dialog.type === 'dot' && dialog.dot && (
+            <button
+              type="button"
+              className="danger-link full"
+              disabled={busy}
+              onClick={() => {
+                setConfirmName('');
+                setError('');
+                setConfirmDelete(true);
+              }}
+            >
+              <Trash2 size={14} /> Delete this Dot
+            </button>
+          )}
         </form>
       </section>
     </div>

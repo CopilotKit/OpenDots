@@ -110,6 +110,19 @@ export class Store {
       .prepare('SELECT * FROM tasks WHERE id=?')
       .get(id) as unknown as Task | undefined;
   }
+  deleteTasks(ids: string[]) {
+    if (!ids.length) return;
+    this.transaction(() => {
+      const marks = ids.map(() => '?').join(',');
+      this.db
+        .prepare(`DELETE FROM events WHERE taskId IN (${marks})`)
+        .run(...ids);
+      this.db
+        .prepare(`DELETE FROM runs WHERE taskId IN (${marks})`)
+        .run(...ids);
+      this.db.prepare(`DELETE FROM tasks WHERE id IN (${marks})`).run(...ids);
+    });
+  }
   createTask(prompt: string, intervalSeconds: number | null = null): Task {
     const now = Date.now();
     const id = randomUUID();

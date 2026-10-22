@@ -141,6 +141,47 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
     }
     return c.json(platform.workspace.updateDot(c.req.param('id'), data.data));
   });
+  app.delete('/dots/:id', (c) => {
+    const id = c.req.param('id');
+    const dots = platform.workspace.dots();
+    if (!dots.some((dot) => dot.id === id))
+      return c.json({ error: 'Dot not found.' }, 404);
+    if (dots.length === 1)
+      return c.json({ error: 'Keep at least one Dot in the workspace.' }, 409);
+    const slackEnabled = !!(
+      platform.config.slackChannel &&
+      platform.config.slackTeam &&
+      platform.config.slackUsers.length
+    );
+    const slackDotId = platform.config.slackDotId ?? dots[0]?.id;
+    if (slackEnabled && slackDotId === id)
+      return c.json(
+        {
+          error:
+            'This Dot is assigned to the Slack integration. Change SLACK_DOT_ID and restart the app before deleting it.',
+        },
+        409,
+      );
+    const blocker = platform.workspace.dotDeletionBlocker(id);
+    if (blocker) return c.json({ error: blocker }, 409);
+    const taskIds = platform.workspace.taskIdsForDot(id);
+    if (
+      platform.store
+        .tasks()
+        .some((task) => taskIds.includes(task.id) && task.status === 'running')
+    )
+      return c.json(
+        {
+          error:
+            'Cancel or wait for this Dot’s running scheduled task before deleting it.',
+        },
+        409,
+      );
+    const deleted = platform.workspace.deleteDot(id);
+    if (!deleted) return c.json({ error: 'Dot not found.' }, 404);
+    platform.store.deleteTasks(deleted.taskIds);
+    return c.json({ ok: true });
+  });
   app.post('/conversations', async (c) => {
     const data = z
       .object({

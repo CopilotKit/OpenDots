@@ -21,6 +21,7 @@ function fixture(ownerToken?: string) {
     runtimeUrl: '',
   });
   return {
+    store,
     ws,
     platform,
     app: createApp({
@@ -36,6 +37,119 @@ const request = (body: unknown, method = 'POST') => ({
   method,
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(body),
+});
+
+it('deletes a Dot and its scheduled-task history through the owner API', async () => {
+  const { store, ws, app } = fixture();
+  const [remaining] = ws.dots();
+  const target = ws.createDot(
+    remaining.spaceId,
+    'Temporary',
+    'A temporary specialist',
+    true,
+    true,
+  );
+  const thread = ws.bindThread('temporary-thread', target.id, 'Temporary work');
+  const task = store.createTask('Temporary scheduled work');
+  ws.bindTask(task.id, thread.id);
+  const page = ws.pages.create(
+    remaining.spaceId,
+    { title: 'Shared', content: 'Shared content' },
+    thread.id,
+  );
+
+  const response = await app.request(`/api/dots/${target.id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ ok: true });
+  expect(ws.dot(target.id)).toBeUndefined();
+  expect(store.task(task.id)).toBeUndefined();
+  expect(ws.conversations()).toEqual([]);
+  expect(ws.spaces()).toHaveLength(1);
+  expect(ws.pages.list(remaining.spaceId)).toContainEqual(
+    expect.objectContaining({ id: page.id, content: 'Shared content' }),
+  );
+});
+
+it('prevents deletion of the final Dot and reports a missing Dot', async () => {
+  const { ws, app } = fixture();
+  const [onlyDot] = ws.dots();
+  const last = await app.request(`/api/dots/${onlyDot.id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  expect(last.status).toBe(409);
+  expect(await last.json()).toEqual({
+    error: 'Keep at least one Dot in the workspace.',
+  });
+  const missing = await app.request('/api/dots/missing', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  expect(missing.status).toBe(404);
+  expect(await missing.json()).toEqual({ error: 'Dot not found.' });
+});
+
+it('blocks deletion when a Dot has a running scheduled task or active call', async () => {
+  const { store, ws, app } = fixture();
+  const [remaining] = ws.dots();
+  const target = ws.createDot(
+    remaining.spaceId,
+    'Busy',
+    'A busy specialist',
+    true,
+    true,
+  );
+  const thread = ws.bindThread('busy-thread', target.id, 'Busy work');
+  const task = store.createTask('Run this scheduled work');
+  ws.bindTask(task.id, thread.id);
+  const claim = store.claim();
+  expect(claim?.id).toBe(task.id);
+  const runningTask = await app.request(`/api/dots/${target.id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  expect(runningTask.status).toBe(409);
+  expect((await runningTask.json()).error).toMatch(/running scheduled task/);
+  store.action(task.id, 'cancel');
+
+  const call = ws.createCall(thread.id);
+  const activeCall = await app.request(`/api/dots/${target.id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  expect(activeCall.status).toBe(409);
+  expect((await activeCall.json()).error).toMatch(/active call/);
+  ws.setCall(call.id, 'ended', '');
+  expect(
+    (
+      await app.request(`/api/dots/${target.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      })
+    ).status,
+  ).toBe(200);
+});
+
+it('blocks deletion of the Dot assigned to the configured Slack integration', async () => {
+  const { ws, platform, app } = fixture();
+  const [slackDot] = ws.dots();
+  ws.createDot(slackDot.spaceId, 'Other', 'Another specialist', true, true);
+  platform.config.slackChannel = 'team-channel';
+  platform.config.slackTeam = 'team-id';
+  platform.config.slackUsers = ['user-id'];
+
+  const response = await app.request(`/api/dots/${slackDot.id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  expect(response.status).toBe(409);
+  expect((await response.json()).error).toMatch(/SLACK_DOT_ID/);
+  expect(ws.dot(slackDot.id)).toBeDefined();
 });
 
 it('saves Learning settings through the owner API and rejects malformed container IDs', async () => {

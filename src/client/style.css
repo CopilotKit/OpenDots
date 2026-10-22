@@ -1299,6 +1299,48 @@ h3 {
   right: 15px;
   top: 15px;
 }
+.danger-link,
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #d78a83;
+  border-radius: 8px;
+  color: #a7463e;
+  background: transparent;
+  padding: 9px 12px;
+  font-size: 11px;
+}
+.danger-link:hover:not(:disabled),
+.danger-button:hover:not(:disabled) {
+  background: #fff2ef;
+}
+.danger-link:disabled,
+.danger-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.dot-delete-confirmation > p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #777b89;
+}
+.dot-delete-confirmation .field-label {
+  margin-top: 24px;
+}
+.dot-delete-confirmation > input {
+  width: 100%;
+}
+.dot-delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+.dot-delete-actions button {
+  min-height: 38px;
+}
 .field-label {
   display: block;
   font-size: 11px;
