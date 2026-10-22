@@ -181,6 +181,37 @@ export function createApp({
   app.get('/api/autopilot', async (c) =>
     c.json(await autopilot({ cmd: 'status' })),
   );
+  // The dashboard's summary of every scan and paper record (localtools/dashboard.py).
+  // Building it takes several seconds, so one result is shared for a minute.
+  let board: { at: number; data: Promise<Record<string, unknown>> } | null =
+    null;
+  app.get('/api/dashboard', async (c) => {
+    if (!board || Date.now() - board.at > 60_000 || c.req.query('fresh')) {
+      board = {
+        at: Date.now(),
+        data: new Promise((done) => {
+          const child = spawn(
+            'localtools/.venv/Scripts/python.exe',
+            ['localtools/dashboard.py'],
+            {
+              env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+            },
+          );
+          let out = '';
+          child.stdout.on('data', (chunk) => (out += chunk));
+          child.on('error', (error) => done({ error: error.message }));
+          child.on('close', () => {
+            try {
+              done(JSON.parse(out) as Record<string, unknown>);
+            } catch {
+              done({ error: 'The dashboard could not be built.' });
+            }
+          });
+        }),
+      };
+    }
+    return c.json(await board.data);
+  });
   app.post('/api/autopilot', async (c) => {
     const body = z
       .object({

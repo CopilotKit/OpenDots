@@ -10,6 +10,7 @@ import {
   Clock3,
   Code2,
   Folder,
+  LayoutDashboard,
   Menu,
   MessageCircle,
   Monitor,
@@ -35,6 +36,7 @@ import { api, ApiError, authHeaders, setToken } from './api';
 import { Mascot } from './Mascot';
 import { OptionsAlerts } from './OptionsAlerts';
 import { AutopilotButton } from './AutopilotButton';
+import { Dashboard } from './Dashboard';
 import { Chat } from './Chat';
 import { ThreadList } from './ThreadList';
 import { ResultPane } from './ResultPane';
@@ -47,9 +49,9 @@ export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceState>();
   const [selectedDot, setSelectedDot] = useState('');
   const [selectedThread, setSelectedThread] = useState<string>();
-  const [view, rawSetView] = useState<'chat' | 'tasks' | 'memories' | 'space'>(
-    'chat',
-  );
+  const [view, rawSetView] = useState<
+    'dashboard' | 'chat' | 'tasks' | 'memories' | 'space'
+  >('dashboard');
   const dirtyPage = useRef(false);
   const [spaceId, setSpaceId] = useState('');
   const [pageId, setPageId] = useState<string>();
@@ -325,7 +327,7 @@ export function App() {
         <button
           className="wordmark"
           onClick={() => {
-            setView('chat');
+            setView('dashboard');
             setSelectedThread(undefined);
           }}
         >
@@ -336,6 +338,16 @@ export function App() {
             <i />
           </span>
           OpenDots<span className="wordmark-dot">•</span>
+        </button>
+        <button
+          className={`nav-item dash-nav ${view === 'dashboard' ? 'active' : ''}`}
+          onClick={() => {
+            setView('dashboard');
+            setMobile(false);
+          }}
+        >
+          <LayoutDashboard size={17} />
+          <span>Dashboard</span>
         </button>
         <button
           className="new-chat nav-item"
@@ -511,13 +523,15 @@ export function App() {
             </span>
             <span>/</span>
             <strong>
-              {view === 'chat'
-                ? dot.name
-                : view === 'tasks'
-                  ? 'Activity'
-                  : view === 'space'
-                    ? 'Pages'
-                    : 'Memories'}
+              {view === 'dashboard'
+                ? 'Dashboard'
+                : view === 'chat'
+                  ? dot.name
+                  : view === 'tasks'
+                    ? 'Activity'
+                    : view === 'space'
+                      ? 'Pages'
+                      : 'Memories'}
             </strong>
           </div>
           <div className="top-actions">
@@ -566,7 +580,9 @@ export function App() {
             All Dots are paused. Active compute stops and scheduled tasks wait.
           </div>
         )}
-        {view === 'space' ? (
+        {view === 'dashboard' ? (
+          <Dashboard />
+        ) : view === 'space' ? (
           <SpaceWorkspace
             key={spaceId}
             space={
