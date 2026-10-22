@@ -9,7 +9,7 @@ import { api } from './api';
 import { computerToolResult } from './ComputerToolCard';
 type Receipt = {
   approvalId: string | null;
-  status: 'running' | 'done';
+  status: 'running' | 'interrupted' | 'done';
   result: ConnectionActionResult | null;
 };
 const conversation = (threadId: string) =>
@@ -69,6 +69,7 @@ export function ConnectionActionCard({
   const own = mismatch ? null : receipt;
   // A receipt that is still running is checked until the server finishes.
   const running = own?.status === 'running';
+  const interrupted = own?.status === 'interrupted';
   useEffect(() => {
     let active = true;
     const load = () =>
@@ -110,6 +111,7 @@ export function ConnectionActionCard({
         });
         return;
       }
+      if (!outcome) setReceipt({ approvalId, status: 'running', result: null });
       // A previous approval may have run even if its response never arrived.
       const value =
         outcome ??
@@ -151,11 +153,13 @@ export function ConnectionActionCard({
               ? 'Declined'
               : running
                 ? 'Running'
-                : finished
-                  ? 'Ended'
-                  : !ready
-                    ? 'Checking'
-                    : 'Needs your approval'}
+                : interrupted
+                  ? 'Interrupted'
+                  : finished
+                    ? 'Ended'
+                    : !ready
+                      ? 'Checking'
+                      : 'Needs your approval'}
         </span>
       </header>
       <div className="page-review-body">
@@ -218,7 +222,9 @@ export function ConnectionActionCard({
                 ? 'Running…'
                 : outcome
                   ? 'Continue conversation'
-                  : 'Approve & run'}
+                  : interrupted
+                    ? 'Retry & run'
+                    : 'Approve & run'}
             </button>
             {!outcome && (
               <button
@@ -234,9 +240,11 @@ export function ConnectionActionCard({
         <small>
           {running
             ? 'This action is still running on the server.'
-            : approved || declined || finished
-              ? ''
-              : 'Nothing runs until you approve. These are the exact arguments.'}
+            : interrupted
+              ? 'No result was saved for the previous run. Retrying can repeat the action if the service completed it before the interruption.'
+              : approved || declined || finished
+                ? ''
+                : 'Nothing runs until you approve. These are the exact arguments.'}
         </small>
       </footer>
     </section>
