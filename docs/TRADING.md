@@ -41,6 +41,8 @@ Edge Lab, Options Order Setup).
 | `localtools/options_eod.py` | End of day: saves the day's prices and scores suggestions. | |
 | `localtools/strategy_lab.py` | Replays ~276,000 credit-spread rule sets (side, delta, days to expiry, entry time, filter, target, stop, trailing) on 60 days of 5-minute prices. Option prices are modeled from the volatility index (VIX, VXN) with today's skew. Rule sets are chosen on the first two thirds of the days and judged on the rest. Writes `Strategy Lab.md` to the vault and `data/strategy-lab.json`. Takes about 20 seconds. | Add a rule dimension (the grids at the top) or a filter (`features`, `sides_for`). |
 | `localtools/edge_lab.py` | Backtests signals on 60 days of 5-minute bars and writes `Edge Lab.md` to the vault. Re-run it weekly. | Add or tune a signal (`signals()`). A signal goes live only after it passes on unseen days, after costs. |
+| `localtools/option_quotes.py` | The option quote recorder, a separate process. Every 20s in the session it saves the near-the-money contracts (nearest 2 expiries, strikes within 2%) of SPY, QQQ and TSLA from the Cboe chain to `data/option-quotes.sqlite`: bid, ask, IV, delta, volume, OI and the stock price. Cboe publishes about once a minute; its quotes run about 15 minutes behind the publish time (`QUOTE_DELAY`). For the owner's own testing only: Cboe's delayed data is not for redistribution. | Keep more contracts (`EXPIRIES`, `BAND`), add a ticker (`TICKERS`). |
+| `localtools/scalp_sim.py` | Replays quick value flips on the recorded quotes: buy the at-the-money call or put at the ask, sell at the bid at a small target, a stop or a time limit, then the next one. Rules chosen on the first two thirds of the recorded days, judged on the rest. Writes `Scalp Sim.md` to the vault and `data/scalp-sim.json`. | Add a rule dimension (`TARGETS`, `STOPS`, `HOLDS`) or change the contract picked (`pick`). |
 | `src/client/OptionsAlerts.tsx`, route `GET /api/options/alerts` in `src/server/app.ts` | The alert banner, chime and phone notification. | |
 | `localtools/autopilot.py` (protected) | The autopilot. **Turning it on:** the owner's PIN, set once with `python localtools/autopilot.py set-pin`, with a lock after 5 wrong tries. **Modes:** dry_run (stops at the review screen) and live (submits; only for trade kinds with 20+ scored results, 80% wins and a positive profit per trade). **Checks before any press:** the rules, the order form read back (contracts, limit, strategy name, money at risk), the review screen (opening vs closing). It turns itself off at 4pm. | Ask the owner: this file is theirs. |
 | `src/client/AutopilotButton.tsx`, routes `GET/POST /api/autopilot` in `src/server/app.ts` | The Autopilot button: status, the minimum record, recent orders, on with the PIN, off without one. | |
@@ -61,7 +63,8 @@ Edge Lab, Options Order Setup).
 - **Scheduled tasks (Windows):**
   - "OpenDots Options Exit Listener" runs weekdays at 9:25am (`options_watch.py`, stops at 4:05pm).
   - "OpenDots Options End of Day" runs weekdays at 4:15pm (`options_eod.py`).
-  - Both run from the main checkout, so an applied change reaches them at their next start.
+  - "OpenDots Option Quote Recorder" runs weekdays at 9:25am (`option_quotes.py`, records 9:30am-4:20pm).
+  - All run from the main checkout, so an applied change reaches them at their next start.
 - **Tools reach the Dots after an OpenDots restart.** The tool groups are in
   `src/shared/capabilities.ts` (`options`, `browser`, `site_mapping`). That file is protected,
   so ask the owner to add a new tool to a group.
@@ -76,6 +79,8 @@ runs them):
 | `test_options_guide.py` | Rules gate, finders, journal, replay, signals. |
 | `test_options_watch.py` | Trailing stop, alerts sent once, failed set-up still notifies. |
 | `test_robinhood_ticket.py` | Leg checks. |
+| `test_option_quotes.py` | Which contracts are kept, a snapshot saved once, a failing ticker, the recording hours. |
+| `test_scalp_sim.py` | Target, stop and time exits on made-up quotes, ask/bid fills, the early/later day split. |
 | `test_*_live.py` | Need a real Chrome and `LOCALTOOLS_LIVE_TEST=1`. They use a test page, never a broker. |
 
 A change to exits or rules needs a test that shows the new behavior on a made-up price path
