@@ -15,7 +15,7 @@ def history(points=(20,) * 20, minutes=32.0, player='Jalen Brunson', team='New Y
         rows.append({'player': player, 'id': '1', 'team': team, 'opponent': opponent, 'home': True, 'min': minutes,
                      'pts': pts, 'fga': 15, 'fta': 4, 'starter': True, 'date': (day + timedelta(days=2 * k)).isoformat(), 'game': g})
         rows.append({'player': 'Other Guy', 'id': '2', 'team': opponent, 'opponent': team, 'home': False, 'min': 30.0,
-                     'pts': 100, 'fga': 20, 'fta': 5, 'starter': True, 'date': (day + timedelta(days=2 * k)).isoformat(), 'game': g})
+                     'pts': 20, 'fga': 20, 'fta': 5, 'starter': True, 'date': (day + timedelta(days=2 * k)).isoformat(), 'game': g})
     return rows
 
 
