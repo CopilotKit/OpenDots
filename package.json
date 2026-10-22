@@ -84,6 +84,7 @@
     "url": "git+https://github.com/CopilotKit/OpenDots.git"
   },
   "overrides": {
-    "undici": "^6.29.0"
+    "undici": "^6.29.0",
+    "katex": "^0.19.0"
   }
 }

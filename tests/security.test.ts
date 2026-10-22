@@ -18,12 +18,29 @@ describe('browser network boundaries', () => {
     '3fff:0fff::1',
     '::ffff:127.0.0.1',
     '224.0.0.1',
+    '192.0.0.1',
+    '192.0.2.1',
+    '198.18.0.1',
+    '198.19.255.255',
+    '198.51.100.7',
+    '203.0.113.9',
   ])('rejects private or special address %s', (address) =>
     expect(isPublicAddress(address)).toBe(false),
   );
-  it.each(['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111'])(
-    'accepts public address %s',
-    (address) => expect(isPublicAddress(address)).toBe(true),
+  it.each([
+    '8.8.8.8',
+    '1.1.1.1',
+    '2606:4700:4700::1111',
+    // Near, but outside, the documentation/benchmark ranges (not whole /16s).
+    '192.0.1.1',
+    '192.0.3.1',
+    '198.51.99.1',
+    '198.51.101.1',
+    '203.0.112.1',
+    '203.0.114.1',
+    '203.0.200.1',
+  ])('accepts public address %s', (address) =>
+    expect(isPublicAddress(address)).toBe(true),
   );
   it('rejects non-http URLs and embedded credentials', async () => {
     await expect(validateUrl('file:///etc/passwd')).rejects.toThrow();

@@ -1,7 +1,12 @@
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
+
+// Each probe boots a fresh Node process that imports the whole server (about 2s
+// alone, much slower under load or coverage). Vitest's 5s default is shorter
+// than the 15s child-process timeout below, which made these tests flaky.
+vi.setConfig({ testTimeout: 30_000 });
 
 const run = promisify(execFile);
 const platformUrl = new URL('../src/server/platform.ts', import.meta.url).href;
