@@ -35,7 +35,7 @@ import sports_picks as sp
 MIN_EDGE = 0.05          # Our chance x DraftKings' price at least 5% above break-even.
 MARKET_FLOOR = -0.02     # The other books' fair price may not say it is worse than this.
 MAX_EDGE = 0.25          # Beyond this, our model is more likely wrong than the whole market.
-MIN_SEASON_GAMES = 3     # Games this season before a player's props are judged.
+MIN_SEASON_GAMES = 3     # A player who changed teams: games with his new team before his props are judged.
 MIN_MINUTES = 20.0
 MIN_GAMES = 8
 SPORT = 'basketball_nba'
@@ -265,9 +265,9 @@ def evaluate(event: dict, h: History, out_list: dict, now: datetime, shape, shif
         team = games[-1]['team']
         if team not in (event['home_team'], event['away_team']):
             continue  # Changed teams: his old games describe a different role.
-        this_season = [g for g in games if g['date'] >= season_start(day)]
-        if len(this_season) < MIN_SEASON_GAMES:
-            continue  # Early season: summer moves changed roles the model cannot see yet.
+        with_team = [g for g in games if g['date'] >= season_start(day) and g['team'] == team]
+        if len({g['team'] for g in games[-25:]}) > 1 and len(with_team) < MIN_SEASON_GAMES:
+            continue  # Changed teams: his old games describe another role until he has a few with the new one.
         opponent = event['away_team'] if team == event['home_team'] else event['home_team']
         p = projection(games, h.opponent_factor(opponent, day))
         if not p or p['minutes'] < MIN_MINUTES:

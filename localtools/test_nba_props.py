@@ -80,10 +80,15 @@ class PropTests(unittest.TestCase):
         self.assertEqual(nb.evaluate(self.event(1.9, 1.9, agree), h, {'Jalen Brunson': 'Out'}, None, (1.6, 0.06)), [])
         self.assertEqual(nb.evaluate(self.event(1.9, 1.9, agree, home='Miami Heat'), h, {}, None, (1.6, 0.06)), [])
 
-    def test_early_season_props_wait_for_games_this_season(self):
-        rows = history(points=(20,) * 20)  # All last season (January).
-        self.assertEqual(nb.evaluate(self.event(1.9, 1.9, [('fanduel', 2.1, 1.75), ('betmgm', 2.1, 1.75)], point=21.5,
-                                                when='2026-10-25T00:30:00Z'), nb.History(rows), {}, None, (1.6, 0.06)), [])
+    def test_history_counts_from_day_one_unless_he_changed_teams(self):
+        agree = [('fanduel', 2.1, 1.75), ('betmgm', 2.1, 1.75)]
+        new_season = '2026-10-25T00:30:00Z'
+        stayed = history(points=(20,) * 20)  # All last season, with the Knicks.
+        self.assertTrue(nb.evaluate(self.event(1.9, 1.9, agree, point=21.5, when=new_season), nb.History(stayed), {}, None, (1.6, 0.06)))
+        # Moved from the Heat to the Knicks this season: one game with the Knicks is not enough yet.
+        moved = history(points=(20,) * 20, team='Miami Heat') + [
+            {**history(points=(20,))[0], 'date': '2026-10-21', 'game': 'new'}]
+        self.assertEqual(nb.evaluate(self.event(1.9, 1.9, agree, point=21.5, when=new_season), nb.History(moved), {}, None, (1.6, 0.06)), [])
 
     def test_prop_parlays_settle_from_box_scores(self):
         leg = lambda player, side, point, event: {
