@@ -113,10 +113,20 @@ export function PageDocument({
       )
     )
       return;
+    const confirmedDraft = controller.getSnapshot().draft;
     try {
-      controller.receive(
-        await api<Page>(`/spaces/${page.spaceId}/pages/${page.id}`),
+      const latestPage = await api<Page>(
+        `/spaces/${page.spaceId}/pages/${page.id}`,
       );
+      if (!open.current) return;
+      const edited = controller.getSnapshot().draft !== confirmedDraft;
+      controller.receive(latestPage);
+      if (edited) {
+        setNotice(
+          'Your draft changed while loading. Choose Load latest again to replace it.',
+        );
+        return;
+      }
       controller.useLatest();
       setNotice('');
     } catch (error) {

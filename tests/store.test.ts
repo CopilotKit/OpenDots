@@ -78,34 +78,39 @@ describe('durable task lifecycle', () => {
     store.action(task.id, 'run');
     expect(store.claim(Date.now())?.id).toBe(task.id);
   });
-  it('holds expired work until the owner retries it', () => {
-    const { store, path } = fixture();
-    store.createTask('Recover me');
-    const now = Date.now();
-    const old = store.claim(now)!;
-    const restarted = new Store(path);
-    try {
-      expect(restarted.claim(now + 180_001)).toBeNull();
-      expect(restarted.task(old.id)?.status).toBe('interrupted');
-      expect(restarted.detail(old.id)?.runs[0].status).toBe('interrupted');
-      restarted.action(old.id, 'run');
-      const recovered = restarted.claim(now + 180_001)!;
-      expect(recovered.id).toBe(old.id);
-      expect(recovered.lease).not.toBe(old.lease);
-      expect(
-        store.finish(old, { text: 'Old', sources: [], sample: true }),
-      ).toBe(false);
-      expect(
-        restarted.finish(recovered, {
-          text: 'New',
-          sources: [],
-          sample: true,
-        }),
-      ).toBe(true);
-    } finally {
-      restarted.close();
-    }
-  });
+  it.each([180_000, 480_000])(
+    'holds expired work until the owner retries it with a %i ms lease',
+    (leaseDurationMs) => {
+      const { store, path } = fixture();
+      store.createTask('Recover me');
+      const now = Date.now();
+      const old = store.claim(now, leaseDurationMs)!;
+      const restarted = new Store(path);
+      try {
+        expect(restarted.claim(now + leaseDurationMs - 1)).toBeNull();
+        expect(restarted.task(old.id)?.status).toBe('running');
+        expect(restarted.claim(now + leaseDurationMs + 1)).toBeNull();
+        expect(restarted.task(old.id)?.status).toBe('interrupted');
+        expect(restarted.detail(old.id)?.runs[0].status).toBe('interrupted');
+        restarted.action(old.id, 'run');
+        const recovered = restarted.claim(now + leaseDurationMs + 1)!;
+        expect(recovered.id).toBe(old.id);
+        expect(recovered.lease).not.toBe(old.lease);
+        expect(
+          store.finish(old, { text: 'Old', sources: [], sample: true }),
+        ).toBe(false);
+        expect(
+          restarted.finish(recovered, {
+            text: 'New',
+            sources: [],
+            sample: true,
+          }),
+        ).toBe(true);
+      } finally {
+        restarted.close();
+      }
+    },
+  );
   it('claims other queued work while an expired run waits for review', () => {
     const { store } = fixture();
     const interrupted = store.createTask('Create the first page');

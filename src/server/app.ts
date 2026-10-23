@@ -190,6 +190,7 @@ export function createApp({
         paused: z.boolean().optional(),
         researchAllowed: z.boolean().optional(),
         memoryAllowed: z.boolean().optional(),
+        appsAllowed: z.boolean().optional(),
       })
       .strict()
       .safeParse(await c.req.json().catch(() => null));
@@ -199,7 +200,8 @@ export function createApp({
     if (
       settings.paused ||
       !settings.researchAllowed ||
-      previous.memoryAllowed !== settings.memoryAllowed
+      previous.memoryAllowed !== settings.memoryAllowed ||
+      previous.appsAllowed !== settings.appsAllowed
     )
       runner.abortAll();
     if (settings.paused) voice?.abortAll();

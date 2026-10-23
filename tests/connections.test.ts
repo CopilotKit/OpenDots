@@ -486,3 +486,31 @@ it('returns a saved result only for the approval that produced it', async () => 
   expect(sent).toHaveBeenCalledOnce();
   expect(sent.mock.calls[0][0]).toMatchObject({ to: 'alice@example.com' });
 });
+
+it('runs an approved request once, even under a fresh toolCallId', async () => {
+  const { dot, connections, request, sent } = fixture();
+  await connections.add(dot.id, {
+    name: 'Mail',
+    url: 'https://mail.example.com/mcp',
+  });
+  const approvalId = await requestApproval(
+    connections,
+    dot.id,
+    'mail__send_mail',
+    { to: 'a@example.com', body: 'Hi' },
+  );
+  const approve = (toolCallId: string) =>
+    request('/conversations/thread/connection-actions', 'POST', {
+      toolCallId,
+      approvalId,
+    });
+  expect(await (await approve('tc1')).json()).toEqual({
+    isError: false,
+    text: 'Sent to a@example.com',
+  });
+  // The stored request ran. The same approval must not run it a second
+  // time under a different tool call id.
+  const replay = await approve('tc2');
+  expect(replay.status).toBe(409);
+  expect(sent).toHaveBeenCalledOnce();
+});
