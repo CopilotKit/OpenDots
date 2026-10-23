@@ -4,9 +4,10 @@ vi.mock('../src/client/api', () => ({ api: vi.fn() }));
 import { api } from '../src/client/api';
 import {
   decidePageReview,
+  fetchReviewTarget,
   isDeletedReview,
 } from '../src/client/page-review-decision';
-import { PageReviewCard } from '../src/client/PageReviewCard';
+import { approveLabel, PageReviewCard } from '../src/client/PageReviewCard';
 
 beforeEach(() => {
   vi.mocked(api).mockReset();
@@ -173,4 +174,84 @@ it('renders a Markdown table in the draft as a table, not raw pipe text', () => 
   expect(html).toContain('<th>Category</th>');
   expect(html).toContain('<td>Speed</td>');
   expect(html).not.toContain('| Category |');
+});
+
+it('resolves no approval target for a create draft without calling the api', async () => {
+  expect(await fetchReviewTarget('space', null)).toBeNull();
+  expect(await fetchReviewTarget('space', undefined)).toBeNull();
+  expect(api).not.toHaveBeenCalled();
+});
+
+it('identifies distinct existing pages so identical drafts cannot render identical cards', async () => {
+  vi.mocked(api).mockImplementation(async (path: string) => {
+    if (path === '/workspace')
+      return { spaces: [{ id: 'space', name: 'Handbook' }] } as never;
+    if (path === '/spaces/space/pages/page-a')
+      return { id: 'page-a', title: 'Onboarding' } as never;
+    if (path === '/spaces/space/pages/page-b')
+      return { id: 'page-b', title: 'Release plan' } as never;
+    throw new Error(`unexpected path ${path}`);
+  });
+  const first = await fetchReviewTarget('space', 'page-a');
+  const second = await fetchReviewTarget('space', 'page-b');
+  expect(first).toMatchObject({
+    pageId: 'page-a',
+    title: 'Onboarding',
+    spaceId: 'space',
+    spaceName: 'Handbook',
+  });
+  expect(second).toMatchObject({ pageId: 'page-b', title: 'Release plan' });
+  expect(first?.title).not.toBe(second?.title);
+});
+
+it('keeps the target title when the workspace listing is unavailable', async () => {
+  vi.mocked(api).mockImplementation(async (path: string) => {
+    if (path === '/workspace') throw new Error('Forbidden');
+    return { id: 'page-a', title: 'Onboarding' } as never;
+  });
+  expect(await fetchReviewTarget('space', 'page-a')).toMatchObject({
+    title: 'Onboarding',
+    spaceName: null,
+  });
+});
+
+it('labels the approval action as an update or a create', () => {
+  expect(approveLabel(true)).toBe('Approve & update page');
+  expect(approveLabel(false)).toBe('Approve & create page');
+  expect(approveLabel(true)).not.toBe(approveLabel(false));
+});
+
+it('flags update drafts on the card and stays silent for creates', () => {
+  const update = renderToStaticMarkup(
+    <PageReviewCard
+      args={{
+        title: 'Brief',
+        content: 'Evidence',
+        spaceId: 'space',
+        pageId: 'page-a',
+        expectedRevision: 2,
+      }}
+      status="executing"
+      respond={async () => {}}
+      threadId="thread"
+      toolCallId="call"
+      onSaved={() => {}}
+    />,
+  );
+  // Until the target lookup resolves the card can only say it is
+  // identifying the target; the unidentified fallback is gone.
+  expect(update).toContain('Identifying the page this would update');
+  expect(update).not.toContain('Updates an existing page.');
+  const create = renderToStaticMarkup(
+    <PageReviewCard
+      args={{ title: 'Brief', content: 'Evidence', spaceId: 'space' }}
+      status="executing"
+      respond={async () => {}}
+      threadId="thread"
+      toolCallId="call"
+      onSaved={() => {}}
+    />,
+  );
+  expect(create).not.toContain('Updates an existing page');
+  expect(create).not.toContain('Identifying the page');
 });

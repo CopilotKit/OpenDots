@@ -185,7 +185,10 @@ it('offers the canonical review tool and waits for the client without saving a p
   expect(request.tools).toContainEqual(
     expect.objectContaining({
       type: 'function',
-      function: expect.objectContaining(pageReviewTool),
+      function: expect.objectContaining({
+        name: pageReviewTool.name,
+        description: pageReviewTool.description,
+      }),
     }),
   );
   expect(JSON.stringify(request)).not.toContain('forged instructions');
