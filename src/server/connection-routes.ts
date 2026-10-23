@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import {
+  ACTION_TTL_MS,
   APPROVAL_TTL_MS,
   connectionActionSchema,
   type PendingApproval,
@@ -103,9 +104,21 @@ export function connectionRoutes(
   });
   app.get('/conversations/:id/connection-actions/:toolCallId', (c) => {
     const thread = workspace.requireThread(c.req.param('id'));
-    return c.json(
-      connections.store.action(thread.id, c.req.param('toolCallId')) ?? null,
+    const receipt = connections.store.action(
+      thread.id,
+      c.req.param('toolCallId'),
     );
+    if (!receipt) return c.json(null);
+    return c.json({
+      approvalId: receipt.approvalId,
+      status:
+        receipt.status === 'running' &&
+        !receipt.result &&
+        Date.now() - receipt.createdAt > ACTION_TTL_MS
+          ? 'interrupted'
+          : receipt.status,
+      result: receipt.result,
+    });
   });
   // The only path that runs an approval-gated tool: the owner approving a
   // stored request. It runs that request's connection, tool, and arguments,
@@ -117,6 +130,8 @@ export function connectionRoutes(
       .parse(await c.req.json());
     const thread = workspace.requireThread(c.req.param('id'));
     // A saved result is returned only for the approval that produced it.
+    // A result-less claim older than the action TTL was interrupted before
+    // it could finish, so the same approval may reclaim it below.
     const recovered = () => {
       const previous = connections.store.action(thread.id, body.toolCallId);
       if (!previous) return undefined;
@@ -125,6 +140,8 @@ export function connectionRoutes(
           { error: 'This action belongs to a different approval request.' },
           409,
         );
+      if (!previous.result && Date.now() - previous.createdAt > ACTION_TTL_MS)
+        return undefined;
       return previous.result
         ? c.json(previous.result)
         : c.json({ error: 'This action is already running.' }, 409);
