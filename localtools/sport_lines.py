@@ -33,7 +33,14 @@ SPORTS = {
     # Last season to choose on, this season (weeks 1-7) as a fully unseen second test.
     'NFL+2026': ('football', 'nfl', '2025-09-04', '2026-10-20', 6),
     'NCAAF+2026': ('football', 'college-football', '2025-08-23', '2026-10-20', 5),
+    'NCAAB': ('basketball', 'mens-college-basketball', '2025-11-03', '2026-03-15', 8),
+    'EPL': ('soccer', 'eng.1', '2025-08-15', '2026-05-24', 8),
+    'LaLiga': ('soccer', 'esp.1', '2025-08-15', '2026-05-24', 8),
+    'Bundesliga': ('soccer', 'ger.1', '2025-08-22', '2026-05-16', 8),
+    'SerieA': ('soccer', 'ita.1', '2025-08-23', '2026-05-24', 8),
+    'Ligue1': ('soccer', 'fra.1', '2025-08-15', '2026-05-16', 8),
 }
+POOLS = {'SOCCER': ('EPL', 'LaLiga', 'Bundesliga', 'SerieA', 'Ligue1')}
 SEASON_TEST = {'NFL+2026': '2026-08-01', 'NCAAF+2026': '2026-08-01'}
 
 
@@ -89,6 +96,8 @@ def games(sport: str, end: str | None = None) -> list[dict]:
             params = {'dates': d.strftime('%Y%m%d'), 'limit': 400}
             if league == 'college-football':
                 params['groups'] = 80  # FBS.
+            if league == 'mens-college-basketball':
+                params['groups'] = 50  # Division I.
             for e in _get(base, params).get('events', []):
                 comp = e['competitions'][0]
                 if not e['status']['type'].get('completed'):
@@ -281,9 +290,13 @@ if __name__ == '__main__':
     chosen = sys.argv[1:] or list(SPORTS)
     results = []
     for sport in chosen:
-        all_games = games(sport)
-        rows = model_rows(sport, all_games)
-        print(sport, len(all_games), 'games,', sum(1 for g in all_games if g.get('open_total') is not None), 'with lines', flush=True)
+        rows, count = [], 0
+        for part in POOLS.get(sport, (sport,)):  # A pool: each league's model on its own, judged together.
+            all_games = games(part)
+            count += len(all_games)
+            rows += model_rows(part, all_games)
+        rows.sort(key=lambda r: r['date'])
+        print(sport, count, 'games,', len(rows), 'with a model', flush=True)
         results += evaluate(sport, rows)
     write(results)
     for e in results:
