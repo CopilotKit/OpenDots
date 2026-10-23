@@ -305,3 +305,24 @@ it('gives agents a safe recovery instruction for stale browser or control confli
   ).rejects.not.toThrow(f.config.computerToken);
   expect(f.workspace.computers.audit(f.id)[0].outcome).toBe('failed');
 });
+
+it('keeps the owner screen refresh out of the activity log unless it fails', async () => {
+  const f = fixture();
+  for (let i = 0; i < 3; i++) await f.service.action(f.id, 'screenshot', {});
+  expect(f.workspace.computers.audit(f.id)).toEqual([]);
+  await f.service.action(f.id, 'read', {}, 'agent');
+  await f.service.action(f.id, 'screenshot', {}, 'agent');
+  expect(
+    f.workspace.computers.audit(f.id).map((a) => [a.action, a.actor]),
+  ).toEqual([
+    ['screenshot', 'agent'],
+    ['read', 'agent'],
+  ]);
+  f.handle(async () => Response.json({ error: 'down' }, { status: 500 }));
+  await expect(f.service.action(f.id, 'screenshot', {})).rejects.toThrow();
+  expect(f.workspace.computers.audit(f.id)[0]).toMatchObject({
+    action: 'screenshot',
+    actor: 'owner',
+    outcome: 'failed',
+  });
+});
