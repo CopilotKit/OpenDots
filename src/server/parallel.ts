@@ -12,9 +12,16 @@ export interface WebConfig {
   parallelApiKey?: string;
 }
 export function webSearchProvider(value?: string): WebSearchProvider {
-  if (!value) return 'parallel';
-  if (value === 'parallel' || value === 'browser' || value === 'disabled')
-    return value;
+  // Tolerate surrounding whitespace from .env files, matching the other
+  // environment parsers; a blank value falls back to the default.
+  const normalized = value?.trim();
+  if (!normalized) return 'parallel';
+  if (
+    normalized === 'parallel' ||
+    normalized === 'browser' ||
+    normalized === 'disabled'
+  )
+    return normalized;
   throw new Error(
     'WEB_SEARCH_PROVIDER must be parallel, browser, or disabled.',
   );
