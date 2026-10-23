@@ -90,6 +90,14 @@ class PropTests(unittest.TestCase):
             {**history(points=(20,))[0], 'date': '2026-10-21', 'game': 'new'}]
         self.assertEqual(nb.evaluate(self.event(1.9, 1.9, agree, point=21.5, when=new_season), nb.History(moved), {}, None, (1.6, 0.06)), [])
 
+    def test_espn_and_odds_api_team_names_match(self):
+        self.assertTrue(nb.same_team('LA Clippers', 'Los Angeles Clippers'))
+        self.assertFalse(nb.same_team('LA Clippers', 'Los Angeles Lakers'))
+        rows = history(points=(20,) * 20, team='LA Clippers')
+        legs = nb.evaluate(self.event(1.9, 1.9, [('fanduel', 2.1, 1.75), ('betmgm', 2.1, 1.75)], point=21.5,
+                                      home='Los Angeles Clippers'), nb.History(rows), {}, None, (1.6, 0.06))
+        self.assertTrue(legs)  # Not skipped as "changed teams".
+
     def test_prop_parlays_settle_from_box_scores(self):
         leg = lambda player, side, point, event: {
             'event': event, 'sport': nb.SPORT, 'home': 'New York Knicks', 'away': 'Boston Celtics',

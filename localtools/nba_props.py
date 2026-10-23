@@ -50,6 +50,15 @@ def norm(name: str) -> str:
     return ' '.join(w for w in name.split() if w not in ('jr', 'sr', 'ii', 'iii', 'iv'))
 
 
+def nickname(team: str) -> str:
+    """"LA Clippers" (ESPN) and "Los Angeles Clippers" (The Odds API) are the same team."""
+    return team.split()[-1].lower() if team else ''
+
+
+def same_team(a: str, b: str) -> bool:
+    return nickname(a) == nickname(b)
+
+
 def eastern_day(iso: str) -> str:
     """The New York date of a UTC time (games after 8pm ET start on the next UTC day)."""
     import options_guide as og
@@ -263,12 +272,13 @@ def evaluate(event: dict, h: History, out_list: dict, now: datetime, shape, shif
         if not games:
             continue
         team = games[-1]['team']
-        if team not in (event['home_team'], event['away_team']):
+        if not (same_team(team, event['home_team']) or same_team(team, event['away_team'])):
             continue  # Changed teams: his old games describe a different role.
         with_team = [g for g in games if g['date'] >= season_start(day) and g['team'] == team]
         if len({g['team'] for g in games[-25:]}) > 1 and len(with_team) < MIN_SEASON_GAMES:
             continue  # Changed teams: his old games describe another role until he has a few with the new one.
-        opponent = event['away_team'] if team == event['home_team'] else event['home_team']
+        other = event['away_team'] if same_team(team, event['home_team']) else event['home_team']
+        opponent = next((t for t in h.allowed if same_team(t, other)), other)  # ESPN's name for the history.
         p = projection(games, h.opponent_factor(opponent, day))
         if not p or p['minutes'] < MIN_MINUTES:
             continue
@@ -350,7 +360,8 @@ def run_settle(journal: sp.Journal | None = None, rows=None) -> dict:
         results = []
         for leg in legs:
             day = date.fromisoformat(eastern_day(leg['start']))
-            games = [g for g in nba_data.games_on(day) if {g['home'], g['away']} == {leg['home'], leg['away']}]
+            games = [g for g in nba_data.games_on(day) if {nickname(g['home']), nickname(g['away'])}
+                     == {nickname(leg['home']), nickname(leg['away'])}]
             if not games or not games[0]['final']:
                 results.append(None)
                 continue
