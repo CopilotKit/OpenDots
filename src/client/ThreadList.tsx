@@ -1,5 +1,5 @@
 import { useThreads } from '@copilotkit/react-core/v2';
-import { MessageCircle, Plus } from 'lucide-react';
+import { MessageCircle, Plus, Trash2 } from 'lucide-react';
 import type { Conversation, Dot } from '../shared/types';
 export function ThreadList({
   dots,
@@ -8,6 +8,7 @@ export function ThreadList({
   selected,
   onSelect,
   onNew,
+  onDelete,
 }: {
   dots: Dot[];
   dotId: string;
@@ -15,6 +16,7 @@ export function ThreadList({
   selected?: string;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onDelete: (id: string) => void;
 }) {
   const threads = useThreads({
     agentId: dotId,
@@ -42,17 +44,30 @@ export function ThreadList({
       {local.map((thread) => {
         const remote = threads.threads.find((item) => item.id === thread.id);
         return (
-          <button
+          <div
             key={thread.id}
-            className={`nav-item ${selected === thread.id ? 'active' : ''}`}
-            onClick={() => onSelect(thread.id)}
+            className={`nav-item thread-row ${selected === thread.id ? 'active' : ''}`}
           >
-            <MessageCircle size={15} />
-            <span className="thread-summary">
-              <span>{remote?.name || thread.title}</span>
-              <small>{dots.find((dot) => dot.id === thread.dotId)?.name}</small>
-            </span>
-          </button>
+            <button
+              className="thread-select"
+              onClick={() => onSelect(thread.id)}
+            >
+              <MessageCircle size={15} />
+              <span className="thread-summary">
+                <span>{remote?.name || thread.title}</span>
+                <small>
+                  {dots.find((dot) => dot.id === thread.dotId)?.name}
+                </small>
+              </span>
+            </button>
+            <button
+              className="icon-button thread-delete"
+              aria-label={`Delete ${remote?.name || thread.title}`}
+              onClick={() => onDelete(thread.id)}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
         );
       })}
       {!local.length && (

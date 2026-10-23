@@ -247,6 +247,24 @@ export function App() {
       setBusy(false);
     }
   };
+
+  const deleteConversation = async (id: string) => {
+    const conversation = workspace?.conversations.find(
+      (item) => item.id === id,
+    );
+    if (
+      !conversation ||
+      !window.confirm(`Delete “${conversation.title}”? This cannot be undone.`)
+    )
+      return;
+    if (!(await mutate(`/conversations/${encodeURIComponent(id)}`, 'DELETE')))
+      return;
+    if (selectedThread === id) {
+      const next = workspace?.conversations.find((item) => item.id !== id);
+      setSelectedThread(next?.id);
+    }
+  };
+  
   if (needsAuth)
     return (
       <main className="unlock">
@@ -465,6 +483,7 @@ export function App() {
               setMobile(false);
             }}
             onNew={() => void newConversation()}
+            onDelete={(id) => void deleteConversation(id)}
           />
         ) : (
           <div className="sidebar-empty">

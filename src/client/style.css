@@ -1976,6 +1976,29 @@ h3 {
   padding: 9px 12px;
   font-size: 10px;
 }
+.thread-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.thread-select {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  text-align: left;
+}
+.thread-delete {
+  opacity: 0;
+}
+.thread-row:hover .thread-delete,
+.thread-row:focus-within .thread-delete {
+  opacity: 1;
+}
 .thread-list .nav-item > span {
   overflow: hidden;
   text-overflow: ellipsis;
