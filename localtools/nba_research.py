@@ -52,12 +52,14 @@ class Teams:
         self.last_day = {}
         self.ats = defaultdict(lambda: deque(maxlen=5))  # team -> covered last games (1/0)
 
-    def form(self, team: str):
-        g = self.games[team]
+    def form(self, team: str, decay: float = 1.0):
+        """Recent-game averages; decay < 1 weights the latest games more (0.93: each game back counts 7% less)."""
+        g = list(self.games[team])
         if len(g) < 5:
             return None
-        return {'pace': statistics.mean(x[0] for x in g), 'off': statistics.mean(x[1] for x in g),
-                'def': statistics.mean(x[2] for x in g), 'net': statistics.mean(x[3] for x in g)}
+        w = [decay ** (len(g) - 1 - k) for k in range(len(g))]
+        avg = lambda i: sum(wk * x[i] for wk, x in zip(w, g)) / sum(w)
+        return {'pace': avg(0), 'off': avg(1), 'def': avg(2), 'net': avg(3)}
 
     def rest(self, team: str, day: str) -> int | None:
         last = self.last_day.get(team)

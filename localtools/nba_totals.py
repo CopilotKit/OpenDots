@@ -32,7 +32,8 @@ import nba_props as nb
 import nba_research as nr
 import sports_picks as sp
 
-MIN_GAP = 4.0
+MIN_GAP = 6.0     # Tuned on early games (2026-10-23): 15 games, recent ones weighted, 6+ apart.
+DECAY = 0.93
 STAKE = 10.0
 
 
@@ -51,7 +52,8 @@ def model_now(today: date, log=lambda *a: None) -> tuple[nr.Teams, float, float]
 
 def model_total(teams: nr.Teams, league_pace: float, league_rtg: float, home: str, away: str) -> float | None:
     names = {nb.nickname(t): t for t in teams.games}
-    fh, fa = teams.form(names.get(nb.nickname(home), home)), teams.form(names.get(nb.nickname(away), away))
+    fh, fa = (teams.form(names.get(nb.nickname(home), home), DECAY),
+              teams.form(names.get(nb.nickname(away), away), DECAY))
     if not fh or not fa:
         return None
     pace = fh['pace'] * fa['pace'] / league_pace
