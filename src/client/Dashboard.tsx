@@ -46,6 +46,26 @@ type Stats = {
   win_rate: number | null;
   last: number | null;
 };
+type WeeklyPut = {
+  day: string;
+  expiry: string;
+  short: number;
+  long: number;
+  credit: number;
+  result: string;
+  closed_day: string | null;
+  pnl: number | null;
+};
+type WeeklyPuts = {
+  trades: number;
+  wins: number;
+  win_rate: number | null;
+  profit: number;
+  open: WeeklyPut | null;
+  recent: WeeklyPut[];
+  rule: string;
+  lab: string;
+};
 type Board = {
   at: number;
   error?: string;
@@ -62,6 +82,7 @@ type Board = {
       open: number;
       pnl: number;
     }[];
+    weekly_puts?: WeeklyPuts;
     market_open: boolean;
   };
   sports: {
@@ -422,6 +443,61 @@ export function Dashboard() {
               </div>
             ))}
         </Card>
+
+        {o.weekly_puts && (
+          <Card
+            title="Weekly put spread (paper)"
+            icon={<Zap size={16} />}
+            accent="#39ff14"
+          >
+            <div className="dash-pair">
+              <div>
+                <span>Closed</span>
+                <strong>
+                  {o.weekly_puts.wins}/{o.weekly_puts.trades}
+                </strong>
+                <small>{pct(o.weekly_puts.win_rate)}</small>
+              </div>
+              <div>
+                <span>Paper result</span>
+                <strong className={tone(o.weekly_puts.profit)}>
+                  {o.weekly_puts.trades ? money(o.weekly_puts.profit) : '-'}
+                </strong>
+              </div>
+            </div>
+            {o.weekly_puts.open ? (
+              <p className="dash-quiet">
+                Open: {o.weekly_puts.open.short}/{o.weekly_puts.open.long} put,
+                expires {o.weekly_puts.open.expiry.slice(5)}, credit $
+                {o.weekly_puts.open.credit.toFixed(2)}
+              </p>
+            ) : (
+              <p className="dash-quiet">
+                Nothing open: the next starts at a close above the 200-day
+                average.
+              </p>
+            )}
+            {o.weekly_puts.recent.length > 0 && (
+              <table className="dash-table">
+                <tbody>
+                  {o.weekly_puts.recent.map((x, k) => (
+                    <tr key={k}>
+                      <td>{x.day.slice(5)}</td>
+                      <td>
+                        {x.short}/{x.long}
+                      </td>
+                      <td>{x.result}</td>
+                      <td className={tone(x.pnl)}>{money(x.pnl)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <p className="dash-quiet">
+              {o.weekly_puts.rule}. Lab: {o.weekly_puts.lab}.
+            </p>
+          </Card>
+        )}
 
         <Card
           title="DraftKings NBA props"

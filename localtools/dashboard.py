@@ -2,7 +2,8 @@
 
 Sections (each on its own, so one broken source cannot blank the page):
 - options: today's two edge conditions (SPY, QQQ), the autopilot state, its picks
-  (live, dry run or shadow) per day, and the suggestion journal by kind;
+  (live, dry run or shadow) per day, the weekly put spread paper record, and the
+  suggestion journal by kind;
 - sports: the DraftKings paper parlays and their record, Odds API credits;
 - quotes: the option quote recorder and the scalp simulator's progress;
 - pocket: the Pocket Option demo Trader's record (all, last 24 hours, by source);
@@ -46,7 +47,9 @@ def options() -> dict:
             edges[ticker] = {'error': str(error)[:200]}
     journal = og.Journal()
     picks = options_watch.pick_results(journal, autopilot.Orders(journal.path), og.now_eastern(), days=30)
+    import weekly_puts
     return {'edges': edges, 'autopilot': autopilot.state(), 'record': autopilot.record(journal),
+            'weekly_puts': weekly_puts.Record(journal.path).summary(),
             'picks': picks['picks'][:12], 'days': picks['days'][:14], 'by_kind': journal.summary(),
             'market_open': og.market_open(og.now_eastern())}
 
