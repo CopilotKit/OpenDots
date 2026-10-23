@@ -1,0 +1,141 @@
+name: ploop desktop
+
+# Tests the ploop Mac app and builds it for macOS. Pushing a tag such as v0.2.0
+# (matching desktop/package.json) also publishes the installers as a GitHub
+# release.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ploop-desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: 'Test'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: npm run type-check
+      - run: npm test
+
+  mac:
+    name: 'Build macOS app'
+    needs: test
+    runs-on: macos-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write # publishes the release when a version tag is pushed
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+
+      - name: Check the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          expected="v$(node -p "require('./desktop/package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match the app version ($expected)."
+            exit 1
+          fi
+
+      - name: Install the server's dependencies
+        run: npm ci
+
+      - name: Install the app's dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Detect signing credentials
+        id: signing
+        env:
+          CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
+        run: |
+          if [ -n "$CSC_LINK" ]; then echo "signed=1" >> "$GITHUB_OUTPUT"; else echo "signed=0" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Bundle the app
+        working-directory: desktop
+        env:
+          PLOOP_SIGNED: ${{ steps.signing.outputs.signed }}
+        run: npm run build
+
+      - name: Build and test ploop's server
+        working-directory: desktop
+        run: node scripts/prepare-server.mjs
+
+      - name: Check the packaged server starts
+        working-directory: desktop
+        run: |
+          npx electron-builder --mac --dir --arm64 --publish never -c.mac.identity=null
+          node scripts/verify-package.mjs release/mac-arm64/ploop.app
+          rm -rf release
+
+      # The arm64 and x64 builds publish at the same moment and both try to
+      # create the release, so one of them fails. Create it once here first.
+      - name: Create the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --prerelease --title "${GITHUB_REF_NAME#v}" --notes "ploop for Mac ${GITHUB_REF_NAME#v}"
+
+      - name: Package and publish
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          flags=()
+          if [ -z "$CSC_LINK" ]; then
+            # No Developer ID: sign ad hoc so Apple Silicon Macs will open it.
+            unset CSC_LINK CSC_KEY_PASSWORD
+            flags+=(-c.mac.identity=- -c.mac.hardenedRuntime=false)
+          fi
+          if [ -n "$APPLE_ID" ]; then
+            flags+=(-c.mac.notarize=true)
+          else
+            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          fi
+          publish=never
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then publish=always; fi
+          npx electron-builder --mac --publish "$publish" "${flags[@]}"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ploop-macos
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/latest-mac.yml
+          if-no-files-found: error

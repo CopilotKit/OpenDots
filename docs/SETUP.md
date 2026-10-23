@@ -67,17 +67,18 @@ For this preview, run OpenDots directly on your Mac with `npm run dev`; Intellig
 
 Edit `.env` on the server and restart after changes:
 
-| Variable                                             | Purpose                                                                |
-| ---------------------------------------------------- | ---------------------------------------------------------------------- |
-| `INTELLIGENCE_API_KEY`                               | Project credential for conversation persistence                        |
-| `INTELLIGENCE_API_URL`                               | API endpoint override for your Intelligence deployment                 |
-| `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_WS_URL` | Gateway WebSocket override (CLI name preferred; legacy name supported) |
-| `OPENAI_API_KEY`, `OPENAI_MODEL`                     | Model credential and model identifier                                  |
-| `OPENAI_BASE_URL`                                    | Compatible model API endpoint                                          |
-| `OWNER_ID`                                           | Stable identity used for this deployment's conversations               |
-| `DATABASE_PATH`                                      | SQLite file containing pages, workspace and work metadata              |
-| `OWNER_TOKEN`                                        | Application access token; required for external bindings               |
-| `APP_ORIGIN`                                         | Comma-separated exact browser origins for a proxy or custom domain     |
+| Variable                                             | Purpose                                                                     |
+| ---------------------------------------------------- | --------------------------------------------------------------------------- |
+| `INTELLIGENCE_API_KEY`                               | Project credential for conversation persistence                             |
+| `INTELLIGENCE_API_URL`                               | API endpoint override for your Intelligence deployment                      |
+| `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_WS_URL` | Gateway WebSocket override (CLI name preferred; legacy name supported)      |
+| `OPENROUTER_API_KEY`, `PLOOP_MODEL`                  | ploop default: OpenRouter key and model (default `anthropic/claude-opus-4`) |
+| `OPENAI_API_KEY`, `OPENAI_MODEL`                     | Model credential and model identifier                                       |
+| `OPENAI_BASE_URL`                                    | Compatible model API endpoint                                               |
+| `OWNER_ID`                                           | Stable identity used for this deployment's conversations                    |
+| `DATABASE_PATH`                                      | SQLite file containing pages, workspace and work metadata                   |
+| `OWNER_TOKEN`                                        | Application access token; required for external bindings                    |
+| `APP_ORIGIN`                                         | Comma-separated exact browser origins for a proxy or custom domain          |
 
 `npx copilotkit project select` deletes an `INTELLIGENCE_API_KEY` line and writes the same credential as `CPK_INTELLIGENCE_API_KEY`. The server reads either name. A non-empty `CPK_INTELLIGENCE_API_KEY` takes precedence over `INTELLIGENCE_API_KEY`.
 

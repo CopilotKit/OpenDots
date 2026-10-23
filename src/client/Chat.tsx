@@ -160,6 +160,12 @@ export function Chat({
     setDraft('');
     setSource('');
     setSourceOpen(false);
+    await runTurn();
+  };
+  // Runs the agent on the conversation as it stands. Try again calls this
+  // directly, so the message that failed is answered without sending it twice.
+  const runTurn = async () => {
+    setRunning(true);
     try {
       const result = await copilotkit.runAgent({ agent });
       if (!result.newMessages.some((message) => message.role === 'assistant'))
@@ -385,6 +391,17 @@ export function Chat({
       {(chatError || voice.error) && (
         <div className="chat-error" role="alert">
           {chatError || voice.error}
+          {!error && runError && agent.messages.at(-1)?.role === 'user' && (
+            <button
+              disabled={running || !loaded || !contextReady || paused}
+              onClick={() => {
+                setRunError('');
+                void runTurn();
+              }}
+            >
+              Try again
+            </button>
+          )}
           {chatError && (
             <button
               onClick={() => {
