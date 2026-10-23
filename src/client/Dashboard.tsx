@@ -75,6 +75,10 @@ type Board = {
     credits_left: number | null;
     last_scan: string | null;
     games_scanned: number;
+    paper_edges?: Record<
+      string,
+      { bets: number; open: number; win_rate: number | null; profit: number }
+    >;
     recent: {
       id: string;
       day: string;
@@ -464,6 +468,24 @@ export function Dashboard() {
             <p className="dash-quiet">
               No parlays yet: players need 3 games this season.
             </p>
+          )}
+          {s.paper_edges && (
+            <>
+              <h4>Edge leads (paper, early lines)</h4>
+              {Object.entries(s.paper_edges).map(([name, e]) => (
+                <div className="dash-row" key={name}>
+                  <span>{name}</span>
+                  <span
+                    className={e.profit > 0 ? 'up' : e.profit < 0 ? 'down' : ''}
+                  >
+                    {e.bets
+                      ? `${e.bets} settled · ${pct(e.win_rate)} · ${money(e.profit)}`
+                      : 'none settled'}{' '}
+                    · {e.open} open
+                  </span>
+                </div>
+              ))}
+            </>
           )}
         </Card>
 

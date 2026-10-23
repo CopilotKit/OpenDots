@@ -58,7 +58,10 @@ def sports() -> dict:
                'price': r['data']['price'], 'legs': [sp.describe(l) for l in r['data']['legs']]}
               for r in journal.rows()[-8:]][::-1]
     snapshots = sorted((ROOT / 'data' / 'sports-odds').glob('*/props-*.json.gz'))
-    return {**journal.summary(), 'recent': recent, 'credits_left': sp.credits_left(),
+    import line_paper
+    import nba_totals
+    edges = {'NBA totals': nba_totals.Bets().summary(), **line_paper.Bets().summary()}
+    return {**journal.summary(), 'recent': recent, 'credits_left': sp.credits_left(), 'paper_edges': edges,
             'last_scan': time.strftime('%Y-%m-%d %H:%M', time.localtime(snapshots[-1].stat().st_mtime)) if snapshots else None,
             'games_scanned': len({p.name.split('-')[1] for p in snapshots})}
 
