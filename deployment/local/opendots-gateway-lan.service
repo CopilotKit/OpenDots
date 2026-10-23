@@ -1,0 +1,22 @@
+# Forwards the Intelligence realtime gateway (127.0.0.1:40231) to a LAN address so
+# a browser on the LAN can open ws://<LAN-IP>:40231/client/websocket.
+#
+# Install:
+#   sudo cp deployment/local/opendots-gateway-lan.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now opendots-gateway-lan.service
+#
+# Replace 192.168.1.38 with your LAN address, and 40231 with the gateway port
+# from INTELLIGENCE_GATEWAY_WS_URL in .env.
+[Unit]
+Description=OpenDots: forward LAN traffic on the realtime gateway port to loopback
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/socat TCP-LISTEN:40231,bind=192.168.1.38,fork,reuseaddr TCP:127.0.0.1:40231
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
