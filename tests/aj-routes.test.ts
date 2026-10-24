@@ -28,6 +28,16 @@ function fixture(page = { url: DEMO, text: 'QT Demo\nUSD\n1,000.00' }) {
   const threads = new Map<string, string>();
   const turns: { thread: string; prompt: string; signal: AbortSignal }[] = [];
   let release: (text: string) => void = () => {};
+  let reviews = [
+    {
+      id: 'r1',
+      title: 'Retry the settle job',
+      summary: 'Retries twice.',
+      passed: true,
+      status: 'pending',
+      createdAt: 5_000,
+    },
+  ];
   const deps: AjDeps = {
     store,
     dots: () => [
@@ -56,6 +66,14 @@ function fixture(page = { url: DEMO, text: 'QT Demo\nUSD\n1,000.00' }) {
       args[1] === 'problems'
         ? { problems: [{ at: 1, kind: 'job', title: 'NBA Totals failed' }] }
         : { speech: 'All quiet.' },
+    reviews: () => reviews,
+    applyReview: async (id) => {
+      reviews = reviews.map((r) =>
+        r.id === id ? { ...r, status: 'applied' } : r,
+      );
+      return { applied: id };
+    },
+    rejectReview: async (id) => ({ rejected: id }),
     stateFile: join(dir, 'aj.json'),
     modeFile: join(dir, 'trading-mode.json'),
   };
@@ -193,6 +211,7 @@ it('hands a task to a Dot by name and keeps browser Dots off a running Pocket Op
     task: 'Fix the NBA settle job',
   });
   expect(f.deps.store.task(task.id)?.prompt).toContain('comes from AJ');
+  expect(f.deps.store.task(task.id)?.prompt).toContain('submit it for review');
   expect(
     (await f.post('/aj/tasks', { dot: 'Nobody', task: 'hello there' })).status,
   ).toBe(404);
@@ -226,4 +245,26 @@ Checked the job. TASK COMPLETE: The settle job runs again; the cause was a timeo
     'the site needs a login.',
   );
   expect(spokenResult('Plain answer.')).toBe('Plain answer.');
+});
+
+it("reads the Developer's waiting changes aloud and applies one by its number", async () => {
+  const f = fixture();
+  const list = await (await f.app.request('/aj/reviews')).json();
+  expect(list.speech).toBe(
+    '1 Developer change waiting for review: 1, Retry the settle job.',
+  );
+  const applied = await f.post('/aj/reviews/1/apply', {});
+  expect(await applied.json()).toMatchObject({
+    applied: 'r1',
+    title: 'Retry the settle job',
+  });
+  expect((await f.post('/aj/reviews/1/apply', {})).status).toBe(404);
+});
+
+it('counts a new Developer review as finished work', async () => {
+  const f = fixture();
+  const news = await (await f.app.request('/aj/news?since=0')).json();
+  expect(
+    news.finished.some((x: { kind?: string }) => x.kind === 'review'),
+  ).toBe(true);
 });

@@ -6,6 +6,7 @@ AJ (the owner's voice assistant, AIVoice/Jvis) reaches this through OpenDots'
 because every word of it is read aloud at $0.05 a minute.
 
 Run: python aj_report.py report
+     python aj_report.py positions
      python aj_report.py problems SINCE   (SINCE: unix seconds)
 """
 from __future__ import annotations
@@ -113,6 +114,53 @@ def report(board: dict) -> dict:
     return {'speech': ' '.join(parts), 'details': board, 'at': time.time()}
 
 
+def short_team(name: str) -> str:
+    """'Boston Celtics' -> 'Celtics' (spoken names are the nickname)."""
+    words = str(name or '').split()
+    return ' '.join(words[-2:]) if words[-1:] == ['Sox'] or words[-2:-1] in (['Blue'], ['Red'], ['Maple']) else (words[-1] if words else '')
+
+
+def positions(board: dict, db: Path | None = None) -> dict:
+    """What is open right now, every paper or real position, in spoken sentences."""
+    import sqlite3
+    from contextlib import closing
+    db = db or ALERTS.parent / 'sports-picks.sqlite'
+    lines = []
+    o = board.get('options') or {}
+    pick = (o.get('weekly_puts') or {}).get('open')
+    if pick:
+        lines.append(f'Weekly put spread on paper: the {pick["short"]:g} over {pick["long"]:g} put, expiring '
+                     f'{day(pick["expiry"])}, sold for {dollars(pick["credit"])}.')
+    for p in o.get('picks') or []:
+        if p.get('how') == 'still open':
+            lines.append(f'Options pick on paper: {p["ticker"]} {str(p["kind"]).replace("edge: ", "")}, '
+                         f'expiring {day(p["expiry"])}, now {dollars(p.get("pnl"))}.')
+    bets = []
+    try:
+        with closing(sqlite3.connect(str(db))) as con:
+            for home, away, side, line in con.execute(
+                    "SELECT home, away, side, line FROM nba_totals WHERE result IS NULL ORDER BY start"):
+                bets.append(f'{short_team(away)} at {short_team(home)} {side} {line:g}')
+            for sport, home, away, side, spread in con.execute(
+                    "SELECT sport, home, away, side, home_spread FROM line_paper WHERE result IS NULL ORDER BY start"):
+                team, number = (home, spread) if side == 'home' else (away, -spread)
+                bets.append(f'{sport} {short_team(team)} {number:+g}')
+            parlays = con.execute("SELECT count(*) FROM parlays WHERE status IS NULL OR status='open'").fetchone()[0]
+    except sqlite3.Error as error:
+        lines.append(f'The betting records could not be read: {error}.')
+        parlays = 0
+    if bets:
+        lines.append(f'{len(bets)} paper bets open: ' + '; '.join(bets) + '.')
+    if parlays:
+        lines.append(f'{parlays} NBA props parlays open on paper.')
+    if not lines:
+        lines.append('Nothing is open: no paper trades and no paper bets.')
+    lines.append('Nothing is open with real money.' if not (board.get('sports') or {}).get('real_bets_placed')
+                 and (o.get('autopilot') or {}).get('mode', 'off') != 'live' else
+                 'Check the dashboard for real-money positions.')
+    return {'speech': ' '.join(lines), 'count': len(bets) + parlays + bool(pick)}
+
+
 def job_time(text: str) -> float:
     try:
         return datetime.strptime(text, '%Y-%m-%d %H:%M').timestamp()
@@ -166,7 +214,9 @@ if __name__ == '__main__':
     command = (sys.argv[1:] or ['report'])[0]
     import dashboard
     board = dashboard.build()
-    if command == 'problems':
+    if command == 'positions':
+        print(json.dumps(positions(board), default=str))
+    elif command == 'problems':
         since = float(sys.argv[2]) if len(sys.argv) > 2 else time.time() - 86400
         print(json.dumps({'problems': problems(board, since)}, default=str))
     else:

@@ -35,11 +35,22 @@ export interface AjDeps {
   pageText(): Promise<string | undefined>;
   pageUrl(): Promise<string | undefined>;
   python(args: string[]): Promise<Record<string, unknown>>;
+  reviews(): AjReview[];
+  applyReview(id: string): Promise<Record<string, unknown>>;
+  rejectReview(id: string): Promise<Record<string, unknown>>;
   stateFile: string;
   modeFile: string;
   now?: () => number;
 }
 
+export interface AjReview {
+  id: string;
+  title: string;
+  summary: string;
+  passed: boolean;
+  status: string;
+  createdAt: number;
+}
 interface AjTask {
   id: string;
   dot: string;
@@ -61,6 +72,8 @@ interface PocketRun {
   endBalance?: number;
   result?: string;
 }
+const DEVELOPER_NOTE =
+  "Make the change in your Developer workspace, run the checks, and submit it for review with a plain title and a summary of what changed and why: the summary is recorded in the owner's vault, and the owner applies the change. Never apply it yourself.";
 interface AjState {
   tasks: AjTask[];
   pocket: { current?: PocketRun; last?: PocketRun };
@@ -216,6 +229,69 @@ export function ajRoutes(deps: AjDeps) {
     c.json(await deps.python(['localtools/aj_report.py', 'report'])),
   );
 
+  app.get('/aj/positions', async (c) =>
+    c.json(await deps.python(['localtools/aj_report.py', 'positions'])),
+  );
+
+  // The Developer's changes waiting for the owner, said in words; applying one by
+  // voice is the owner's own approval (AJ asks for a spoken yes first).
+  app.get('/aj/reviews', (c) => {
+    const pending = deps.reviews().filter((r) => r.status === 'pending');
+    return c.json({
+      reviews: pending.map((r) => ({
+        id: r.id,
+        title: r.title,
+        summary: r.summary.slice(0, 600),
+        passed: r.passed,
+        createdAt: r.createdAt / 1000,
+      })),
+      speech: pending.length
+        ? `${pending.length} Developer change${pending.length === 1 ? '' : 's'} waiting for review: ${pending
+            .slice(0, 5)
+            .map(
+              (r, i) =>
+                `${i + 1}, ${r.title}${r.passed ? '' : ' (its checks failed)'}`,
+            )
+            .join('; ')}.`
+        : 'No Developer changes are waiting for review.',
+    });
+  });
+  app.post('/aj/reviews/:id/:action', async (c) => {
+    const action = c.req.param('action');
+    const wanted = c.req.param('id');
+    const pending = deps.reviews().filter((r) => r.status === 'pending');
+    // "latest" or a number from the spoken list, so nobody has to say an id.
+    const review =
+      wanted === 'latest'
+        ? pending[0]
+        : /^\d{1,2}$/.test(wanted)
+          ? pending[Number(wanted) - 1]
+          : pending.find((r) => r.id === wanted);
+    if (!review)
+      return c.json(
+        { error: 'No Developer change like that is waiting.' },
+        404,
+      );
+    try {
+      if (action === 'apply')
+        return c.json({
+          ...(await deps.applyReview(review.id)),
+          title: review.title,
+        });
+      if (action === 'reject')
+        return c.json({
+          ...(await deps.rejectReview(review.id)),
+          title: review.title,
+        });
+      return c.json({ error: 'Apply or reject.' }, 400);
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : String(error) },
+        409,
+      );
+    }
+  });
+
   app.get('/aj/news', async (c) => {
     const since = Number(c.req.query('since') ?? now() - 3600);
     if (!Number.isFinite(since))
@@ -241,6 +317,13 @@ export function ajRoutes(deps: AjDeps) {
     }
     const last = state.pocket.last;
     if (last?.endedAt && last.endedAt >= since) finished.push(last);
+    for (const review of deps.reviews())
+      if (review.status === 'pending' && review.createdAt / 1000 >= since)
+        finished.push({
+          kind: 'review',
+          at: review.createdAt / 1000,
+          result: `The Developer finished "${review.title}" and it is waiting for your review${review.passed ? '' : '; its checks failed'}.`,
+        });
     return c.json({ problems, finished, now: now() });
   });
 
@@ -289,7 +372,12 @@ export function ajRoutes(deps: AjDeps) {
       dot.id,
       `AJ: ${body.data.task.slice(0, 80)}`,
     );
-    const task = deps.store.createTask(`${body.data.task}\n\n${TASK_NOTE}`);
+    // The Developer's change is recorded in the vault from its review, so the
+    // review has to say plainly what changed and why.
+    const note = dot.toolGroups?.includes('developer')
+      ? `${DEVELOPER_NOTE} ${TASK_NOTE}`
+      : TASK_NOTE;
+    const task = deps.store.createTask(`${body.data.task}\n\n${note}`);
     deps.bindTask(task.id, thread.id);
     const state = load();
     const entry = {
@@ -544,6 +632,9 @@ export function ajDeps(
     pageText: () => platform.browser.pageText(),
     pageUrl: async () => (await platform.browser.status()).url,
     python: (args) => runPython(args),
+    reviews: () => platform.dev.reviews(),
+    applyReview: (id) => platform.dev.apply(id),
+    rejectReview: (id) => platform.dev.reject(id),
     stateFile: 'data/aj.json',
     modeFile:
       process.env.LOCALTOOLS_TRADING_MODE_FILE ??

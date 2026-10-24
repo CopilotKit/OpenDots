@@ -20,6 +20,8 @@ import { SkillStore } from './skills.js';
 import { TeamBoardService, TeamBoardStore } from './team-board.js';
 import { teamToolEvidence } from './team-execution.js';
 import { DevWorkspace } from './dev-workspace.js';
+import { recordDeveloperChange } from './dev-changelog.js';
+import { existsSync } from 'node:fs';
 import { starterTeam } from './team.js';
 import { LiveBrowser } from './browser-live.js';
 import { SteeringInbox } from './steering.js';
@@ -73,6 +75,12 @@ export class Platform {
       this.memory.embed(texts),
     );
     this.dev = new DevWorkspace(process.cwd(), databasePath);
+    // Every Developer change, in the Developer section of the owner's vault.
+    const vault =
+      process.env.OPENDOTS_VAULT ?? 'C:/Users/inter/Desktop/MainAINotes';
+    if (databasePath !== ':memory:' && existsSync(vault))
+      this.dev.onChange = (review, event) =>
+        recordDeveloperChange(vault, review, event);
     config.dev = this.dev;
     config.memory = this.memory;
     config.skills = this.skills;

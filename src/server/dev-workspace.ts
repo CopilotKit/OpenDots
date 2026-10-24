@@ -106,6 +106,19 @@ export class DevWorkspace {
   private session?: string;
   private busy = false;
   private lastChecks = { text: 'Checks have not been run yet.', passed: false };
+  /** Told about every submit, apply and reject (the vault's Developer change log). */
+  onChange?: (
+    review: DevReview,
+    event: 'submitted' | 'applied' | 'rejected',
+  ) => void;
+  private tell(review: DevReview, event: 'submitted' | 'applied' | 'rejected') {
+    try {
+      this.onChange?.(review, event);
+    } catch (error) {
+      // The record failing must never undo or block the change itself.
+      console.error('Developer change log:', error);
+    }
+  }
   constructor(
     readonly repo: string,
     databasePath: string,
@@ -479,6 +492,7 @@ export class DevWorkspace {
     await this.removeWorktree();
     this.branch = undefined;
     this.db.exec('DELETE FROM dev_session');
+    this.tell(review, 'submitted');
     return review;
   }
   reviews(): DevReview[] {
@@ -525,6 +539,7 @@ export class DevWorkspace {
     this.db
       .prepare("UPDATE dev_reviews SET status='applied' WHERE id=?")
       .run(id);
+    this.tell({ ...review, status: 'applied' }, 'applied');
     return {
       applied: review.title,
       note: 'Restart OpenDots to load the change.',
@@ -536,6 +551,7 @@ export class DevWorkspace {
     this.db
       .prepare("UPDATE dev_reviews SET status='rejected' WHERE id=?")
       .run(id);
+    this.tell({ ...review, status: 'rejected' }, 'rejected');
     return { rejected: review.title };
   }
   /** Repo files and sizes for orientation (excludes generated folders). */
