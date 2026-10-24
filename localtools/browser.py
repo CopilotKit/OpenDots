@@ -137,6 +137,48 @@ def obvious_only() -> bool:
         return bool(json.loads(TRADING_MODE_FILE.read_text(encoding='utf-8')).get('obviousOnly'))
     except (OSError, ValueError, AttributeError):
         return OBVIOUS_ONLY
+
+
+# A run AJ started for the owner ({"run": {...}} in the same file, written by OpenDots'
+# /api/aj/pocket): the account and market the owner named and the time limit. Checked
+# by code before every trade, so a small model cannot trade the wrong account.
+def run_limits() -> dict:
+    try:
+        run = json.loads(TRADING_MODE_FILE.read_text(encoding='utf-8')).get('run')
+        return run if isinstance(run, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+# Which Pocket Option account the page is: the address says it ("/cabinet/demo-..."
+# is the demo account; other cabinet pages are real money), and the header's
+# "QT Demo" / "QT Real" must not contradict it. Anything unclear is None.
+ACCOUNT_JS = r"""() => {
+  const path = location.pathname, head = (document.body.innerText || '').slice(0, 5000);
+  const byUrl = /\/cabinet\/demo-/.test(path) ? 'demo' : /\/cabinet\//.test(path) ? 'real' : null;
+  const byText = /QT Demo/i.test(head) ? 'demo' : /QT Real/i.test(head) ? 'real' : null;
+  return byText && byUrl && byText !== byUrl ? null : byUrl;
+}"""
+
+
+def run_refusal(run: dict, real_pair: bool, account: str | None, now: float) -> str:
+    """Why this trade breaks the run's limits, or '' when it may go ahead."""
+    if not run:
+        return ''
+    if run.get('until') and now > float(run['until']):
+        return ('No trade was placed: the time limit the owner set for this run has passed. '
+                'Reply "TASK COMPLETE:" with the balance on the page.')
+    market = run.get('market')
+    if market in ('otc', 'real') and real_pair != (market == 'real'):
+        wanted = 'real (non-OTC)' if market == 'real' else 'OTC'
+        return (f'No trade was placed: the owner asked for {wanted} pairs only this run. Run browser_scan_pairs '
+                f'(it keeps to {wanted} pairs) and trade one of those.')
+    want = run.get('account')
+    if want in ('demo', 'real') and account != want:
+        shown = f'shows the {account} account' if account else 'does not show which account it is'
+        return (f'No trade was placed: the owner asked for the {want} account, but the page {shown}. '
+                'Do not switch accounts yourself: reply "TASK FAILED:" saying so.')
+    return ''
 # The trading session's start, peak and locked profit, read by OpenDots to end a
 # run at the trailing stop.
 TRADING_SESSION_FILE = Path(__file__).parent / 'output' / 'trading-session.json'
@@ -966,6 +1008,10 @@ def register(
             nonlocal seconds, period
             pair = await page.evaluate(ASSET_JS, {'mode': 'opener', 'name': ''}) or ''
             real = not pair.upper().endswith('OTC')
+            run = run_limits()
+            refusal = run_refusal(run, real, await page.evaluate(ACCOUNT_JS) if run else None, time.time())
+            if refusal:
+                raise ValueError(refusal)
             scan = trade_feed.get('scan')
             now = trade_feed['feed'].now()
             if scan and RESCAN_SECONDS and now - (scan.get('at') or now) > RESCAN_SECONDS:
@@ -1822,6 +1868,8 @@ def register(
         seconds = int(unit.group(1)) * {'m': 60, 'h': 3600}.get((unit.group(2) or 's')[0], 1) if unit else 11
         kind = str(market or 'same').strip().lower()
         kind = 'real' if kind in ('real', 'non-otc', 'nonotc', 'non otc', 'forex', 'live') else 'otc' if kind == 'otc' else 'same'
+        if run_limits().get('market') in ('otc', 'real'):
+            kind = run_limits()['market']  # The market the owner named for this run.
         if kind == 'real':
             seconds = 60 if seconds == 660 or obvious_only() else max(seconds, 60)  # Real pairs trade from 1 minute ("11m" is the OTC 11s habit); obvious turns over 1 minute.
         period = candle_period(seconds)

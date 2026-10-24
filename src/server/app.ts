@@ -1,6 +1,7 @@
 import { computerRoutes } from './computer-routes.js';
 import { browserRoutes } from './browser-routes.js';
 import { teamBoardRoutes } from './team-board-routes.js';
+import { ajDeps, ajRoutes } from './aj-routes.js';
 import {
   confirmationSchema,
   readConfirmationPolicy,
@@ -138,6 +139,8 @@ export function createApp({
   if (platform) app.route('/api', computerRoutes(platform.computers));
   if (platform) app.route('/api', browserRoutes(platform.browser));
   if (platform) app.route('/api', teamBoardRoutes(platform.teamBoard));
+  // AJ, the owner's voice assistant: reports, tasks for Dots, Pocket Option runs.
+  if (platform) app.route('/api', ajRoutes(ajDeps(platform, store, runner)));
   // Exit alerts from the options listener (localtools/options_watch.py), newest
   // last; the banner shows the ones after `since` (seconds).
   app.get('/api/options/alerts', (c) => {
