@@ -194,4 +194,8 @@ export class ConnectionStore {
       )
       .run(JSON.stringify(result), threadId, toolCallId);
   }
+  deleteThreadData(threadId: string) {
+    this.db.prepare('DELETE FROM mcp_approvals WHERE threadId=?').run(threadId);
+    this.db.prepare('DELETE FROM mcp_actions WHERE threadId=?').run(threadId);
+  }
 }
