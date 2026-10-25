@@ -79,12 +79,14 @@ def quotes() -> dict:
 def pocket() -> dict:
     with closing(sqlite3.connect(ROOT / 'data' / 'trade-journal.sqlite')) as db:
         def stats(where: str = '1=1', args=()):
-            row = db.execute(f"SELECT COUNT(*), SUM(result='win'), SUM(result='loss'), ROUND(COALESCE(SUM(profit), 0), 2), "
+            row = db.execute(f"SELECT COUNT(*), SUM(result='win'), SUM(result='loss'), ROUND(SUM(profit), 2), "
                              f"MAX(entry_ts) FROM trades WHERE result IN ('win', 'loss') AND {where}", args).fetchone()
             n, wins, losses, profit, last = row
-            return {'trades': n or 0, 'wins': wins or 0, 'losses': losses or 0, 'profit': profit or 0.0,
+            # None when no trade recorded a profit (the first 614 didn't), so it shows '-' rather than $0.00.
+            return {'trades': n or 0, 'wins': wins or 0, 'losses': losses or 0, 'profit': profit if n else 0.0,
                     'win_rate': round((wins or 0) / n, 3) if n else None, 'last': last}
-        by_source = {s: stats('source=?', (s,)) for (s,) in db.execute('SELECT DISTINCT source FROM trades')}
+        # IS, not =: trades from before source tagging have NULL, which = never matches (they showed as 0).
+        by_source = {s: stats('source IS ?', (s,)) for (s,) in db.execute('SELECT DISTINCT source FROM trades')}
         return {'all': stats(), 'day': stats('entry_ts >= ?', (time.time() - 86400,)), 'by_source': by_source}
 
 

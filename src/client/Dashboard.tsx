@@ -42,7 +42,7 @@ type Stats = {
   trades: number;
   wins: number;
   losses: number;
-  profit: number;
+  profit: number | null; // null when no trade recorded a profit
   win_rate: number | null;
   last: number | null;
 };
@@ -173,15 +173,17 @@ function Card({
   icon,
   accent,
   children,
+  wide = false,
 }: {
   title: string;
   icon: React.ReactNode;
   accent: string;
   children: React.ReactNode;
+  wide?: boolean;
 }) {
   return (
     <section
-      className="dash-card"
+      className={wide ? 'dash-card wide' : 'dash-card'}
       style={{ '--accent': accent } as React.CSSProperties}
     >
       <h3>
@@ -246,10 +248,16 @@ export function Dashboard() {
   const recorded = q.tickers
     ? Math.max(0, ...Object.values(q.tickers).map((t) => t.days))
     : 0;
+  // The journal tags trades with where they were placed; trades from before tagging
+  // began have no source. Showing only "site" (1,491 of 2,105) looked like missing trades.
+  const sourceLabel: Record<string, string> = {
+    site: 'Placed on the site',
+    null: 'Before tagging (Oct 18-19, profit not recorded)',
+  };
   const sources = p.by_source
-    ? Object.entries(p.by_source).filter(
-        ([name, v]) => v.trades && name !== 'null',
-      )
+    ? Object.entries(p.by_source)
+        .filter(([, v]) => v.trades)
+        .map(([name, v]) => [sourceLabel[name] ?? name, v] as const)
     : [];
 
   return (
@@ -509,7 +517,10 @@ export function Dashboard() {
             <div>
               <span>Hit rate</span>
               <strong>{pct(s.hit_rate)}</strong>
-              <small>expected {pct(s.expected_hit_rate)}</small>
+              <small>
+                expected {pct(s.expected_hit_rate)} · {s.parlays ?? 0} settled
+                {(s.parlays ?? 0) < 20 ? ', too few to judge' : ''}
+              </small>
             </div>
             <div>
               <span>Paper profit ($10)</span>
@@ -647,6 +658,7 @@ export function Dashboard() {
           title="Scheduled jobs"
           icon={<CalendarClock size={16} />}
           accent="#00e5ff"
+          wide
         >
           <Problem
             text={Array.isArray(board.jobs) ? undefined : board.jobs.error}

@@ -204,7 +204,7 @@ h3 {
   width: 9px;
   height: 9px;
 }
-.off {
+.online-dot.off {
   background: #b6a17b !important;
 }
 .nav-label {
@@ -4678,6 +4678,14 @@ h3 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 14px;
+}
+/* A long list on its own row: the jobs card sat alone in the last row with empty space beside it. */
+.dash-card.wide {
+  grid-column: 1 / -1;
+}
+.dash-card.wide .dash-jobs {
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  column-gap: 18px;
 }
 .dash-card {
   display: grid;
