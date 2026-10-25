@@ -43,6 +43,7 @@ import {
 import { Mascot } from './Mascot';
 import { Chat } from './Chat';
 import { ThreadList } from './ThreadList';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { ResultPane } from './ResultPane';
 import { TaskRow } from './TaskPresentation';
 import { TaskActions } from './TaskActions';
@@ -131,6 +132,10 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [taskDetail, setTaskDetail] = useState<Detail>();
+  const [pendingDelete, setPendingDelete] = useState<string>();
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [removingThread, setRemovingThread] = useState<string>();
   const refresh = useCallback(async () => {
     try {
       const [s, w] = await Promise.all([
@@ -245,6 +250,33 @@ export function App() {
       );
     } finally {
       setBusy(false);
+    }
+  };
+  const confirmDeleteThread = async () => {
+    if (!pendingDelete || deleting) return;
+    const threadId = pendingDelete;
+    setDeleting(true);
+    setDeleteError('');
+    setRemovingThread(threadId);
+    try {
+      // Keep the fading item mounted long enough for the removal animation.
+      await Promise.all([
+        api(`/threads/${threadId}`, 'DELETE', {}),
+        new Promise((resolve) => setTimeout(resolve, 280)),
+      ]);
+      await refresh();
+      setSelectedThread((current) =>
+        current === threadId ? undefined : current,
+      );
+      setPendingDelete(undefined);
+      setRemovingThread(undefined);
+    } catch (e) {
+      setRemovingThread(undefined);
+      setDeleteError(
+        e instanceof Error ? e.message : 'Could not delete the conversation.',
+      );
+    } finally {
+      setDeleting(false);
     }
   };
   if (needsAuth)
@@ -455,6 +487,7 @@ export function App() {
             dots={workspace.dots}
             local={workspace.conversations}
             selected={view === 'chat' ? selectedThread : undefined}
+            removing={removingThread}
             onSelect={(id) => {
               const conversation = workspace.conversations.find(
                 (item) => item.id === id,
@@ -634,6 +667,10 @@ export function App() {
                   onSchedule={() =>
                     setDialog({ type: 'schedule', threadId: thread.id })
                   }
+                  onDeleteThread={() => {
+                    setDeleteError('');
+                    setPendingDelete(thread.id);
+                  }}
                 />
               ) : (
                 <div className="new-conversation">
@@ -951,6 +988,25 @@ export function App() {
           workspace={workspace}
           onClose={() => setDialog(undefined)}
           mutate={mutate}
+        />
+      )}
+      {pendingDelete && (
+        <ConfirmDeleteModal
+          title={
+            workspace.conversations.find((item) => item.id === pendingDelete)
+              ?.title ?? 'this conversation'
+          }
+          busy={deleting}
+          error={deleteError}
+          onCancel={
+            deleting
+              ? () => undefined
+              : () => {
+                  setPendingDelete(undefined);
+                  setDeleteError('');
+                }
+          }
+          onConfirm={() => void confirmDeleteThread()}
         />
       )}
     </div>

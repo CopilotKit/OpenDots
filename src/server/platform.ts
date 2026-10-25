@@ -165,6 +165,27 @@ export class Platform {
     }
     return this.workspace.bindThread(id, dotId, title);
   }
+  async deleteConversation(threadId: string): Promise<void> {
+    this.requireReady();
+    const thread = this.workspace.requireThread(threadId);
+    try {
+      await this.intelligence!.deleteThread({
+        threadId,
+        userId: this.workspace.ownerId,
+        agentId: thread.dotId,
+      });
+    } catch (error) {
+      // A retried delete may find the thread already gone from the platform.
+      // Treat that as success and finish the local cascade instead of failing.
+      if (!(
+        error instanceof Error &&
+        'status' in error &&
+        error.status === 404
+      ))
+        throw error;
+    }
+    this.workspace.deleteThread(threadId);
+  }
   async history(threadId: string): Promise<string> {
     this.requireReady();
     this.workspace.requireThread(threadId);

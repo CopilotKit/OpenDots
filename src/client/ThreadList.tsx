@@ -6,6 +6,7 @@ export function ThreadList({
   dotId,
   local,
   selected,
+  removing,
   onSelect,
   onNew,
 }: {
@@ -13,6 +14,8 @@ export function ThreadList({
   dotId: string;
   local: Conversation[];
   selected?: string;
+  /** Thread id currently being deleted; the item fades out while it goes. */
+  removing?: string;
   onSelect: (id: string) => void;
   onNew: () => void;
 }) {
@@ -44,8 +47,9 @@ export function ThreadList({
         return (
           <button
             key={thread.id}
-            className={`nav-item ${selected === thread.id ? 'active' : ''}`}
+            className={`nav-item ${selected === thread.id ? 'active' : ''} ${removing === thread.id ? 'removing' : ''}`}
             onClick={() => onSelect(thread.id)}
+            disabled={removing === thread.id}
           >
             <MessageCircle size={15} />
             <span className="thread-summary">
