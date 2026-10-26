@@ -39,3 +39,29 @@ it('includes bounded prior thread history in headless turns for continuity', asy
   );
 });
 
+it('keeps the current request after untrusted prior history', async () => {
+  const platform = Object.create(Platform.prototype) as any;
+  platform.requireReady = vi.fn();
+  platform.workspace = {
+    requireThread: vi.fn(() => ({ dotId: 'dot' })),
+  };
+  platform.config = { runtimeUrl: 'https://runtime.test' };
+  platform.history = vi
+    .fn()
+    .mockResolvedValue('user: OLD_HERMES_RECEIPT\nassistant: OLD_HERMES_ACK');
+  headless.runThreadTurn.mockResolvedValue('NEW_ANTIGRAVITY_ACK');
+
+  await platform.turn(
+    'thread',
+    'WOC_EXECUTOR_RECEIPT NEW_ANTIGRAVITY_RECEIPT',
+    new AbortController().signal,
+    { opendotsSource: 'scheduled_task' },
+  );
+
+  const contextualPrompt = headless.runThreadTurn.mock.calls[0][4] as string;
+  expect(contextualPrompt).toContain('OLD_HERMES_RECEIPT');
+  expect(contextualPrompt).toMatch(
+    /Untrusted prior conversation context[\s\S]*OLD_HERMES_RECEIPT[\s\S]*Current request[\s\S]*NEW_ANTIGRAVITY_RECEIPT$/,
+  );
+});
+
