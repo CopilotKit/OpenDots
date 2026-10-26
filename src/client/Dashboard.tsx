@@ -83,6 +83,7 @@ type Board = {
       pnl: number;
     }[];
     weekly_puts?: WeeklyPuts;
+    by_kind?: Record<string, { taken?: number }>;
     market_open: boolean;
   };
   sports: {
@@ -96,9 +97,16 @@ type Board = {
     credits_left: number | null;
     last_scan: string | null;
     games_scanned: number;
+    real_bets_placed?: number;
     paper_edges?: Record<
       string,
-      { bets: number; open: number; win_rate: number | null; profit: number }
+      {
+        bets: number;
+        open: number;
+        win_rate: number | null;
+        profit: number;
+        line_moved_our_way?: number;
+      }
     >;
     recent: {
       id: string;
@@ -139,6 +147,200 @@ const pct = (v: number | null | undefined, digits = 0) =>
   v == null ? '-' : `${(v * 100).toFixed(digits)}%`;
 const tone = (v: number | null | undefined) =>
   v == null ? '' : v > 0 ? 'up' : v < 0 ? 'down' : '';
+
+// What decides each test. The cards below show the numbers; these turn them into a verdict
+// with the bar it has to clear, so "is this working?" has one answer per line.
+const RULES = {
+  pocketBreakEven: 0.52, // At Pocket Option's ~92% payout a trade must win 52% to break even.
+  pocketEnough: 300, // Demo trades before a verdict on a rule.
+  optionsEnough: 100, // Scored picks before trusting a setup (target: 80% wins with profit).
+  optionsWinGoal: 0.8,
+  weeklyEnough: 20, // Closed weekly put spreads before comparing with the lab's 87%.
+  betsEnough: 50, // Settled bets before judging a sports lead.
+  lineBreakEven: 0.524, // Winning share needed at -110 odds.
+};
+
+type Verdict = {
+  name: string;
+  status: 'stop' | 'early' | 'waiting' | 'good';
+  label: string;
+  evidence: string;
+  decides: string;
+  next: string;
+};
+
+function verdicts(board: Board): Verdict[] {
+  const out: Verdict[] = [];
+  const p = board.pocket?.all;
+  if (p?.trades) {
+    const enough = p.trades >= RULES.pocketEnough;
+    const passing =
+      (p.win_rate ?? 0) >= RULES.pocketBreakEven && (p.profit ?? 0) > 0;
+    out.push({
+      name: 'Pocket Option (demo)',
+      status: !enough ? 'early' : passing ? 'good' : 'stop',
+      label: !enough ? 'Too early' : passing ? 'Passing' : 'Losing',
+      evidence: `${p.trades.toLocaleString()} trades, ${pct(p.win_rate, 1)} wins, ${money(p.profit)}${
+        board.pocket.day?.trades ? '' : ' · not trading now'
+      }`,
+      decides: `${pct(RULES.pocketBreakEven)}+ wins and a profit over ${RULES.pocketEnough}+ demo trades`,
+      next: passing
+        ? 'Keep testing on demo; real money only after you decide'
+        : 'No edge: keep it off real money. A new rule gets its own 300-trade demo test.',
+    });
+  }
+  const record = board.options?.record ?? {};
+  const scored = Object.values(record).reduce((n, r) => n + (r.scored ?? 0), 0);
+  const detail = Object.entries(record)
+    .map(([k, r]) =>
+      r.scored ? `${k} ${pct(r.win_rate)} of ${r.scored}` : `${k} none yet`,
+    )
+    .join(' · ');
+  out.push({
+    name: 'Options autopilot (shadow)',
+    status:
+      scored === 0
+        ? 'waiting'
+        : scored < RULES.optionsEnough
+          ? 'early'
+          : 'good',
+    label:
+      scored < RULES.optionsEnough
+        ? `${scored ? 'Too early' : 'Waiting'}: ${scored} of ${RULES.optionsEnough}`
+        : 'Enough data',
+    evidence: detail || 'No picks scored yet',
+    decides: `${RULES.optionsEnough} scored picks at ${pct(RULES.optionsWinGoal)}+ wins with a profit`,
+    next: 'Robinhood funding waits for this record; picks only come when an edge is active',
+  });
+  const w = board.options?.weekly_puts;
+  if (w) {
+    out.push({
+      name: 'Weekly put spread (paper)',
+      status:
+        w.trades === 0
+          ? 'waiting'
+          : w.trades < RULES.weeklyEnough
+            ? 'early'
+            : 'good',
+      label:
+        w.trades === 0
+          ? 'Waiting for first result'
+          : `Too early: ${w.trades} of ${RULES.weeklyEnough}`,
+      evidence: w.open
+        ? `Open ${w.open.short}/${w.open.long} put, credit $${w.open.credit.toFixed(2)}, expires ${w.open.expiry}` +
+          (w.trades ? ` · ${w.wins}/${w.trades} won, ${money(w.profit)}` : '')
+        : `${w.wins}/${w.trades} won, ${money(w.profit)}`,
+      decides: `${RULES.weeklyEnough} closed trades near the lab's 87% wins`,
+      next: w.open
+        ? `First result at expiry, ${w.open.expiry}`
+        : 'Next one opens when SPY is above its 200-day average again',
+    });
+  }
+  const s = board.sports;
+  if (s) {
+    const hit = s.hit_rate ?? 0;
+    out.push({
+      name: 'NBA prop parlays (paper)',
+      status:
+        s.parlays === 0
+          ? 'waiting'
+          : s.parlays < RULES.betsEnough
+            ? 'early'
+            : hit >= (s.expected_hit_rate ?? 1)
+              ? 'good'
+              : 'stop',
+      label:
+        s.parlays < RULES.betsEnough
+          ? `Too early: ${s.parlays} of ${RULES.betsEnough}`
+          : 'Enough data',
+      evidence: `${s.parlays} settled, ${pct(s.hit_rate)} hit vs ${pct(s.expected_hit_rate)} expected, ${money(s.profit)}`,
+      decides: `${RULES.betsEnough} settled parlays hitting at least the model's expected rate`,
+      next: 'Picks daily at 5:30 pm, settled at 9 am',
+    });
+    for (const [name, e] of Object.entries(s.paper_edges ?? {})) {
+      const enough = e.bets >= RULES.betsEnough;
+      const passing = (e.win_rate ?? 0) >= RULES.lineBreakEven && e.profit > 0;
+      out.push({
+        name: `${name} lead (paper)`,
+        status:
+          e.bets === 0
+            ? 'waiting'
+            : !enough
+              ? 'early'
+              : passing
+                ? 'good'
+                : 'stop',
+        label:
+          e.bets === 0
+            ? `Waiting: ${e.open} open`
+            : !enough
+              ? `Too early: ${e.bets} of ${RULES.betsEnough}`
+              : passing
+                ? 'Passing'
+                : 'Losing',
+        evidence:
+          e.bets === 0
+            ? `${e.open} bets open, none settled`
+            : `${e.bets} settled, ${pct(e.win_rate)} wins, ${money(e.profit)}${
+                e.line_moved_our_way != null
+                  ? ` · line moved our way ${pct(e.line_moved_our_way)}`
+                  : ''
+              }`,
+        decides: `${pct(RULES.lineBreakEven, 1)}+ wins over ${RULES.betsEnough} settled bets`,
+        next:
+          e.bets && (e.win_rate ?? 0) < RULES.lineBreakEven
+            ? 'Under break-even so far; keep it on paper'
+            : 'Keep collecting',
+      });
+    }
+  }
+  return out;
+}
+
+function realMoney(board: Board) {
+  const taken = Object.values(board.options?.by_kind ?? {}).reduce(
+    (n, k) => n + (k.taken ?? 0),
+    0,
+  );
+  const bets = board.sports?.real_bets_placed ?? 0;
+  return taken + bets === 0
+    ? 'No real money in play: every test below is paper or demo.'
+    : `Real money: ${taken} option trades taken, ${bets} real bets placed.`;
+}
+
+function Verdicts({ board }: { board: Board }) {
+  const rows = verdicts(board);
+  return (
+    <section className="dash-verdicts">
+      <h3>Where each test stands</h3>
+      <p className="dash-quiet">{realMoney(board)}</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Test</th>
+            <th>Verdict</th>
+            <th>So far</th>
+            <th>What decides it</th>
+            <th>Next</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.name}>
+              <td>{r.name}</td>
+              <td>
+                <span className={`dash-verdict ${r.status}`}>{r.label}</span>
+              </td>
+              <td>{r.evidence}</td>
+              <td>{r.decides}</td>
+              <td>{r.next}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
 
 function Bar({
   value,
@@ -345,6 +547,8 @@ export function Dashboard() {
           </small>
         </div>
       </div>
+
+      <Verdicts board={board} />
 
       <div className="dash-grid">
         <Card
