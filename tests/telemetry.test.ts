@@ -61,7 +61,10 @@ async function captureRuntime() {
       new Request('http://localhost/api/copilotkit/agent/' + dot.id + '/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: 'fixture-thread', messages: 'invalid' }),
+        body: JSON.stringify({
+          threadId: 'fixture-thread',
+          messages: 'invalid',
+        }),
       }),
     );
     if (response.status !== 400)

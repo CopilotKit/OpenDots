@@ -1,25 +1,33 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 
 const headless = vi.hoisted(() => ({ runThreadTurn: vi.fn() }));
-vi.mock('../src/server/headless.js', () => ({ runThreadTurn: headless.runThreadTurn }));
+vi.mock('../src/server/headless.js', () => ({
+  runThreadTurn: headless.runThreadTurn,
+}));
 
 import { Platform } from '../src/server/platform.js';
 
 beforeEach(() => vi.clearAllMocks());
 
-it('includes bounded prior thread history in headless turns for continuity', async () => {
-  const platform = Object.create(Platform.prototype) as any;
-  platform.requireReady = vi.fn();
-  platform.workspace = {
-    requireThread: vi.fn(() => ({ dotId: 'dot' })),
+function platformHarness(history: string) {
+  return {
+    requireReady: vi.fn(),
+    workspace: {
+      requireThread: vi.fn(() => ({ dotId: 'dot' })),
+    },
+    config: { runtimeUrl: 'https://runtime.test' },
+    history: vi.fn().mockResolvedValue(history),
   };
-  platform.config = { runtimeUrl: 'https://runtime.test' };
-  platform.history = vi
-    .fn()
-    .mockResolvedValue('user: remember CONTEXT_TOKEN_7319\nassistant: CONTEXT_TOKEN_7319');
+}
+
+it('includes bounded prior thread history in headless turns for continuity', async () => {
+  const platform = platformHarness(
+    'user: remember CONTEXT_TOKEN_7319\nassistant: CONTEXT_TOKEN_7319',
+  );
   headless.runThreadTurn.mockResolvedValue('CONTEXT_TOKEN_7319');
 
-  const result = await platform.turn(
+  const result = await Platform.prototype.turn.call(
+    platform as unknown as Platform,
     'thread',
     'What was the previous token?',
     new AbortController().signal,
@@ -40,18 +48,13 @@ it('includes bounded prior thread history in headless turns for continuity', asy
 });
 
 it('keeps the current request after untrusted prior history', async () => {
-  const platform = Object.create(Platform.prototype) as any;
-  platform.requireReady = vi.fn();
-  platform.workspace = {
-    requireThread: vi.fn(() => ({ dotId: 'dot' })),
-  };
-  platform.config = { runtimeUrl: 'https://runtime.test' };
-  platform.history = vi
-    .fn()
-    .mockResolvedValue('user: OLD_HERMES_RECEIPT\nassistant: OLD_HERMES_ACK');
+  const platform = platformHarness(
+    'user: OLD_HERMES_RECEIPT\nassistant: OLD_HERMES_ACK',
+  );
   headless.runThreadTurn.mockResolvedValue('NEW_ANTIGRAVITY_ACK');
 
-  await platform.turn(
+  await Platform.prototype.turn.call(
+    platform as unknown as Platform,
     'thread',
     'WOC_EXECUTOR_RECEIPT NEW_ANTIGRAVITY_RECEIPT',
     new AbortController().signal,
