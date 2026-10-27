@@ -64,4 +64,3 @@ it('keeps the current request after untrusted prior history', async () => {
     /Untrusted prior conversation context[\s\S]*OLD_HERMES_RECEIPT[\s\S]*Current request[\s\S]*NEW_ANTIGRAVITY_RECEIPT$/,
   );
 });
-
