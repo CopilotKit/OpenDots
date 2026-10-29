@@ -11,6 +11,7 @@ Before opening a pull request:
 - Add regression coverage for changes to durable jobs, permissions, cancellation, or API behavior.
 - Run the repository's formatter, lint, typecheck, tests, and production build.
 - Exercise changed UI behavior and check narrow-screen layouts and keyboard access.
+- Browser layout regressions use Playwright's bundled Chromium, or installed Chrome when the bundled executable is missing. If neither is available, run `npx playwright install chromium --only-shell` before testing. Tests launch a fresh temporary browser profile.
 - Update setup instructions if configuration or dependencies change.
 - Keep credentials, local databases, generated test reports, and internal planning notes out of commits.
 

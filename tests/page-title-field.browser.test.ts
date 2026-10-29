@@ -6,10 +6,56 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 const LONG_TITLE =
   'AI Coworkers: OpenAI Dots vs Meta Muse vs OpenDots compared in depth';
+
+async function launchTitleBrowser() {
+  try {
+    return await chromium.launch();
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !error.message.includes("Executable doesn't exist at")
+    ) {
+      throw error;
+    }
+    // Hosted CI images include Chrome even when Playwright's cache is empty.
+    // Playwright still creates a fresh temporary profile for this launch.
+    return chromium.launch({ channel: 'chrome' });
+  }
+}
+
+it('falls back to Chrome when the bundled Chromium executable is missing', async () => {
+  const browser = {} as Awaited<ReturnType<typeof chromium.launch>>;
+  const launch = vi
+    .spyOn(chromium, 'launch')
+    .mockRejectedValueOnce(
+      new Error("Executable doesn't exist at /cache/chromium"),
+    )
+    .mockResolvedValueOnce(browser);
+  try {
+    expect(await launchTitleBrowser()).toBe(browser);
+    expect(launch.mock.calls).toEqual([[], [{ channel: 'chrome' }]]);
+  } finally {
+    launch.mockRestore();
+  }
+});
+
+it('does not hide other browser launch failures with a fallback', async () => {
+  const launch = vi
+    .spyOn(chromium, 'launch')
+    .mockRejectedValue(new Error('browser sandbox failed'));
+  try {
+    await expect(launchTitleBrowser()).rejects.toThrow(
+      'browser sandbox failed',
+    );
+    expect(launch).toHaveBeenCalledTimes(1);
+  } finally {
+    launch.mockRestore();
+  }
+});
 
 function buildHarness(): string {
   const dir = mkdtempSync(join(tmpdir(), 'title-field-'));
@@ -51,7 +97,7 @@ ${titleRule}
 }
 
 it('recalculates the fitted title height when the field width shrinks', async () => {
-  const browser = await chromium.launch();
+  const browser = await launchTitleBrowser();
   try {
     const page = await browser.newPage({
       viewport: { width: 1440, height: 900 },
