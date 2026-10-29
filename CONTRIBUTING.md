@@ -12,6 +12,7 @@ Before opening a pull request:
 - Run the repository's formatter, lint, typecheck, tests, and production build.
 - Run `npm run knip` and `npm run knip:production`; see [the Knip guide](docs/knip.md) for triage and entrypoint maintenance. During adoption, CI reports findings without blocking on them.
 - Exercise changed UI behavior and check narrow-screen layouts and keyboard access.
+- Browser layout regressions use Playwright's bundled Chromium, or installed Chrome when the bundled executable is missing. If neither is available, run `npx playwright install chromium --only-shell` before testing. Tests launch a fresh temporary browser profile.
 - Update setup instructions if configuration or dependencies change.
 - Keep credentials, local databases, generated test reports, and internal planning notes out of commits.
 
