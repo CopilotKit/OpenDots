@@ -10,8 +10,8 @@ import {
   Clock3,
   Code2,
   Folder,
+  Link2,
   Menu,
-  MessageCircle,
   Monitor,
   MoreHorizontal,
   Pause,
@@ -48,6 +48,7 @@ import { TaskRow } from './TaskPresentation';
 import { TaskActions } from './TaskActions';
 import { WorkspaceDialog, type Dialog } from './WorkspaceDialog';
 import { submitComposerOnEnter } from './chat-composer';
+import { SpecialistPreview } from './SpecialistPreview';
 
 function describeFailure(error: unknown, fallback: string) {
   return {
@@ -127,6 +128,8 @@ export function App() {
   const [pane, setPane] = useState(false);
   const [capture, setCapture] = useState<Result>();
   const [prompt, setPrompt] = useState('');
+  const [source, setSource] = useState('');
+  const [sourceOpen, setSourceOpen] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
@@ -237,6 +240,8 @@ export function App() {
       setSelectedThread(next.id);
       setPendingPrompt(text);
       setPrompt('');
+      setSource('');
+      setSourceOpen(false);
       setView('chat');
       setMobile(false);
     } catch (e) {
@@ -634,65 +639,109 @@ export function App() {
                   onSchedule={() =>
                     setDialog({ type: 'schedule', threadId: thread.id })
                   }
+                  onEditDot={() =>
+                    setDialog({ type: 'dot', dot, spaceId: dot.spaceId })
+                  }
                 />
               ) : (
                 <div className="new-conversation">
-                  <div className="empty-chat-persona">
-                    <Mascot
-                      identity={dot.id}
-                      name={dot.name}
-                      state={state.settings.paused ? 'paused' : 'idle'}
-                    />
-                    <h2>{dot.name}</h2>
-                    <p>{dot.instructions}</p>
-                    <button
-                      className="text-button"
-                      onClick={() =>
-                        setDialog({ type: 'dot', dot, spaceId: dot.spaceId })
-                      }
-                    >
-                      Edit specialist <MoreHorizontal size={14} />
-                    </button>
-                  </div>
-                  {!configured && (
-                    <div className="setup-card">
-                      <span className="setup-icon">
-                        <Settings2 size={20} />
-                      </span>
-                      <div>
-                        <strong>Connect your Dot</strong>
-                        <p>
-                          Connect your model and conversation service in
-                          Settings to start chatting. Your Spaces and Dot
-                          preferences are ready to use.
-                        </p>
-                        <p>
-                          Setup and usage metadata is collected by default.{' '}
+                  <div className="new-conversation-body">
+                    <div className="empty-chat-persona">
+                      <Mascot
+                        identity={dot.id}
+                        name={dot.name}
+                        state={state.settings.paused ? 'paused' : 'idle'}
+                      />
+                      <h2>{dot.name}</h2>
+                      <SpecialistPreview
+                        instructions={dot.instructions}
+                        onEdit={() =>
+                          setDialog({ type: 'dot', dot, spaceId: dot.spaceId })
+                        }
+                      />
+                    </div>
+                    {!configured && (
+                      <div className="setup-card">
+                        <span className="setup-icon">
+                          <Settings2 size={20} />
+                        </span>
+                        <div>
+                          <strong>Connect your Dot</strong>
+                          <p>
+                            Connect your model and conversation service in
+                            Settings to start chatting. Your Spaces and Dot
+                            preferences are ready to use.
+                          </p>
+                          <p>
+                            Setup and usage metadata is collected by default.{' '}
+                            <a
+                              href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP-TELEMETRY.md"
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Tracking and opt-out details
+                            </a>
+                          </p>
                           <a
-                            href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP-TELEMETRY.md"
+                            href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP.md"
                             target="_blank"
                             rel="noreferrer"
                           >
-                            Tracking and opt-out details
+                            Open the setup guide <ArrowUpRight size={12} />
                           </a>
-                        </p>
-                        <a
-                          href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP.md"
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Open the setup guide <ArrowUpRight size={12} />
-                        </a>
+                        </div>
                       </div>
+                    )}
+                    <div className="starter-suggestions">
+                      {[
+                        'Help me think this through',
+                        'Research a public page',
+                        'Make a plan I can follow',
+                      ].map((text) => (
+                        <button
+                          key={text}
+                          disabled={!configured}
+                          onClick={() => setPrompt(text)}
+                        >
+                          {text}
+                          <ArrowUpRight size={12} />
+                        </button>
+                      ))}
                     </div>
-                  )}
+                  </div>
                   <form
                     className="composer"
                     onSubmit={(e) => {
                       e.preventDefault();
-                      void newConversation(prompt);
+                      void newConversation(
+                        `${source ? `From ${source}:\n\n` : ''}${prompt}`,
+                      );
                     }}
                   >
+                    {sourceOpen && (
+                      <div className="source-input">
+                        <Link2 size={15} />
+                        <input
+                          aria-label="Source page URL"
+                          type="url"
+                          value={source}
+                          onChange={(e) => setSource(e.target.value)}
+                          placeholder="https://example.com/page"
+                          disabled={!configured}
+                        />
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label="Remove source"
+                          onClick={() => {
+                            setSourceOpen(false);
+                            setSource('');
+                          }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )}
                     <textarea
                       aria-label="Start a conversation"
                       placeholder={
@@ -712,10 +761,15 @@ export function App() {
                       disabled={!configured}
                     />
                     <div className="composer-bottom">
-                      <span>
-                        <MessageCircle size={14} />
-                        Text and calls, one continuing conversation
-                      </span>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label="Add source page link"
+                        disabled={!configured}
+                        onClick={() => setSourceOpen(!sourceOpen)}
+                      >
+                        <Link2 size={19} />
+                      </button>
                       <button
                         className="send-button"
                         aria-label="Start conversation"
@@ -725,22 +779,6 @@ export function App() {
                       </button>
                     </div>
                   </form>
-                  <div className="starter-suggestions">
-                    {[
-                      'Help me think this through',
-                      'Research a public page',
-                      'Make a plan I can follow',
-                    ].map((text) => (
-                      <button
-                        key={text}
-                        disabled={!configured}
-                        onClick={() => setPrompt(text)}
-                      >
-                        {text}
-                        <ArrowUpRight size={12} />
-                      </button>
-                    ))}
-                  </div>
                   <div className="connection-note">
                     <span
                       className={`online-dot ${workspace.setup.slack === 'online' ? '' : 'off'}`}
