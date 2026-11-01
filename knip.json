@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/{server,browser}/index.ts!",
+    "deployment/computers/harden-supervisor.mjs!"
+  ],
+  "project": [
+    "src/{client,server,browser,shared}/**/*.{ts,tsx}!",
+    "src/build/**/*.ts",
+    "tests/**/*.{ts,tsx,js}",
+    "public/**/*.js!",
+    "deployment/computers/**/*.mjs!",
+    "*.{js,ts}"
+  ]
+}

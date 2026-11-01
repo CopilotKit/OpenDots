@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { z } from 'zod';
@@ -108,6 +111,36 @@ export function sourcesFromResult(
     );
   return sources;
 }
+// src/server (tsx and tests) and dist/server/server (the production build) both
+// sit below the repository package.json. Walk up so either layout resolves it.
+function opendotsPackageVersion(): string {
+  let directory = dirname(fileURLToPath(import.meta.url));
+  for (let depth = 0; depth < 8; depth += 1) {
+    try {
+      const parsed: unknown = JSON.parse(
+        readFileSync(join(directory, 'package.json'), 'utf8'),
+      );
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        'name' in parsed &&
+        parsed.name === 'opendots' &&
+        'version' in parsed &&
+        typeof parsed.version === 'string' &&
+        parsed.version.length > 0
+      )
+        return parsed.version;
+    } catch (error) {
+      const missing =
+        error instanceof Error && 'code' in error && error.code === 'ENOENT';
+      if (!missing) throw error;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  throw new Error('Could not read the OpenDots version from package.json.');
+}
 export async function parallelSources(
   request: {
     objective: string;
@@ -122,14 +155,19 @@ export async function parallelSources(
   signal.throwIfAborted();
   if ((config.webSearchProvider ?? 'parallel') !== 'parallel')
     throw new Error('Parallel web research is disabled.');
-  const client = new Client({ name: 'opendots', version: '0.1.0' });
+  const version = opendotsPackageVersion();
+  const client = new Client({ name: 'opendots', version });
   const boundedSignal = AbortSignal.any([signal, AbortSignal.timeout(60_000)]);
+  // Identify aggregate project usage, without user or installation identifiers.
+  const headers: Record<string, string> = {
+    'User-Agent': `opendots/${version}`,
+  };
+  if (config.parallelApiKey)
+    headers.Authorization = `Bearer ${config.parallelApiKey}`;
   const transport = new StreamableHTTPClientTransport(
     new URL('https://search.parallel.ai/mcp'),
     {
-      requestInit: config.parallelApiKey
-        ? { headers: { Authorization: `Bearer ${config.parallelApiKey}` } }
-        : undefined,
+      requestInit: { headers },
       fetch: (url, init) =>
         fetch(url, {
           ...init,
