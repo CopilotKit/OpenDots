@@ -2,14 +2,14 @@
 
 # OpenDots now lives in OpenBot
 
-**[OpenBot](https://github.com/CopilotKit/OpenBot) is where OpenDots is maintained from here on.** The OpenDots look is a skin built into OpenBot, alongside OpenMuse and OpenDuet.
+**[OpenBot](https://github.com/CopilotKit/OpenBot) is the source of truth.** OpenDots is a skin on top of OpenBot, alongside OpenMuse and OpenDuet.
 
 [**Get OpenBot**](https://github.com/CopilotKit/OpenBot) · [**copilotkit.ai/openbot**](https://www.copilotkit.ai/openbot) · [**Talk to an engineer**](https://www.copilotkit.ai/talk-to-an-engineer?ref=opendots_readme)
 
 </div>
 
 > [!IMPORTANT]
-> This repository is no longer maintained. New features and fixes happen in [OpenBot](https://github.com/CopilotKit/OpenBot). The original OpenDots README is kept below for reference.
+> This repository is community maintained. New features and fixes land in [OpenBot](https://github.com/CopilotKit/OpenBot), which CopilotKit maintains. The original OpenDots README is kept below for reference.
 
 ## Run OpenDots inside OpenBot
 
