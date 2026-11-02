@@ -1,5 +1,35 @@
 <div align="center">
 
+# OpenDots now lives in OpenBot
+
+**[OpenBot](https://github.com/CopilotKit/OpenBot) is where OpenDots is maintained from here on.** The OpenDots look is a skin built into OpenBot, alongside OpenMuse and OpenDuet.
+
+[**Get OpenBot**](https://github.com/CopilotKit/OpenBot) · [**copilotkit.ai/openbot**](https://www.copilotkit.ai/openbot) · [**Talk to an engineer**](https://www.copilotkit.ai/talk-to-an-engineer?ref=opendots_readme)
+
+</div>
+
+> [!IMPORTANT]
+> This repository is no longer maintained. New features and fixes happen in [OpenBot](https://github.com/CopilotKit/OpenBot). The original OpenDots README is kept below for reference.
+
+## Run OpenDots inside OpenBot
+
+1. Clone and start [OpenBot](https://github.com/CopilotKit/OpenBot#quick-start).
+2. Open **Settings**, and under **Skin** choose **OpenDots**.
+
+Your skin is saved to your account, so it follows you to every device you sign in from.
+
+## Why OpenBot
+
+- **Extensible.** Bring any agent that speaks [AG-UI](https://github.com/ag-ui-protocol/ag-ui): LangGraph, Mastra, CrewAI, Pydantic AI, Google ADK, or one written by hand. Add your own Bots, channels, tools and skills.
+- **White-label.** Rename it and make it look like your own product, down to the screen.
+- **Your data stays yours.** It runs on your own infrastructure, the data sits in your PostgreSQL, and you choose the model.
+
+For enterprises that want to own their data, our engineers can stand OpenBot up inside your infrastructure and make it your own. [**Start the conversation**](https://www.copilotkit.ai/talk-to-an-engineer?ref=opendots_readme).
+
+---
+
+<div align="center">
+
 # OpenDots
 
 ### Always-on AI coworkers that move between text, calls, and Slack.
