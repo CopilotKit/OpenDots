@@ -11,7 +11,12 @@ import {
 } from '../src/server/connections.js';
 import { connectionTools } from '../src/server/connection-tools.js';
 import { connectionRoutes } from '../src/server/connection-routes.js';
+import {
+  ConnectionStore,
+  INTERRUPTED_ACTION_THRESHOLD_MS,
+} from '../src/server/connection-store.js';
 import type { Connection } from '../src/shared/connection-types.js';
+import { DatabaseSync } from 'node:sqlite';
 const resources: (() => void)[] = [];
 afterEach(() => resources.splice(0).forEach((close) => close()));
 function fixture({ twin = false } = {}) {
@@ -485,6 +490,138 @@ it('returns a saved result only for the approval that produced it', async () => 
   });
   expect(sent).toHaveBeenCalledOnce();
   expect(sent.mock.calls[0][0]).toMatchObject({ to: 'alice@example.com' });
+});
+
+it('surfaces stale running claims and lets only their approval retry', async () => {
+  const { dot, connections, request, sent } = fixture();
+  const connection = await connections.add(dot.id, {
+    name: 'Mail',
+    url: 'https://mail.example.com/mcp',
+  });
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    const startedAt = Date.now();
+    const alice = await requestApproval(
+      connections,
+      dot.id,
+      'mail__send_mail',
+      { to: 'alice@example.com', body: 'Hi' },
+    );
+    const bob = await requestApproval(connections, dot.id, 'mail__send_mail', {
+      to: 'bob@example.com',
+      body: 'Hi',
+    });
+    expect(
+      connections.store.claimAction(
+        'thread',
+        'tc1',
+        alice,
+        connection.id,
+        'send mail!',
+      ),
+    ).toBe(true);
+    const approve = (approvalId: string) =>
+      request('/conversations/thread/connection-actions', 'POST', {
+        toolCallId: 'tc1',
+        approvalId,
+      });
+
+    const running = await request(
+      '/conversations/thread/connection-actions/tc1',
+    );
+    expect(await running.json()).toMatchObject({
+      approvalId: alice,
+      status: 'running',
+      result: null,
+    });
+    const tooSoon = await approve(alice);
+    expect(tooSoon.status).toBe(409);
+    expect(await tooSoon.json()).toEqual({
+      error: 'This action is already running.',
+    });
+
+    const stolen = await approve(bob);
+    expect(stolen.status).toBe(409);
+    expect(await stolen.json()).toEqual({
+      error: 'This action belongs to a different approval request.',
+    });
+    expect(sent).not.toHaveBeenCalled();
+
+    vi.setSystemTime(startedAt + INTERRUPTED_ACTION_THRESHOLD_MS - 1);
+    const stillRunning = await request(
+      '/conversations/thread/connection-actions/tc1',
+    );
+    expect(await stillRunning.json()).toMatchObject({ status: 'running' });
+
+    vi.setSystemTime(startedAt + INTERRUPTED_ACTION_THRESHOLD_MS);
+    const interrupted = await request(
+      '/conversations/thread/connection-actions/tc1',
+    );
+    expect(await interrupted.json()).toMatchObject({
+      approvalId: alice,
+      status: 'interrupted',
+      result: null,
+    });
+
+    const retries = await Promise.all([approve(alice), approve(alice)]);
+    expect(retries.filter((response) => response.status === 200)).toHaveLength(
+      1,
+    );
+    expect(retries.filter((response) => response.status === 409)).toHaveLength(
+      1,
+    );
+    expect(
+      await retries.find((response) => response.status === 200)!.json(),
+    ).toEqual({
+      isError: false,
+      text: 'Sent to alice@example.com',
+    });
+    const mismatched = await approve(bob);
+    expect(mismatched.status).toBe(409);
+    expect(await mismatched.json()).toEqual({
+      error: 'This action belongs to a different approval request.',
+    });
+    const completed = await request(
+      '/conversations/thread/connection-actions/tc1',
+    );
+    expect(await completed.json()).toMatchObject({
+      approvalId: alice,
+      status: 'done',
+      result: { text: 'Sent to alice@example.com' },
+    });
+    expect(sent).toHaveBeenCalledOnce();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('migrates existing action receipts with their original claim time', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    db.exec(`CREATE TABLE mcp_actions(
+      threadId TEXT NOT NULL,
+      toolCallId TEXT NOT NULL,
+      connectionId TEXT NOT NULL,
+      tool TEXT NOT NULL,
+      status TEXT NOT NULL,
+      result TEXT,
+      createdAt INTEGER NOT NULL,
+      approvalId TEXT,
+      PRIMARY KEY(threadId, toolCallId)
+    );`);
+    db.prepare(
+      "INSERT INTO mcp_actions VALUES ('thread', 'tc1', 'connection', 'send mail!', 'running', NULL, ?, 'approval-1')",
+    ).run(Date.now() - INTERRUPTED_ACTION_THRESHOLD_MS);
+
+    const store = new ConnectionStore(db);
+    expect(store.action('thread', 'tc1')).toMatchObject({
+      approvalId: 'approval-1',
+      status: 'interrupted',
+      result: null,
+    });
+  } finally {
+    db.close();
+  }
 });
 
 it('runs an approved request once, even under a fresh toolCallId', async () => {

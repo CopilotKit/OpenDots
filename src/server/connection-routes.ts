@@ -125,12 +125,14 @@ export function connectionRoutes(
           { error: 'This action belongs to a different approval request.' },
           409,
         );
-      return previous.result
-        ? c.json(previous.result)
+      if (previous.result) return c.json(previous.result);
+      return previous.status === 'interrupted'
+        ? undefined
         : c.json({ error: 'This action is already running.' }, 409);
     };
     const earlier = recovered();
     if (earlier) return earlier;
+    const previous = connections.store.action(thread.id, body.toolCallId);
     const { approval, exposed } = approvalFor(thread.id, body.approvalId);
     // An approval runs its stored request once. The claim below binds one
     // tool call id, so without this check the same approval could execute
@@ -141,7 +143,21 @@ export function connectionRoutes(
         { error: 'This approval request already ran its stored action.' },
         409,
       );
-    if (
+    if (previous) {
+      // Only the same approval can reclaim its interrupted action. The store's
+      // conditional update also prevents two retries from starting together.
+      if (
+        !connections.store.reclaimInterruptedAction(
+          thread.id,
+          body.toolCallId,
+          approval.id,
+        )
+      )
+        return (
+          recovered() ??
+          c.json({ error: 'This action is already running.' }, 409)
+        );
+    } else if (
       !connections.store.claimAction(
         thread.id,
         body.toolCallId,
@@ -149,8 +165,11 @@ export function connectionRoutes(
         exposed.connection.id,
         exposed.tool.name,
       )
-    )
-      return recovered()!;
+    ) {
+      return (
+        recovered() ?? c.json({ error: 'This action is already running.' }, 409)
+      );
+    }
     // Not tied to the request: once approved, finish even if the tab closes.
     const result = await connections.call(exposed, approval.arguments);
     connections.store.finishAction(thread.id, body.toolCallId, result);
