@@ -254,6 +254,59 @@ describe('API boundaries', () => {
     });
     expect(store.memories()).toHaveLength(0);
   });
+  it('validates, updates, dismisses, and deletes durable goals', async () => {
+    const { app, store } = fixture();
+    const reminderAt = Date.now() + 60_000;
+    const created = await app.request(
+      '/api/goals',
+      json({
+        title: 'Prepare a launch brief',
+        description: 'Collect final notes',
+        reminderAt,
+      }),
+    );
+    expect(created.status).toBe(201);
+    const goal = (await created.json()) as { id: string };
+    expect(store.goal(goal.id)?.status).toBe('active');
+    const state = (await (await app.request('/api/state')).json()) as {
+      goals: { id: string }[];
+    };
+    expect(state.goals[0]?.id).toBe(goal.id);
+    expect(
+      (
+        await app.request(
+          '/api/goals',
+          json({
+            title: 'Invalid progress',
+            progress: 101,
+            reminderAt: Date.now() + 60_000,
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    const update = await app.request(`/api/goals/${goal.id}`, {
+      ...json({
+        title: 'Prepare a launch brief',
+        description: 'Collect final notes',
+        status: 'paused',
+        progress: 45,
+        reminderAt,
+      }),
+      method: 'PUT',
+    });
+    expect(update.status).toBe(200);
+    expect(store.goal(goal.id)?.progress).toBe(45);
+    await app.request(`/api/goals/${goal.id}/reminder/dismiss`, json({}));
+    expect(store.goal(goal.id)?.reminderDismissedAt).not.toBeNull();
+    const deleted = await app.request(`/api/goals/${goal.id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(deleted.status).toBe(200);
+    expect(store.goal(goal.id)).toBeUndefined();
+    expect((await app.request('/api/state')).status).toBe(200);
+  });
 });
 it('rejects DNS-rebinding Host even with a matching hostile Origin', async () => {
   const { app } = fixture();
