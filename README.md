@@ -170,8 +170,24 @@ Use **Node.js 24** and **npm**:
 git clone https://github.com/CopilotKit/OpenDots.git
 cd OpenDots
 npm ci
-cp .env.example .env
 npm run dev
+```
+
+Before starting the app, copy `.env.example` to `.env` with the command for your shell:
+
+```sh
+# macOS/Linux
+cp .env.example .env
+```
+
+```powershell
+# PowerShell
+Copy-Item .env.example .env
+```
+
+```bat
+:: Windows Command Prompt
+copy .env.example .env
 ```
 
 Open **http://127.0.0.1:5173**. You can create Spaces, write pages, and configure Dots before connecting services. To start chatting, connect an Intelligence project and a model.
