@@ -8,6 +8,7 @@
 
 Built with [CopilotKit](https://github.com/CopilotKit/CopilotKit) and [AG-UI](https://docs.ag-ui.com/introduction). · [Get started](#get-started) · [Overview](#overview) · [Architecture](#architecture) · [Features](#features) · [Contributing](CONTRIBUTING.md)
 
+[![Also a skin in OpenBot](https://img.shields.io/badge/also%20a%20skin%20in-OpenBot-6430AB)](https://github.com/CopilotKit/OpenBot)
 [![CI](https://github.com/CopilotKit/OpenDots/actions/workflows/ci.yml/badge.svg)](https://github.com/CopilotKit/OpenDots/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![Alpha](https://img.shields.io/badge/status-alpha-orange.svg)
@@ -16,7 +17,22 @@ Built with [CopilotKit](https://github.com/CopilotKit/CopilotKit) and [AG-UI](ht
 
 Host OpenDots on your own infrastructure. Conversations require CopilotKit Intelligence: use the hosted service, the [local Docker evaluation](docs/SETUP.md#local-intelligence-evaluation), or a licensed [self-hosted deployment](https://docs.copilotkit.ai/intelligence/self-hosting). Clone this template and customize it however you want.
 
-[**Building on OpenDots? Meet with the CopilotKit team →**](https://www.copilotkit.ai/talk-to-an-engineer?ref=opendots_readme)
+<table>
+  <tr>
+    <th><sub>Maintained by CopilotKit</sub></th>
+    <th colspan="3"><sub>Community maintained</sub></th>
+  </tr>
+  <tr>
+    <td align="center"><a href="https://github.com/CopilotKit/OpenBot"><b>OpenBot</b></a><br><sub>The core</sub></td>
+    <td align="center"><b>OpenDots</b><br><sub>You are here</sub></td>
+    <td align="center"><a href="https://github.com/CopilotKit/openmuse"><b>OpenMuse</b></a><br><sub>Personal agent, mobile-first</sub></td>
+    <td align="center"><a href="https://github.com/CopilotKit/OpenDuet"><b>OpenDuet</b></a><br><sub>Proactive agent</sub></td>
+  </tr>
+</table>
+
+OpenDots is a modified template on top of [OpenBot](https://github.com/CopilotKit/OpenBot), the officially maintained product. Use this as a starter for building your own project, or start directly with OpenBot desktop or [self-hosted](https://github.com/CopilotKit/OpenBot#deploy-it).
+
+[**Bringing OpenDots to your company? Talk to us about OpenBot →**](https://www.copilotkit.ai/talk-to-an-engineer?ref=opendots_readme)
 
 </div>
 
@@ -33,6 +49,18 @@ https://github.com/user-attachments/assets/4c74fe7d-ecdd-42dd-95da-5d34f9b9576e
 </div>
 
 _Ask → browse → approve → save. A live computer view and a human review card appear right in chat, then the approved draft becomes an editable Space page. Enlarged for readability; idle time is trimmed and playback is accelerated._
+
+## OpenDots and OpenBot
+
+OpenDots also ships as a skin in [OpenBot](https://github.com/CopilotKit/OpenBot), CopilotKit's open-source agent platform, alongside [OpenMuse](https://github.com/CopilotKit/openmuse) and [OpenDuet](https://github.com/CopilotKit/OpenDuet). Pick it there and you get OpenDots's look, with everything OpenBot does underneath.
+
+| If you want to                                                             | Start here                                                                                        |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Try OpenDots, or fork its interface                                        | This repo: [Get started](#get-started)                                                            |
+| Run it for your team, with sign-in, per-Bot permissions and an audit trail | [OpenBot](https://github.com/CopilotKit/OpenBot#quick-start), then **Settings → Skin → OpenDots** |
+| Have us stand it up inside your company                                    | [Talk to an engineer](https://www.copilotkit.ai/talk-to-an-engineer?ref=opendots_readme_openbot)  |
+
+OpenDots, OpenMuse and OpenDuet are community maintained, and issues and pull requests are welcome in each repo. OpenBot is the one the CopilotKit team maintains and ships fixes to.
 
 ## Overview
 
