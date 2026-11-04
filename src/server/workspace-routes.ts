@@ -164,6 +164,10 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
   app.get('/conversations/:id/capture', (c) =>
     c.json(platform.workspace.capture(c.req.param('id'))),
   );
+  app.delete('/threads/:threadId', async (c) => {
+    await platform.deleteConversation(c.req.param('threadId'));
+    return c.body(null, 204);
+  });
   app.post('/voice/calls', async (c) => {
     const data = z
       .object({ threadId: z.string(), sdp: z.string().max(100000) })

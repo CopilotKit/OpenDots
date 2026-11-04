@@ -88,6 +88,10 @@ Ask a Dot to show a draft before saving it. A CopilotKit human-in-the-loop card 
 
 Give a Dot tools from any MCP server, such as email, calendar, GitHub, or your own services. Read-only tools run on their own. Any other tool pauses for an **Approve & run** card in chat, and only your approval runs it. You can turn each tool on or off per Dot. See [Connections](docs/CONNECTIONS.md).
 
+### Chat threads
+
+Delete a conversation from its header with **Delete conversation**. Deletion is permanent: it removes the conversation's messages from CopilotKit Intelligence and its local links, but keeps saved pages. The `DELETE /api/threads/{threadId}` endpoint returns `204` on success, `401` for a bad owner token, and `404` for an unknown conversation. See [Chat thread management](docs/CHAT-THREADS.md).
+
 ### Connected apps
 
 Dots can use [Composio](https://composio.dev) to work with the owner's email, calendar, and other connected apps. Add `COMPOSIO_API_KEY`, restart OpenDots, then enable Connected apps in both the global settings and the Dot's settings. Adding the API key alone does not grant access.
