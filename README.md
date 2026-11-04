@@ -17,20 +17,10 @@ Built with [CopilotKit](https://github.com/CopilotKit/CopilotKit) and [AG-UI](ht
 
 Host OpenDots on your own infrastructure. Conversations require CopilotKit Intelligence: use the hosted service, the [local Docker evaluation](docs/SETUP.md#local-intelligence-evaluation), or a licensed [self-hosted deployment](https://docs.copilotkit.ai/intelligence/self-hosting). Clone this template and customize it however you want.
 
-<table>
-  <tr>
-    <th><sub>Maintained by CopilotKit</sub></th>
-    <th colspan="3"><sub>Community maintained</sub></th>
-  </tr>
-  <tr>
-    <td align="center"><a href="https://github.com/CopilotKit/OpenBot"><b>OpenBot</b></a><br><sub>The core</sub></td>
-    <td align="center"><b>OpenDots</b><br><sub>You are here</sub></td>
-    <td align="center"><a href="https://github.com/CopilotKit/openmuse"><b>OpenMuse</b></a><br><sub>Personal agent, mobile-first</sub></td>
-    <td align="center"><a href="https://github.com/CopilotKit/OpenDuet"><b>OpenDuet</b></a><br><sub>Proactive agent</sub></td>
-  </tr>
-</table>
+**OpenDots is now available as a UX skin in [OpenBot](https://github.com/CopilotKit/OpenBot)**, a more robust version with sign-in, per-Bot permissions and an audit trail, maintained by CopilotKit. This repo stays a community-maintained starter for building your own project.
 
-OpenDots is a modified template on top of [OpenBot](https://github.com/CopilotKit/OpenBot), the officially maintained product. Use this as a starter for building your own project, or start directly with OpenBot desktop or [self-hosted](https://github.com/CopilotKit/OpenBot#deploy-it).
+<a href="https://github.com/CopilotKit/OpenBot"><img src="docs/images/openbot-opendots-skin.png" alt="OpenBot running the OpenDots skin" width="720"></a><br>
+<sub>OpenBot with the OpenDots skin, picked under Settings → Skin</sub>
 
 [**Bringing OpenDots to your company? Talk to us about OpenBot →**](https://www.copilotkit.ai/talk-to-an-engineer?ref=opendots_readme)
 
