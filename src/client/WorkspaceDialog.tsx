@@ -7,6 +7,12 @@ import {
   themePreference,
   type ThemePreference,
 } from './theme';
+import {
+  localePreference,
+  setLocalePreference,
+  t,
+  type LocalePreference,
+} from './i18n';
 export type Dialog =
   | { type: 'space' }
   | { type: 'dot'; dot?: Dot; spaceId: string }
@@ -72,6 +78,7 @@ export function WorkspaceDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [theme, setTheme] = useState(themePreference);
+  const [languageChoice, setLanguageChoice] = useState(localePreference);
   const container = useRef<HTMLElement>(null);
   useEffect(() => {
     const previous =
@@ -106,16 +113,16 @@ export function WorkspaceDialog({
   }, []);
   const title =
     dialog.type === 'space'
-      ? 'A space for something.'
+      ? t('A space for something.')
       : dialog.type === 'dot'
         ? dialog.dot
-          ? 'Make this Dot yours.'
-          : 'Meet your next specialist.'
+          ? t('Make this Dot yours.')
+          : t('Meet your next specialist.')
         : dialog.type === 'settings'
-          ? 'Your workspace, your rules.'
+          ? t('Your workspace, your rules.')
           : dialog.type === 'memory'
-            ? 'Something to remember.'
-            : 'Let your Dot keep time.';
+            ? t('Something to remember.')
+            : t('Let your Dot keep time.');
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <section
@@ -128,12 +135,12 @@ export function WorkspaceDialog({
       >
         <button
           className="modal-close icon-button"
-          aria-label="Close dialog"
+          aria-label={t('Close dialog')}
           onClick={onClose}
         >
           <X size={18} />
         </button>
-        <span className="eyebrow">OPENDOTS TEMPLATE</span>
+        <span className="eyebrow">{t('OPENDOTS TEMPLATE')}</span>
         <h2 id="dialog-title">{title}</h2>
         <form
           onSubmit={async (e) => {
@@ -192,14 +199,16 @@ export function WorkspaceDialog({
             }
             if (await mutate(path, method, body)) onClose();
             else
-              setError('Could not save. Review the workspace error and retry.');
+              setError(
+                t('Could not save. Review the workspace error and retry.'),
+              );
             setBusy(false);
           }}
         >
           {(dialog.type === 'space' || dialog.type === 'dot') && (
             <>
               <label className="field-label" htmlFor="entity-name">
-                Name
+                {t('Name')}
               </label>
               <input
                 id="entity-name"
@@ -214,12 +223,12 @@ export function WorkspaceDialog({
             <>
               <label className="field-label" htmlFor="entity-text">
                 {dialog.type === 'dot'
-                  ? 'Role instructions'
+                  ? t('Role instructions')
                   : dialog.type === 'space'
-                    ? 'What belongs here?'
+                    ? t('What belongs here?')
                     : dialog.type === 'memory'
-                      ? 'Preference or context'
-                      : 'Task to revisit'}
+                      ? t('Preference or context')
+                      : t('Task to revisit')}
               </label>
               <textarea
                 id="entity-text"
@@ -230,7 +239,9 @@ export function WorkspaceDialog({
                 onChange={(e) => setText(e.target.value)}
                 placeholder={
                   dialog.type === 'dot'
-                    ? 'You are a thoughtful research partner. Compare evidence and be clear about uncertainty.'
+                    ? t(
+                        'You are a thoughtful research partner. Compare evidence and be clear about uncertainty.',
+                      )
                     : ''
                 }
               />
@@ -238,9 +249,9 @@ export function WorkspaceDialog({
           )}
           {dialog.type === 'dot' && (
             <fieldset className="space-access-fields">
-              <legend>Space access</legend>
+              <legend>{t('Space access')}</legend>
               <p className="muted">
-                Choose where this Dot can read and edit pages.
+                {t('Choose where this Dot can read and edit pages.')}
               </p>
               {workspace.spaces.map((space) => (
                 <label className="permission-row" key={space.id}>
@@ -260,7 +271,7 @@ export function WorkspaceDialog({
                 </label>
               ))}
               <label className="field-label" htmlFor="default-space">
-                Default destination for saved pages
+                {t('Default destination for saved pages')}
               </label>
               <select
                 id="default-space"
@@ -269,7 +280,7 @@ export function WorkspaceDialog({
                 onChange={(event) => setDefaultSpace(event.target.value)}
               >
                 <option value="" disabled>
-                  Choose a Space
+                  {t('Choose a Space')}
                 </option>
                 {workspace.spaces
                   .filter((space) => spaceIds.includes(space.id))
@@ -290,10 +301,11 @@ export function WorkspaceDialog({
                   onChange={(e) => setResearch(e.target.checked)}
                 />
                 <span>
-                  <strong>Public-page research</strong>
+                  <strong>{t('Public-page research')}</strong>
                   <small>
-                    Allow the server-side read-only browser tool. Global
-                    settings always take precedence.
+                    {t(
+                      'Allow the server-side read-only browser tool. Global settings always take precedence.',
+                    )}
                   </small>
                 </span>
               </label>
@@ -304,10 +316,11 @@ export function WorkspaceDialog({
                   onChange={(e) => setMemory(e.target.checked)}
                 />
                 <span>
-                  <strong>Use saved memories</strong>
+                  <strong>{t('Use saved memories')}</strong>
                   <small>
-                    Include your preferences in new turns. Changing permission
-                    stops active work.
+                    {t(
+                      'Include your preferences in new turns. Changing permission stops active work.',
+                    )}
                   </small>
                 </span>
               </label>
@@ -319,10 +332,11 @@ export function WorkspaceDialog({
                     onChange={(event) => setApps(event.target.checked)}
                   />
                   <span>
-                    <strong>Connected apps</strong>
+                    <strong>{t('Connected apps')}</strong>
                     <small>
-                      Allow access to the owner’s apps through Composio. Global
-                      settings always take precedence.
+                      {t(
+                        'Allow access to the owner’s apps through Composio. Global settings always take precedence.',
+                      )}
                     </small>
                   </span>
                 </label>
@@ -331,9 +345,9 @@ export function WorkspaceDialog({
           )}
           {dialog.type === 'dot' && workspace.setup.composio && (
             <fieldset className="space-access-fields">
-              <legend>Connected apps</legend>
+              <legend>{t('Connected apps')}</legend>
               <label className="field-label" htmlFor="composio-toolkits">
-                Toolkit slugs
+                {t('Toolkit slugs')}
               </label>
               <input
                 id="composio-toolkits"
@@ -344,16 +358,17 @@ export function WorkspaceDialog({
                 onChange={(event) => setComposioToolkits(event.target.value)}
               />
               <p className="muted" id="composio-toolkits-help">
-                Optional comma-separated Composio toolkit slugs. Leave blank to
-                let the Dot search all available toolkits.
+                {t(
+                  'Optional comma-separated Composio toolkit slugs. Leave blank to let the Dot search all available toolkits.',
+                )}
               </p>
             </fieldset>
           )}
           {dialog.type === 'dot' && (
             <fieldset className="space-access-fields">
-              <legend>Automatic Learning</legend>
+              <legend>{t('Automatic Learning')}</legend>
               <label className="field-label" htmlFor="learning-container">
-                Learning container ID
+                {t('Learning container ID')}
               </label>
               <input
                 id="learning-container"
@@ -368,10 +383,9 @@ export function WorkspaceDialog({
                 }}
               />
               <p className="muted" id="learning-help">
-                Create this container in your Intelligence project first. New
-                conversations will contribute evidence to it. Leave blank to
-                keep new conversations out of Learning. Existing conversations
-                retain their original assignment.
+                {t(
+                  'Create this container in your Intelligence project first. New conversations will contribute evidence to it. Leave blank to keep new conversations out of Learning. Existing conversations retain their original assignment.',
+                )}
               </p>
               <label className="permission-row">
                 <input
@@ -381,12 +395,11 @@ export function WorkspaceDialog({
                   onChange={(event) => setSkillDelivery(event.target.checked)}
                 />
                 <span>
-                  <strong>Use published skills</strong>
+                  <strong>{t('Use published skills')}</strong>
                   <small>
-                    Load reviewed skills from each conversation’s assigned
-                    container. Enable delivery in Intelligence too. Turning this
-                    off stops skill loading; it does not stop evidence
-                    collection.
+                    {t(
+                      'Load reviewed skills from each conversation’s assigned container. Enable delivery in Intelligence too. Turning this off stops skill loading; it does not stop evidence collection.',
+                    )}
                   </small>
                 </span>
               </label>
@@ -395,7 +408,7 @@ export function WorkspaceDialog({
                 target="_blank"
                 rel="noreferrer"
               >
-                Set up Learning and review skills ↗
+                {t('Set up Learning and review skills')} ↗
               </a>
             </fieldset>
           )}
@@ -405,28 +418,28 @@ export function WorkspaceDialog({
           {dialog.type === 'schedule' && (
             <>
               <label className="field-label" htmlFor="schedule-interval">
-                Repeat after each successful run
+                {t('Repeat after each successful run')}
               </label>
               <select
                 id="schedule-interval"
                 value={interval}
                 onChange={(e) => setInterval(e.target.value)}
               >
-                <option value="60">Every minute (testing)</option>
-                <option value="3600">Every hour</option>
-                <option value="86400">Every day</option>
-                <option value="604800">Every week</option>
+                <option value="60">{t('Every minute (testing)')}</option>
+                <option value="3600">{t('Every hour')}</option>
+                <option value="86400">{t('Every day')}</option>
+                <option value="604800">{t('Every week')}</option>
               </select>
               <p className="muted">
-                Runs on the server in this same conversation, even with the tab
-                closed. Failed or interrupted runs wait for manual retry. Review
-                completed work before retrying an interrupted run.
+                {t(
+                  'Runs on the server in this same conversation, even with the tab closed. Failed or interrupted runs wait for manual retry. Review completed work before retrying an interrupted run.',
+                )}
               </p>
             </>
           )}
           {dialog.type === 'settings' && (
             <fieldset className="appearance-fields">
-              <legend>Appearance</legend>
+              <legend>{t('Appearance')}</legend>
               <div className="segmented" role="radiogroup">
                 {(['system', 'light', 'dark'] as ThemePreference[]).map(
                   (option) => (
@@ -441,50 +454,86 @@ export function WorkspaceDialog({
                           setThemePreference(option);
                         }}
                       />
-                      <span>{option[0].toUpperCase() + option.slice(1)}</span>
+                      <span>
+                        {t(option[0].toUpperCase() + option.slice(1))}
+                      </span>
                     </label>
                   ),
                 )}
               </div>
               <p className="muted">
-                Saved in this browser. System follows your device.
+                {t('Saved in this browser. System follows your device.')}
+              </p>
+              <legend className="sr-only">{t('Language')}</legend>
+              <div
+                className="segmented"
+                role="radiogroup"
+                aria-label={t('Language')}
+              >
+                {(
+                  [
+                    ['system', t('System')],
+                    ['en', 'English'],
+                    ['ru', 'Русский'],
+                  ] as [LocalePreference, string][]
+                ).map(([option, label]) => (
+                  <label key={option}>
+                    <input
+                      type="radio"
+                      name="language"
+                      value={option}
+                      checked={languageChoice === option}
+                      onChange={() => {
+                        setLanguageChoice(option);
+                        setLocalePreference(option);
+                      }}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="muted">
+                {t('Changing the language reloads the page.')}
               </p>
             </fieldset>
           )}
           {dialog.type === 'settings' && (
             <div className="config-note">
-              <strong>Service setup</strong>
+              <strong>{t('Service setup')}</strong>
               <p>
                 {workspace.setup.missing.length ? (
                   <>
-                    Add{' '}
+                    {t('Add')}{' '}
                     {workspace.setup.missing.map((name, index) => (
                       <span key={name}>
                         {index > 0 && ', '}
                         <code>{name}</code>
                       </span>
                     ))}{' '}
-                    to the server environment, then restart.
+                    {t('to the server environment, then restart.')}
                   </>
                 ) : (
-                  'Text configuration is present. A successful conversation confirms connectivity.'
+                  t(
+                    'Text configuration is present. A successful conversation confirms connectivity.',
+                  )
                 )}
               </p>
               <p>
-                Slack: {workspace.setup.slack.replaceAll('_', ' ')}. Voice:{' '}
+                Slack: {t(workspace.setup.slack.replaceAll('_', ' '))}.{' '}
+                {t('Voice')}:{' '}
                 {workspace.setup.voice
-                  ? 'configuration present'
-                  : 'needs VOICE_API_KEY and VOICE_MODEL'}
+                  ? t('configuration present')
+                  : t('needs VOICE_API_KEY and VOICE_MODEL')}
                 .
               </p>
               <p>
-                Setup and usage metadata is collected by default.{' '}
+                {t('Setup and usage metadata is collected by default.')}{' '}
                 <a
                   href="https://github.com/CopilotKit/OpenDots/blob/main/docs/SETUP-TELEMETRY.md"
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Tracking and opt-out details
+                  {t('Tracking and opt-out details')}
                 </a>
               </p>
               <a
@@ -492,14 +541,15 @@ export function WorkspaceDialog({
                 target="_blank"
                 rel="noreferrer"
               >
-                Template setup guide ↗
+                {t('Template setup guide')} ↗
               </a>
             </div>
           )}
           {dialog.type === 'memory' && (
             <p className="muted">
-              Memories are explicit preferences, not automatic learning. Avoid
-              secrets; enabled memories go to your model provider.
+              {t(
+                'Memories are explicit preferences, not automatic learning. Avoid secrets; enabled memories go to your model provider.',
+              )}
             </p>
           )}
           {error && (
@@ -508,7 +558,7 @@ export function WorkspaceDialog({
             </p>
           )}
           <button className="primary full" disabled={busy}>
-            {busy ? 'Saving…' : 'Save'}
+            {busy ? t('Saving…') : t('Save')}
           </button>
         </form>
       </section>

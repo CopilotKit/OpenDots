@@ -11,6 +11,7 @@ import ReactMarkdown from 'react-markdown';
 import type { Dot, Result, Status } from '../shared/types';
 import { Mascot } from './Mascot';
 import { ComputerPanel } from './ComputerPanel';
+import { t } from './i18n';
 export function ResultPane({
   latest,
   status,
@@ -41,18 +42,19 @@ export function ResultPane({
             onClick={() => setResultTab('Brief')}
           >
             <BookOpen size={15} />
-            Brief
+            {t('Brief')}
           </button>
           <button
             className={resultTab === 'Computer' ? 'selected' : ''}
             onClick={() => setResultTab('Computer')}
           >
-            <Monitor size={15} /> {computerDot?.name ?? 'Dot'}’s computer
+            <Monitor size={15} />{' '}
+            {t('{name}’s computer', { name: computerDot?.name ?? 'Dot' })}
           </button>
         </div>
         <button
           className="icon-button"
-          aria-label="Close result panel"
+          aria-label={t('Close result panel')}
           onClick={() => onClose()}
         >
           <X size={16} />
@@ -61,11 +63,11 @@ export function ResultPane({
       {resultTab === 'Computer' ? (
         <>
           <label className="computer-dot-picker">
-            Computer for
+            {t('Computer for')}
             <select
               value={computerDot?.id ?? ''}
               onChange={(event) => setComputerDotId(event.target.value)}
-              aria-label="Select Dot computer"
+              aria-label={t('Select Dot computer')}
             >
               {dots.map((dot) => (
                 <option key={dot.id} value={dot.id}>
@@ -78,7 +80,7 @@ export function ResultPane({
             <ComputerPanel key={computerDot.id} dot={computerDot} />
           ) : (
             <p className="computer-panel">
-              Create a Dot to give it a computer.
+              {t('Create a Dot to give it a computer.')}
             </p>
           )}
         </>
@@ -86,16 +88,18 @@ export function ResultPane({
         <div className="result-content">
           <div className="result-meta">
             <span className="eyebrow">
-              {latest.sample ? 'FICTIONAL SAMPLE BRIEF' : 'RESEARCH BRIEF'}
+              {latest.sample
+                ? t('FICTIONAL SAMPLE BRIEF')
+                : t('RESEARCH BRIEF')}
             </span>
             <button
               className="icon-button"
-              aria-label="Download brief"
+              aria-label={t('Download brief')}
               onClick={() => {
                 const blob = new Blob(
                   [
                     latest.text +
-                      '\n\nSources\n' +
+                      `\n\n${t('Sources')}\n` +
                       latest.sources
                         .map((s) => `${s.title}: ${s.url}`)
                         .join('\n'),
@@ -115,15 +119,18 @@ export function ResultPane({
           </div>
           {latest.sample && (
             <div className="sample-note">
-              An example of what Dot can do. The findings and sources below are
-              invented.
+              {t(
+                'An example of what Dot can do. The findings and sources below are invented.',
+              )}
             </div>
           )}
           <article className="brief">
             <ReactMarkdown
               components={{
                 img: ({ alt }) => (
-                  <span>{alt ? `[Image: ${alt}]` : '[Image omitted]'}</span>
+                  <span>
+                    {alt ? t('[Image: {alt}]', { alt }) : t('[Image omitted]')}
+                  </span>
                 ),
                 a: ({ children, href }) => (
                   <a href={href} target="_blank" rel="noreferrer">
@@ -137,7 +144,7 @@ export function ResultPane({
           </article>
           <section className="sources">
             <h3>
-              Source notes <span>{latest.sources.length}</span>
+              {t('Source notes')} <span>{latest.sources.length}</span>
             </h3>
             {latest.sources.map((source) =>
               latest.sample ? (
@@ -148,7 +155,7 @@ export function ResultPane({
                   <div>
                     <strong>{source.title}</strong>
                     <p>{source.excerpt}</p>
-                    <small>Fictional source · not a live link</small>
+                    <small>{t('Fictional source · not a live link')}</small>
                   </div>
                 </div>
               ) : (
@@ -180,11 +187,13 @@ export function ResultPane({
             name={dots.find((dot) => dot.id === defaultDotId)?.name}
             state={dotState}
           />
-          <h3>A little space for your findings.</h3>
+          <h3>{t('A little space for your findings.')}</h3>
           <p>
             {status === 'failed'
-              ? 'Resolve the error and retry to create a research brief.'
-              : 'Your brief and sources will appear here after a successful run.'}
+              ? t('Resolve the error and retry to create a research brief.')
+              : t(
+                  'Your brief and sources will appear here after a successful run.',
+                )}
           </p>
         </div>
       )}
