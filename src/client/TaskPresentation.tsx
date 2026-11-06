@@ -6,20 +6,21 @@ import {
 } from 'lucide-react';
 import type { Task } from '../shared/types';
 import { Mascot } from './Mascot';
+import { dateLocale, t } from './i18n';
 export const relative = (value: number) => {
   const minutes = Math.floor((Date.now() - value) / 60000);
   return minutes < 1
-    ? 'Just now'
+    ? t('Just now')
     : minutes < 60
-      ? `${minutes}m ago`
+      ? t('{count}m ago', { count: minutes })
       : minutes < 1440
-        ? `${Math.floor(minutes / 60)}h ago`
-        : new Date(value).toLocaleDateString();
+        ? t('{count}h ago', { count: Math.floor(minutes / 60) })
+        : new Date(value).toLocaleDateString(dateLocale);
 };
 export const statusLabel = (task: Task) =>
   task.status === 'completed' && task.nextRunAt
-    ? 'Scheduled'
-    : task.status.charAt(0).toUpperCase() + task.status.slice(1);
+    ? t('Scheduled')
+    : t(task.status.charAt(0).toUpperCase() + task.status.slice(1));
 export function Status({ task }: { task: Task }) {
   return (
     <span className={`status ${task.status}`}>
@@ -51,7 +52,12 @@ export function TaskRow({
         <strong>{task.prompt}</strong>
         <span>
           {task.intervalSeconds
-            ? `Repeats every ${task.intervalSeconds < 3600 ? task.intervalSeconds / 60 + ' min' : task.intervalSeconds / 3600 + ' hr'} · `
+            ? `${t('Repeats every {interval}', {
+                interval:
+                  task.intervalSeconds < 3600
+                    ? t('{count} min', { count: task.intervalSeconds / 60 })
+                    : t('{count} hr', { count: task.intervalSeconds / 3600 }),
+              })} · `
             : ''}
           {relative(task.updatedAt)}
         </span>

@@ -85,6 +85,10 @@ A non-empty `INTELLIGENCE_GATEWAY_WS_URL` takes precedence over `INTELLIGENCE_WS
 
 The model environment variable names follow the configured provider adapter. Provider credentials belong in `.env`, not client-side variables or source code. Conversation history lives in the configured Intelligence project; copying the SQLite file alone does not back up that history.
 
+## Interface language
+
+The interface is available in English and Russian. It follows the browser language and can be changed in Settings under Appearance; the choice is saved in this browser. Translations live in `src/client/locales/`. To add a language, add a dictionary keyed by the English source strings and register it in `src/client/i18n.ts`. Messages that come from the server (for example API errors) stay in English.
+
 ## Pages and page conversations
 
 Select a Space to open its page library. Search for a document, switch between grid and list views, or create a new page. The visual editor supports formatting, headings, lists, checklists, tables, and slash commands. Use `/` to insert a block and Cmd/Ctrl+S to save immediately. Pages autosave after editing pauses; the save status tells you whether changes reached the server.
