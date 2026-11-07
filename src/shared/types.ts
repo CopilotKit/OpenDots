@@ -87,6 +87,8 @@ export interface Dot {
   memoryAllowed: boolean;
   appsAllowed: boolean;
   composioToolkits: string[];
+  /** Recall from the Dot's connected memory before every turn. */
+  autoRecall?: boolean;
   composioSessionId?: string | null;
   composioPolicyHash?: string | null;
   createdAt: number;

@@ -32,6 +32,7 @@ export class WorkspaceStore {
       ['dots', 'composioToolkits', "TEXT NOT NULL DEFAULT '[]'"],
       ['dots', 'composioSessionId', 'TEXT'],
       ['dots', 'composioPolicyHash', 'TEXT'],
+      ['dots', 'autoRecall', 'INTEGER NOT NULL DEFAULT 0'],
       ['thread_bindings', 'learningContainerId', 'TEXT'],
     ]) {
       if (
@@ -118,6 +119,7 @@ export class WorkspaceStore {
         appsAllowed: !!row.appsAllowed,
         composioToolkits: JSON.parse(String(row.composioToolkits ?? '[]')),
         skillDeliveryEnabled: !!row.skillDeliveryEnabled,
+        autoRecall: !!row.autoRecall,
       })) as unknown as Dot[];
   }
   dot(id: string) {
@@ -208,6 +210,7 @@ export class WorkspaceStore {
       spaceIds?: string[];
       learningContainerId?: string | null;
       skillDeliveryEnabled?: boolean;
+      autoRecall?: boolean;
     },
   ): Dot {
     const current = this.dot(id);
@@ -222,11 +225,12 @@ export class WorkspaceStore {
     const skillDeliveryEnabled =
       patch.skillDeliveryEnabled ?? current.skillDeliveryEnabled ?? false;
     validateLearningSettings(learningContainerId, skillDeliveryEnabled);
+    const autoRecall = patch.autoRecall ?? current.autoRecall ?? false;
     this.db.exec('BEGIN');
     try {
       this.db
         .prepare(
-          'UPDATE dots SET name=?, instructions=?, researchAllowed=?, memoryAllowed=?, learningContainerId=?, skillDeliveryEnabled=?, appsAllowed=?, composioToolkits=? WHERE id=?',
+          'UPDATE dots SET name=?, instructions=?, researchAllowed=?, memoryAllowed=?, learningContainerId=?, skillDeliveryEnabled=?, appsAllowed=?, composioToolkits=?, autoRecall=? WHERE id=?',
         )
         .run(
           patch.name,
@@ -237,6 +241,7 @@ export class WorkspaceStore {
           +skillDeliveryEnabled,
           +patch.appsAllowed,
           JSON.stringify([...new Set(patch.composioToolkits)].sort()),
+          +autoRecall,
           id,
         );
       this.db

@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { EventType, type RunAgentInput } from '@ag-ui/core';
 import { lastValueFrom, toArray } from 'rxjs';
 import { DotAgent } from '../src/server/dot-agent.js';
+import { ConnectionService } from '../src/server/connections.js';
 import { completion } from './fixtures/model-stream.js';
 import { Store } from '../src/server/store.js';
 import { WorkspaceStore } from '../src/server/workspace.js';
@@ -302,6 +303,55 @@ it('offers connected tools to the model and the approval tool only when the web 
   const headless = await toolNames([]);
   expect(headless).toContain('mail__send_mail');
   expect(headless).not.toContain(connectionActionTool.name);
+});
+
+it('recalls from the Dot memory connection only when auto-recall is on', async () => {
+  const f = fixture();
+  f.workspace.connections.create(
+    f.dot.id,
+    { name: 'Brain', url: 'https://brain.example.com/mcp' },
+    [
+      {
+        name: 'recall',
+        title: 'Recall',
+        description: 'Search memory.',
+        inputSchema: { type: 'object', properties: {} },
+        readOnly: true,
+        enabled: true,
+        requiresApproval: false,
+      },
+    ],
+  );
+  const recall = vi
+    .spyOn(ConnectionService.prototype, 'call')
+    .mockResolvedValue({ isError: false, text: 'Notes live in Space A.' });
+  const network = vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(async () =>
+      completion({ role: 'assistant', content: 'Done.' }),
+    );
+  const sent = async () => {
+    await lastValueFrom(f.agent.clone().run(f.input).pipe(toArray()));
+    const body = JSON.parse(String(network.mock.lastCall?.[1]?.body)) as {
+      messages: { role: string; content?: unknown; tool_calls?: unknown }[];
+    };
+    return body.messages.filter((message) => message.role !== 'system');
+  };
+  const off = await sent();
+  expect(recall).not.toHaveBeenCalled();
+  expect(off.map((message) => message.role)).toEqual(['user']);
+  f.workspace.updateDot(f.dot.id, { ...f.dot, autoRecall: true });
+  const on = await sent();
+  expect(recall).toHaveBeenCalledOnce();
+  expect(on[0]).toEqual(off[0]);
+  expect(on[1]).toMatchObject({
+    role: 'assistant',
+    tool_calls: [{ function: { name: 'brain__recall' } }],
+  });
+  expect(on[2]).toMatchObject({
+    role: 'tool',
+    content: 'Notes live in Space A.',
+  });
 });
 
 it('tells the model the current time so scheduled runs do not invent one', async () => {

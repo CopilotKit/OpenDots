@@ -56,6 +56,9 @@ export function WorkspaceDialog({
       ? (dialog.dot?.composioToolkits ?? []).join(', ')
       : '',
   );
+  const [autoRecall, setAutoRecall] = useState(
+    dialog.type === 'dot' ? (dialog.dot?.autoRecall ?? false) : false,
+  );
   const [spaceIds, setSpaceIds] = useState(
     dialog.type === 'dot' ? (dialog.dot?.spaceIds ?? [dialog.spaceId]) : [],
   );
@@ -164,6 +167,7 @@ export function WorkspaceDialog({
                   .filter(Boolean),
                 learningContainerId: learningContainer.trim() || null,
                 skillDeliveryEnabled: skillDelivery,
+                autoRecall,
               };
             }
             if (dialog.type === 'settings') {
@@ -397,6 +401,26 @@ export function WorkspaceDialog({
               >
                 Set up Learning and review skills ↗
               </a>
+            </fieldset>
+          )}
+          {dialog.type === 'dot' && (
+            <fieldset className="space-access-fields">
+              <legend>Memory</legend>
+              <label className="permission-row">
+                <input
+                  type="checkbox"
+                  checked={autoRecall}
+                  onChange={(event) => setAutoRecall(event.target.checked)}
+                />
+                <span>
+                  <strong>Recall before every answer</strong>
+                  <small>
+                    Calls the recall tool of a connected memory server with each
+                    message and gives the results to the Dot. Needs a connection
+                    with a read-only recall tool that does not ask first.
+                  </small>
+                </span>
+              </label>
             </fieldset>
           )}
           {dialog.type === 'dot' && dialog.dot && (
