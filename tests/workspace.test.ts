@@ -54,3 +54,47 @@ it('migrates legacy Space ownership once and never restores revoked access on re
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it('keeps a per-Dot model override across omitted patches and clears it on empty', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'opendots-model-'));
+  const path = join(dir, 'ws.sqlite');
+  try {
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`CREATE TABLE spaces(id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, createdAt INTEGER NOT NULL);
+      CREATE TABLE dots(id TEXT PRIMARY KEY, spaceId TEXT NOT NULL, name TEXT NOT NULL, instructions TEXT NOT NULL, researchAllowed INTEGER NOT NULL, memoryAllowed INTEGER NOT NULL, createdAt INTEGER NOT NULL);
+      INSERT INTO spaces VALUES ('s', 'Space', '', 1);
+      INSERT INTO dots VALUES ('dot', 's', 'Dot', 'Help', 1, 1, 1);`);
+    legacy.close();
+    const ws = new WorkspaceStore(path, 'owner');
+    const dot = ws.dot('dot')!;
+    expect(dot.model).toBeNull();
+    expect(dot.reasoningEffort).toBeNull();
+    ws.updateDot('dot', {
+      ...dot,
+      model: 'kimi-k3.1-pro',
+      reasoningEffort: 'low',
+    });
+    const { model, reasoningEffort, ...rest } = ws.dot('dot')!;
+    expect([model, reasoningEffort]).toEqual(['kimi-k3.1-pro', 'low']);
+    expect(ws.dot('dot')?.autoRecall).toBe(false);
+    ws.updateDot('dot', { ...ws.dot('dot')!, autoRecall: true });
+    expect(ws.dot('dot')?.autoRecall).toBe(true);
+    ws.updateDot('dot', { ...rest, name: 'Renamed' });
+    expect(ws.dot('dot')?.model).toBe('kimi-k3.1-pro');
+    expect(ws.dot('dot')?.reasoningEffort).toBe('low');
+    ws.updateDot('dot', {
+      ...rest,
+      name: 'Renamed',
+      model: '',
+      reasoningEffort: '',
+    });
+    ws.close();
+    const reopened = new WorkspaceStore(path, 'owner');
+    expect(reopened.dot('dot')?.name).toBe('Renamed');
+    expect(reopened.dot('dot')?.model).toBeNull();
+    expect(reopened.dot('dot')?.reasoningEffort).toBeNull();
+    reopened.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

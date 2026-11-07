@@ -87,6 +87,12 @@ export interface Dot {
   memoryAllowed: boolean;
   appsAllowed: boolean;
   composioToolkits: string[];
+  /** Overrides OPENAI_MODEL for this Dot; null inherits. */
+  model?: string | null;
+  /** OpenAI `reasoning_effort` for this Dot (none, low, medium, high, max); null uses the model default. */
+  reasoningEffort?: string | null;
+  /** Recall from the Dot's connected memory before every turn. */
+  autoRecall?: boolean;
   composioSessionId?: string | null;
   composioPolicyHash?: string | null;
   createdAt: number;
