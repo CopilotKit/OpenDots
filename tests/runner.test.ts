@@ -1,4 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Store } from '../src/server/store.js';
 import { Runner } from '../src/server/runner.js';
 import { research, type Config } from '../src/server/research.js';
@@ -134,6 +137,72 @@ it('holds active work for review on graceful shutdown', async () => {
   store.action(store.tasks()[0].id, 'run');
   expect(store.claim()).toBeTruthy();
   store.close();
+});
+it('does not interrupt a replacement claim when an old runner stops', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'opendots-runner-'));
+  const store = new Store(join(dir, 'test.sqlite'));
+  const replacementStore = new Store(join(dir, 'test.sqlite'));
+  const result = { text: 'Finished', sources: [], sample: false };
+  let finishOld!: () => void;
+  let finishReplacement!: () => void;
+  const executeOld = vi.fn(
+    () =>
+      new Promise<typeof result>(
+        (resolve) => (finishOld = () => resolve(result)),
+      ),
+  );
+  const executeReplacement = vi.fn(
+    () =>
+      new Promise<typeof result>(
+        (resolve) => (finishReplacement = () => resolve(result)),
+      ),
+  );
+  const oldRunner = new Runner(store, config, executeOld);
+  const replacementRunner = new Runner(
+    replacementStore,
+    config,
+    executeReplacement,
+  );
+  const task = store.createTask('Keep working');
+  const oldRun = oldRunner.tick();
+  let replacementRun: Promise<void> | undefined;
+  try {
+    expect(executeOld).toHaveBeenCalledOnce();
+    const oldLease = store.task(task.id)!.lease;
+    replacementStore.action(task.id, 'pause');
+    replacementStore.action(task.id, 'run');
+    replacementRun = replacementRunner.tick();
+    expect(executeReplacement).toHaveBeenCalledOnce();
+    const replacementLease = replacementStore.task(task.id)!.lease;
+    expect(replacementLease).not.toBe(oldLease);
+
+    oldRunner.stop();
+
+    expect(replacementStore.task(task.id)).toMatchObject({
+      status: 'running',
+      lease: replacementLease,
+    });
+    finishOld();
+    await oldRun;
+    finishReplacement();
+    await replacementRun;
+    expect(replacementStore.task(task.id)?.status).toBe('completed');
+    expect(replacementStore.detail(task.id)?.runs[0]).toMatchObject({
+      id: replacementLease,
+      status: 'completed',
+      result,
+    });
+  } finally {
+    finishOld?.();
+    finishReplacement?.();
+    await oldRun;
+    await replacementRun;
+    oldRunner.stop();
+    replacementRunner.stop();
+    store.close();
+    replacementStore.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 it('survives a claim failure and runs work on the next tick', async () => {
   const store = new Store(':memory:');
