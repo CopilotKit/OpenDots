@@ -23,6 +23,8 @@ const dotSchema = z
     skillDeliveryEnabled: z.boolean().optional(),
     spaceIds: z.array(z.string().min(1)).min(1).max(100).optional(),
     spaceId: z.string().min(1).optional(),
+    model: z.string().trim().max(120).optional(),
+    reasoningEffort: z.string().trim().max(20).optional(),
   })
   .strict();
 export function workspaceRoutes(platform: Platform, voice: VoiceService) {
@@ -99,19 +101,27 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
         400,
       );
     }
+    const created = platform.workspace.createDot(
+      data.data.spaceId,
+      data.data.name,
+      data.data.instructions,
+      data.data.researchAllowed,
+      data.data.memoryAllowed,
+      data.data.spaceIds,
+      data.data.learningContainerId,
+      data.data.skillDeliveryEnabled,
+      data.data.appsAllowed,
+      data.data.composioToolkits,
+    );
+    const { model, reasoningEffort } = data.data;
     return c.json(
-      platform.workspace.createDot(
-        data.data.spaceId,
-        data.data.name,
-        data.data.instructions,
-        data.data.researchAllowed,
-        data.data.memoryAllowed,
-        data.data.spaceIds,
-        data.data.learningContainerId,
-        data.data.skillDeliveryEnabled,
-        data.data.appsAllowed,
-        data.data.composioToolkits,
-      ),
+      model || reasoningEffort
+        ? platform.workspace.updateDot(created.id, {
+            ...created,
+            model,
+            reasoningEffort,
+          })
+        : created,
       201,
     );
   });
