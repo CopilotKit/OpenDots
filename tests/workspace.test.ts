@@ -76,6 +76,9 @@ it('keeps a per-Dot model override across omitted patches and clears it on empty
     });
     const { model, reasoningEffort, ...rest } = ws.dot('dot')!;
     expect([model, reasoningEffort]).toEqual(['kimi-k3.1-pro', 'low']);
+    expect(ws.dot('dot')?.autoRecall).toBe(false);
+    ws.updateDot('dot', { ...ws.dot('dot')!, autoRecall: true });
+    expect(ws.dot('dot')?.autoRecall).toBe(true);
     ws.updateDot('dot', { ...rest, name: 'Renamed' });
     expect(ws.dot('dot')?.model).toBe('kimi-k3.1-pro');
     expect(ws.dot('dot')?.reasoningEffort).toBe('low');

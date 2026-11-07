@@ -34,6 +34,7 @@ export class WorkspaceStore {
       ['dots', 'composioPolicyHash', 'TEXT'],
       ['dots', 'model', 'TEXT'],
       ['dots', 'reasoningEffort', 'TEXT'],
+      ['dots', 'autoRecall', 'INTEGER NOT NULL DEFAULT 0'],
       ['thread_bindings', 'learningContainerId', 'TEXT'],
     ]) {
       if (
@@ -120,6 +121,7 @@ export class WorkspaceStore {
         appsAllowed: !!row.appsAllowed,
         composioToolkits: JSON.parse(String(row.composioToolkits ?? '[]')),
         skillDeliveryEnabled: !!row.skillDeliveryEnabled,
+        autoRecall: !!row.autoRecall,
       })) as unknown as Dot[];
   }
   dot(id: string) {
@@ -212,6 +214,7 @@ export class WorkspaceStore {
       skillDeliveryEnabled?: boolean;
       model?: string | null;
       reasoningEffort?: string | null;
+      autoRecall?: boolean;
     },
   ): Dot {
     const current = this.dot(id);
@@ -233,11 +236,12 @@ export class WorkspaceStore {
       patch.reasoningEffort === undefined
         ? (current.reasoningEffort ?? null)
         : patch.reasoningEffort || null;
+    const autoRecall = patch.autoRecall ?? current.autoRecall ?? false;
     this.db.exec('BEGIN');
     try {
       this.db
         .prepare(
-          'UPDATE dots SET name=?, instructions=?, researchAllowed=?, memoryAllowed=?, learningContainerId=?, skillDeliveryEnabled=?, appsAllowed=?, composioToolkits=?, model=?, reasoningEffort=? WHERE id=?',
+          'UPDATE dots SET name=?, instructions=?, researchAllowed=?, memoryAllowed=?, learningContainerId=?, skillDeliveryEnabled=?, appsAllowed=?, composioToolkits=?, model=?, reasoningEffort=?, autoRecall=? WHERE id=?',
         )
         .run(
           patch.name,
@@ -250,6 +254,7 @@ export class WorkspaceStore {
           JSON.stringify([...new Set(patch.composioToolkits)].sort()),
           model,
           reasoningEffort,
+          +autoRecall,
           id,
         );
       this.db

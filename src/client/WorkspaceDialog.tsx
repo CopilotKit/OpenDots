@@ -62,6 +62,9 @@ export function WorkspaceDialog({
   const [reasoningEffort, setReasoningEffort] = useState(
     dialog.type === 'dot' ? (dialog.dot?.reasoningEffort ?? '') : '',
   );
+  const [autoRecall, setAutoRecall] = useState(
+    dialog.type === 'dot' ? (dialog.dot?.autoRecall ?? false) : false,
+  );
   const [spaceIds, setSpaceIds] = useState(
     dialog.type === 'dot' ? (dialog.dot?.spaceIds ?? [dialog.spaceId]) : [],
   );
@@ -172,6 +175,7 @@ export function WorkspaceDialog({
                 skillDeliveryEnabled: skillDelivery,
                 model,
                 reasoningEffort,
+                autoRecall,
               };
             }
             if (dialog.type === 'settings') {
@@ -433,6 +437,21 @@ export function WorkspaceDialog({
                 Optional. Sent as reasoning_effort: none, low, medium, high or
                 max, as the model supports. Leave blank for the model default.
               </p>
+              <label className="permission-row">
+                <input
+                  type="checkbox"
+                  checked={autoRecall}
+                  onChange={(event) => setAutoRecall(event.target.checked)}
+                />
+                <span>
+                  <strong>Recall before every answer</strong>
+                  <small>
+                    Calls the recall tool of a connected memory server with each
+                    message and gives the results to the Dot. Needs a connection
+                    with a read-only recall tool that does not ask first.
+                  </small>
+                </span>
+              </label>
             </fieldset>
           )}
           {dialog.type === 'dot' && dialog.dot && (

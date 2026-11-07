@@ -25,6 +25,7 @@ const dotSchema = z
     spaceId: z.string().min(1).optional(),
     model: z.string().trim().max(120).optional(),
     reasoningEffort: z.string().trim().max(20).optional(),
+    autoRecall: z.boolean().optional(),
   })
   .strict();
 export function workspaceRoutes(platform: Platform, voice: VoiceService) {
@@ -113,13 +114,14 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
       data.data.appsAllowed,
       data.data.composioToolkits,
     );
-    const { model, reasoningEffort } = data.data;
+    const { model, reasoningEffort, autoRecall } = data.data;
     return c.json(
-      model || reasoningEffort
+      model || reasoningEffort || autoRecall
         ? platform.workspace.updateDot(created.id, {
             ...created,
             model,
             reasoningEffort,
+            autoRecall,
           })
         : created,
       201,
