@@ -6,6 +6,7 @@ import { completion } from './fixtures/model-stream.js';
 import { Store } from '../src/server/store.js';
 import { WorkspaceStore } from '../src/server/workspace.js';
 import { pageReviewTool } from '../src/shared/page-review.js';
+import { connectionActionTool } from '../src/shared/connection-types.js';
 
 const databases: Array<{ close(): void }> = [];
 afterEach(() => {
@@ -248,4 +249,112 @@ it('aborts the TanStack provider request when the owner pauses work', async () =
   f.store.updateSettings({ paused: true });
   await finished;
   expect(signal.aborted).toBe(true);
+});
+
+it('offers connected tools to the model and the approval tool only when the web client can show it', async () => {
+  const f = fixture();
+  f.workspace.connections.create(
+    f.dot.id,
+    { name: 'Mail', url: 'https://mail.example.com/mcp' },
+    [
+      {
+        name: 'send_mail',
+        title: 'Send mail',
+        description: 'Send an email.',
+        inputSchema: {
+          type: 'object',
+          properties: { to: { type: 'string' } },
+        },
+        readOnly: false,
+        enabled: true,
+        requiresApproval: true,
+      },
+    ],
+  );
+  const toolNames = async (clientTools: RunAgentInput['tools']) => {
+    const network = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        completion({ role: 'assistant', content: 'Ready.' }),
+      );
+    await lastValueFrom(
+      f.agent
+        .clone()
+        .run({ ...f.input, tools: clientTools })
+        .pipe(toArray()),
+    );
+    const body = JSON.parse(String(network.mock.calls[0][1]?.body)) as {
+      tools: { function: { name: string } }[];
+    };
+    network.mockRestore();
+    return body.tools.map((tool) => tool.function.name);
+  };
+  const web = await toolNames([
+    {
+      name: connectionActionTool.name,
+      description: 'client copy',
+      parameters: {},
+    },
+  ]);
+  expect(web).toEqual(
+    expect.arrayContaining(['mail__send_mail', connectionActionTool.name]),
+  );
+  const headless = await toolNames([]);
+  expect(headless).toContain('mail__send_mail');
+  expect(headless).not.toContain(connectionActionTool.name);
+});
+
+it('tells the model the current time so scheduled runs do not invent one', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-04T07:33:12.000Z'));
+  try {
+    const f = fixture();
+    const network = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        completion({ role: 'assistant', content: 'It is 07:33 UTC.' }),
+      );
+    await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+    const request = JSON.parse(String(network.mock.calls[0][1]?.body));
+    const system = request.messages.find(
+      (message: { role: string }) => message.role === 'system',
+    );
+    expect(system.content).toContain(
+      'Current time: 2026-10-04T07:33:12.000Z (UTC).',
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('reports a turn that hits the time limit as a RUN_ERROR instead of ending silently', async () => {
+  vi.useFakeTimers();
+  try {
+    const f = fixture();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(init.signal?.reason),
+            {
+              once: true,
+            },
+          );
+        }),
+    );
+    const finished = lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+    await vi.advanceTimersByTimeAsync(90_001);
+    const events = await finished;
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: EventType.RUN_ERROR,
+          message: expect.stringMatching(/time limit/i),
+        }),
+      ]),
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 });

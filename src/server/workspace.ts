@@ -1,4 +1,5 @@
 import { ComputerStore } from './computer-store.js';
+import { ConnectionStore } from './connection-store.js';
 import { Pages } from './pages.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
@@ -10,6 +11,7 @@ export class WorkspaceStore {
   private db: DatabaseSync;
   readonly pages: Pages;
   readonly computers: ComputerStore;
+  readonly connections: ConnectionStore;
   constructor(
     path: string,
     readonly ownerId: string,
@@ -26,6 +28,10 @@ export class WorkspaceStore {
     for (const [table, column, definition] of [
       ['dots', 'learningContainerId', 'TEXT'],
       ['dots', 'skillDeliveryEnabled', 'INTEGER NOT NULL DEFAULT 0'],
+      ['dots', 'appsAllowed', 'INTEGER NOT NULL DEFAULT 0'],
+      ['dots', 'composioToolkits', "TEXT NOT NULL DEFAULT '[]'"],
+      ['dots', 'composioSessionId', 'TEXT'],
+      ['dots', 'composioPolicyHash', 'TEXT'],
       ['thread_bindings', 'learningContainerId', 'TEXT'],
     ]) {
       if (
@@ -50,6 +56,7 @@ export class WorkspaceStore {
         COMMIT;`);
     }
     this.computers = new ComputerStore(this.db);
+    this.connections = new ConnectionStore(this.db);
     this.pages = new Pages(this.db, (id) =>
       this.spaces().some((space) => space.id === id),
     );
@@ -108,6 +115,8 @@ export class WorkspaceStore {
           .map((grant) => String(grant.spaceId)),
         researchAllowed: !!row.researchAllowed,
         memoryAllowed: !!row.memoryAllowed,
+        appsAllowed: !!row.appsAllowed,
+        composioToolkits: JSON.parse(String(row.composioToolkits ?? '[]')),
         skillDeliveryEnabled: !!row.skillDeliveryEnabled,
       })) as unknown as Dot[];
   }
@@ -123,6 +132,8 @@ export class WorkspaceStore {
     spaceIds: string[] = [spaceId],
     learningContainerId: string | null = null,
     skillDeliveryEnabled = false,
+    appsAllowed = false,
+    composioToolkits: string[] = [],
   ): Dot {
     this.validateSpaceAccess(spaceId, spaceIds);
     validateLearningSettings(learningContainerId, skillDeliveryEnabled);
@@ -134,6 +145,10 @@ export class WorkspaceStore {
       instructions,
       researchAllowed,
       memoryAllowed,
+      appsAllowed,
+      composioToolkits: [...new Set(composioToolkits)].sort(),
+      composioSessionId: null,
+      composioPolicyHash: null,
       learningContainerId,
       skillDeliveryEnabled,
       createdAt: Date.now(),
@@ -142,7 +157,7 @@ export class WorkspaceStore {
     try {
       this.db
         .prepare(
-          'INSERT INTO dots (id, spaceId, name, instructions, researchAllowed, memoryAllowed, createdAt, learningContainerId, skillDeliveryEnabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO dots (id, spaceId, name, instructions, researchAllowed, memoryAllowed, createdAt, learningContainerId, skillDeliveryEnabled, appsAllowed, composioToolkits) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         )
         .run(
           dot.id,
@@ -154,6 +169,8 @@ export class WorkspaceStore {
           dot.createdAt,
           learningContainerId,
           +skillDeliveryEnabled,
+          +appsAllowed,
+          JSON.stringify(dot.composioToolkits),
         );
       for (const id of dot.spaceIds)
         this.db.prepare('INSERT INTO dot_spaces VALUES (?, ?)').run(dot.id, id);
@@ -180,7 +197,12 @@ export class WorkspaceStore {
     id: string,
     patch: Pick<
       Dot,
-      'name' | 'instructions' | 'researchAllowed' | 'memoryAllowed'
+      | 'name'
+      | 'instructions'
+      | 'researchAllowed'
+      | 'memoryAllowed'
+      | 'appsAllowed'
+      | 'composioToolkits'
     > & {
       spaceId?: string;
       spaceIds?: string[];
@@ -204,7 +226,7 @@ export class WorkspaceStore {
     try {
       this.db
         .prepare(
-          'UPDATE dots SET name=?, instructions=?, researchAllowed=?, memoryAllowed=?, learningContainerId=?, skillDeliveryEnabled=? WHERE id=?',
+          'UPDATE dots SET name=?, instructions=?, researchAllowed=?, memoryAllowed=?, learningContainerId=?, skillDeliveryEnabled=?, appsAllowed=?, composioToolkits=? WHERE id=?',
         )
         .run(
           patch.name,
@@ -213,6 +235,8 @@ export class WorkspaceStore {
           +patch.memoryAllowed,
           learningContainerId,
           +skillDeliveryEnabled,
+          +patch.appsAllowed,
+          JSON.stringify([...new Set(patch.composioToolkits)].sort()),
           id,
         );
       this.db
@@ -227,6 +251,13 @@ export class WorkspaceStore {
       throw error;
     }
     return this.dot(id)!;
+  }
+  saveComposioSession(id: string, sessionId: string, policyHash: string) {
+    this.db
+      .prepare(
+        'UPDATE dots SET composioSessionId=?, composioPolicyHash=? WHERE id=?',
+      )
+      .run(sessionId, policyHash, id);
   }
   conversations(): Conversation[] {
     return this.db

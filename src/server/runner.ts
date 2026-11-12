@@ -1,7 +1,8 @@
-import { Store } from './store.js';
+import { DEFAULT_WORKER_LEASE_MS, Store } from './store.js';
 import type { Result, Memory } from '../shared/types.js';
 import type { Claim } from './store.js';
 import { research, type Config } from './research.js';
+import { DEFAULT_AGENT_RUN_TIMEOUT_MS } from './platform-config.js';
 export class Runner {
   private timer?: ReturnType<typeof setInterval>;
   private active = new Map<string, AbortController>();
@@ -14,6 +15,7 @@ export class Runner {
       signal: AbortSignal,
       progress: (text: string) => void,
     ) => Promise<Result>,
+    private runTimeoutMs = DEFAULT_AGENT_RUN_TIMEOUT_MS,
   ) {}
   start() {
     if (!this.timer) {
@@ -26,9 +28,9 @@ export class Runner {
     this.timer = undefined;
     for (const task of this.store.tasks()) {
       if (this.active.has(task.id) && task.lease)
-        this.store.release(
+        this.store.interrupt(
           { ...task, lease: task.lease },
-          'Server stopping; queued for restart.',
+          'Server stopped during this run. Review completed effects before retrying.',
         );
     }
     this.abortAll();
@@ -41,21 +43,42 @@ export class Runner {
       controller.abort(new Error('Run stopped because settings changed.'));
   }
   async tick() {
+    try {
+      await this.runTick();
+    } catch {
+      // Store errors must not become unhandled interval promise rejections.
+      // Do not log task content, provider responses, or database details.
+      console.error(
+        'Background runner tick failed; will retry on the next tick.',
+      );
+    }
+  }
+  private async runTick() {
     if (this.active.size) return;
-    const claim = this.store.claim();
+    // Leave time to persist the outcome after the configured run timeout.
+    const claim = this.store.claim(
+      Date.now(),
+      Math.max(DEFAULT_WORKER_LEASE_MS, this.runTimeoutMs * 2),
+    );
     if (!claim) return;
     const controller = new AbortController();
     this.active.set(claim.id, controller);
     const ownershipCheck = setInterval(() => {
-      if (!this.store.owns(claim))
-        controller.abort(new Error('Run permission or lease was revoked.'));
+      try {
+        if (!this.store.owns(claim))
+          controller.abort(new Error('Run permission or lease was revoked.'));
+      } catch {
+        controller.abort(new Error('Run ownership check failed.'));
+      }
     }, 100);
     const timeout = setTimeout(
       () =>
         controller.abort(
-          new Error('Research exceeded the 90 second time limit.'),
+          new Error(
+            `Research exceeded the ${this.runTimeoutMs / 1000} second time limit.`,
+          ),
         ),
-      90_000,
+      this.runTimeoutMs,
     );
     try {
       const settings = this.store.settings();

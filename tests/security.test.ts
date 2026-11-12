@@ -14,6 +14,8 @@ describe('browser network boundaries', () => {
     '2002:7f00:1::',
     'fc00::1',
     'fe80::1',
+    '3fff::1',
+    '3fff:0fff::1',
     '::ffff:127.0.0.1',
     '224.0.0.1',
   ])('rejects private or special address %s', (address) =>

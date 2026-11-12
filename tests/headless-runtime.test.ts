@@ -92,6 +92,42 @@ it('executes server turns without browser-only Core discovery and tears down the
   expect(sdk.unsubscribe).toHaveBeenCalledOnce();
   expect(sdk.detach).toHaveBeenCalledOnce();
 });
+it('marks scheduled user prompts while preserving their text and user role', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        mode: 'intelligence',
+        intelligence: { wsUrl: 'wss://example.com/client' },
+        agents: { dot: {} },
+      }),
+    ),
+  );
+  sdk.run.mockResolvedValue({
+    newMessages: [
+      { id: 'reply', role: 'assistant', content: 'Scheduled task complete' },
+    ],
+  });
+
+  await runThreadTurn(
+    'https://runtime.test',
+    {},
+    'dot',
+    'thread',
+    'Check the nightly report',
+    new AbortController().signal,
+    { opendotsSource: 'scheduled_task' },
+  );
+
+  expect(sdk.message).toHaveBeenCalledWith(
+    expect.objectContaining({
+      id: expect.stringMatching(/^opendots:scheduled_task:/),
+      role: 'user',
+      content: 'Check the nightly report',
+      metadata: { opendotsSource: 'scheduled_task' },
+    }),
+  );
+});
 it('rejects failed runtime discovery instead of waiting for browser status indefinitely', async () => {
   vi.stubGlobal(
     'fetch',

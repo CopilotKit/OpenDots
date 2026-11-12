@@ -2,7 +2,10 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 vi.mock('../src/client/api', () => ({ api: vi.fn() }));
 import { api } from '../src/client/api';
-import { decidePageReview } from '../src/client/page-review-decision';
+import {
+  decidePageReview,
+  isDeletedReview,
+} from '../src/client/page-review-decision';
 import { PageReviewCard } from '../src/client/PageReviewCard';
 
 beforeEach(() => {
@@ -25,6 +28,42 @@ it('recovers an already committed save instead of emitting a decline', async () 
   expect(api).toHaveBeenCalledTimes(1);
 });
 
+it('recognizes a saved review whose page was deleted without saving again', async () => {
+  const draft = { title: 'Brief', content: 'Evidence', spaceId: 'space' };
+  const deleted = {
+    deleted: true,
+    pageId: 'gone',
+    spaceId: 'space',
+    reviewDraft: draft,
+  };
+  vi.mocked(api).mockResolvedValue(deleted);
+  const result = await decidePageReview('thread', 'call', draft, true);
+  expect(isDeletedReview(result)).toBe(true);
+  expect(result).toBe(deleted);
+  expect(
+    vi.mocked(api).mock.calls.filter((call) => call[1] === 'POST'),
+  ).toHaveLength(0);
+  expect(isDeletedReview({ id: 'page' })).toBe(false);
+  expect(isDeletedReview(null)).toBe(false);
+});
+
+it('rejects a changed draft for a review whose page was deleted', async () => {
+  vi.mocked(api).mockResolvedValue({
+    deleted: true,
+    pageId: 'gone',
+    spaceId: 'space',
+    reviewDraft: { title: 'Brief', content: 'Evidence', spaceId: 'space' },
+  });
+  await expect(
+    decidePageReview(
+      'thread',
+      'call',
+      { title: 'Brief', content: 'Changed', spaceId: 'space' },
+      true,
+    ),
+  ).rejects.toThrow('different draft');
+});
+
 it('does not decide or save when receipt recovery fails', async () => {
   vi.mocked(api).mockRejectedValue(new Error('Access revoked'));
   await expect(decidePageReview('thread', 'call', {}, false)).rejects.toThrow(
@@ -35,7 +74,7 @@ it('does not decide or save when receipt recovery fails', async () => {
 
 it('checks for a receipt before retrying a save whose response was lost', async () => {
   const draft = { title: 'Brief', content: 'Evidence', spaceId: 'space' };
-  const page = { id: 'saved', ...draft };
+  const page = { id: 'saved', ...draft, reviewDraft: draft };
   vi.mocked(api)
     .mockResolvedValueOnce(null)
     .mockRejectedValueOnce(new Error('Connection lost'));
@@ -47,6 +86,36 @@ it('checks for a receipt before retrying a save whose response was lost', async 
   expect(
     vi.mocked(api).mock.calls.filter((call) => call[1] === 'POST'),
   ).toHaveLength(1);
+});
+
+it('rejects a changed restored draft before sending a decision or another save', async () => {
+  const original = {
+    title: 'Brief',
+    content: 'Approved text',
+    spaceId: 'space',
+  };
+  const page = {
+    id: 'saved',
+    ...original,
+    content: 'The page was edited later.',
+    reviewDraft: original,
+  };
+  vi.mocked(api).mockResolvedValue(page);
+  expect(
+    await decidePageReview('thread', 'call', original, true),
+  ).toMatchObject({ id: 'saved' });
+  for (const changed of [
+    { ...original, title: 'Changed' },
+    { ...original, content: 'Changed' },
+    { ...original, spaceId: 'other' },
+  ]) {
+    await expect(
+      decidePageReview('thread', 'call', changed, true),
+    ).rejects.toThrow('different draft');
+  }
+  expect(
+    vi.mocked(api).mock.calls.filter((call) => call[1] === 'POST'),
+  ).toHaveLength(0);
 });
 
 it('hides decisions and unsaved claims until the persisted receipt is checked', () => {
@@ -86,4 +155,22 @@ it('does not claim a canceled or declined review was unsaved before recovering i
     expect(html).not.toContain('No page was saved.');
     expect(html).not.toContain('Decline');
   }
+});
+
+it('renders a Markdown table in the draft as a table, not raw pipe text', () => {
+  const content = '| Category | Score |\n| --- | --- |\n| Speed | 9 |';
+  const html = renderToStaticMarkup(
+    <PageReviewCard
+      args={{ title: 'Brief', content, spaceId: 'space' }}
+      status="executing"
+      respond={async () => {}}
+      threadId="thread"
+      toolCallId="call"
+      onSaved={() => {}}
+    />,
+  );
+  expect(html).toContain('<table>');
+  expect(html).toContain('<th>Category</th>');
+  expect(html).toContain('<td>Speed</td>');
+  expect(html).not.toContain('| Category |');
 });

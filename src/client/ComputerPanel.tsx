@@ -27,6 +27,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
   const [contents, setContents] = useState('');
   const [command, setCommand] = useState('');
   const [output, setOutput] = useState('');
+  const [outputError, setOutputError] = useState('');
   const [screenError, setScreenError] = useState('');
   const lifecycle = useRef({
     active: false,
@@ -129,6 +130,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
     lifecycle.current.revision++;
     setBusy(true);
     setError('');
+    if (showOutput) setOutputError('');
     try {
       const result = await api<unknown>(
         `${base}${endpoint}`,
@@ -144,10 +146,15 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
       await refresh();
       return result;
     } catch (cause) {
-      if (lifecycle.current.active)
-        setError(
-          cause instanceof Error ? cause.message : 'Computer action failed.',
-        );
+      if (!lifecycle.current.active) return;
+      const message =
+        cause instanceof Error ? cause.message : 'Computer action failed.';
+      // Status polling clears the panel error, so keep output action failures
+      // next to the output they replace.
+      if (showOutput) {
+        setOutput('');
+        setOutputError(message);
+      } else setError(message);
     } finally {
       lifecycle.current.busy = false;
       if (lifecycle.current.active) setBusy(false);
@@ -572,13 +579,26 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                   <p>Enable Terminal commands permission to run commands.</p>
                 )}
               </details>
-              {output && (tab === 'Files' || tab === 'Terminal') && (
-                <section className="computer-section">
-                  <h3>Output</h3>
-                  <pre tabIndex={0}>{output}</pre>
-                  <button onClick={() => setOutput('')}>Clear output</button>
-                </section>
-              )}
+              {(output || outputError) &&
+                (tab === 'Files' || tab === 'Terminal') && (
+                  <section className="computer-section">
+                    <h3>Output</h3>
+                    {outputError && (
+                      <p className="computer-error" role="alert">
+                        {outputError}
+                      </p>
+                    )}
+                    {output && <pre tabIndex={0}>{output}</pre>}
+                    <button
+                      onClick={() => {
+                        setOutput('');
+                        setOutputError('');
+                      }}
+                    >
+                      Clear output
+                    </button>
+                  </section>
+                )}
             </>
           )}
           <details

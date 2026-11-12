@@ -17,14 +17,19 @@ export function pageRoutes(platform: Platform) {
         { error: 'This Dot no longer has access to the selected Space.' },
         403,
       );
-    return c.json(
-      platform.workspace.pages.get(receipt.spaceId, receipt.pageId),
-    );
+    const { pageId, spaceId, draft: reviewDraft } = receipt;
+    // The receipt outlives its page so a retried approval cannot recreate it.
+    if (!platform.workspace.pages.exists(spaceId, pageId))
+      return c.json({ deleted: true, pageId, spaceId, reviewDraft });
+    return c.json({
+      ...platform.workspace.pages.get(spaceId, pageId),
+      reviewDraft,
+    });
   });
   app.post('/conversations/:id/reviewed-page', async (c) => {
     const data = pageReviewSchema
       .extend({ toolCallId: z.string().min(1).max(200) })
-      .safeParse(await c.req.json());
+      .safeParse(await c.req.json().catch(() => null));
     if (!data.success)
       return c.json({ error: 'Enter a valid page draft.' }, 400);
     const thread = platform.workspace.requireThread(c.req.param('id'));
@@ -63,7 +68,7 @@ export function pageRoutes(platform: Platform) {
     ),
   );
   app.post('/spaces/:spaceId/pages', async (c) => {
-    const data = pageInput.safeParse(await c.req.json());
+    const data = pageInput.safeParse(await c.req.json().catch(() => null));
     if (!data.success)
       return c.json(
         {
@@ -78,7 +83,7 @@ export function pageRoutes(platform: Platform) {
     );
   });
   app.patch('/spaces/:spaceId/pages/:id', async (c) => {
-    const data = pagePatch.safeParse(await c.req.json());
+    const data = pagePatch.safeParse(await c.req.json().catch(() => null));
     if (!data.success)
       return c.json(
         { error: 'A valid page patch and expectedRevision are required.' },
@@ -92,11 +97,20 @@ export function pageRoutes(platform: Platform) {
       ),
     );
   });
+  app.delete('/spaces/:spaceId/pages/:id', (c) => {
+    const deleted = platform.workspace.pages.delete(
+      c.req.param('spaceId'),
+      c.req.param('id'),
+    );
+    if (!deleted)
+      return c.json({ error: 'Page not found in this Space.' }, 404);
+    return c.json({ ok: true });
+  });
   app.post('/spaces/:spaceId/pages/:id/conversation', async (c) => {
     const data = z
       .object({ dotId: z.string().min(1) })
       .strict()
-      .safeParse(await c.req.json());
+      .safeParse(await c.req.json().catch(() => null));
     if (!data.success) return c.json({ error: 'Choose a specialist.' }, 400);
     return c.json(
       await platform.pages.conversation(
@@ -113,7 +127,7 @@ export function pageRoutes(platform: Platform) {
         parentId: z.string().nullable().default(null),
       })
       .strict()
-      .safeParse(await c.req.json());
+      .safeParse(await c.req.json().catch(() => null));
     if (!data.success)
       return c.json({ error: 'Enter a valid page title and parent.' }, 400);
     return c.json(
@@ -126,10 +140,10 @@ export function pageRoutes(platform: Platform) {
     );
   });
   app.onError((error, c) =>
-    error instanceof SyntaxError
-      ? c.json({ error: 'Invalid JSON request.' }, 400)
-      : error instanceof PageError
-        ? c.json({ error: error.message }, error.status)
+    error instanceof PageError
+      ? c.json({ error: error.message }, error.status)
+      : error.message === 'Conversation does not belong to this Dot and owner.'
+        ? c.json({ error: error.message }, 404)
         : c.json(
             {
               error:

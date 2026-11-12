@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, FileText, ArrowUpRight } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { pageReviewSchema } from '../shared/page-review';
-import { decidePageReview, restorePageReview } from './page-review-decision';
-import { computerToolResult } from './ComputerToolCard';
+import {
+  decidePageReview,
+  isDeletedReview,
+  matchesReviewedDraft,
+  restorePageReview,
+  type DeletedReview,
+} from './page-review-decision';
 import { openPageLink } from './page-navigation';
-import type { Page } from '../server/pages';
+import type { ReviewedPage } from '../server/pages';
 export function PageReviewCard({
   args,
   status,
-  result,
   respond,
   threadId,
   toolCallId,
@@ -24,30 +29,31 @@ export function PageReviewCard({
   onSaved: () => void;
 }) {
   const draft = pageReviewSchema.safeParse(args);
-  const outcome = computerToolResult(result);
-  const [savedPage, setSavedPage] = useState<Page>();
+  const [savedPage, setSavedPage] = useState<ReviewedPage>();
+  const [deletedReview, setDeletedReview] = useState<DeletedReview>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [receiptReady, setReceiptReady] = useState(false);
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const pending = useRef(false);
   const finished = status === 'complete';
-  const recordedApproval = outcome.approved === true;
-  const saved = !!savedPage || recordedApproval;
-  const pageId =
-    savedPage?.id ?? (typeof outcome.pageId === 'string' ? outcome.pageId : '');
-  const spaceId =
-    savedPage?.spaceId ??
-    (typeof outcome.spaceId === 'string' ? outcome.spaceId : '');
+  const reviewed = savedPage ?? deletedReview;
+  const conflict = !!reviewed && !matchesReviewedDraft(reviewed, args);
+  const removed = !!deletedReview && !conflict;
+  const saved = (!!savedPage || removed) && !conflict;
+  const pageId = savedPage?.id ?? '';
+  const spaceId = savedPage?.spaceId ?? '';
   useEffect(() => {
-    if (recordedApproval) return;
     let active = true;
     setReceiptReady(false);
+    setSavedPage(undefined);
+    setDeletedReview(undefined);
     setError('');
     void restorePageReview(threadId, toolCallId)
       .then((page) => {
         if (!active) return;
-        setSavedPage(page ?? undefined);
+        if (isDeletedReview(page)) setDeletedReview(page);
+        else setSavedPage(page ?? undefined);
         setReceiptReady(true);
       })
       .catch((cause) => {
@@ -61,9 +67,9 @@ export function PageReviewCard({
     return () => {
       active = false;
     };
-  }, [threadId, toolCallId, recordedApproval, restoreAttempt]);
+  }, [threadId, toolCallId, restoreAttempt]);
   const decide = async (approved: boolean) => {
-    if (!respond || !receiptReady || pending.current) return;
+    if (!respond || !receiptReady || conflict || pending.current) return;
     pending.current = true;
     setBusy(true);
     setError('');
@@ -73,6 +79,19 @@ export function PageReviewCard({
         await respond({
           approved: false,
           message: 'The owner declined this draft. Do not save it.',
+        });
+        return;
+      }
+      if (isDeletedReview(page)) {
+        setSavedPage(undefined);
+        setDeletedReview(page);
+        await respond({
+          approved: true,
+          pageId: page.pageId,
+          spaceId: page.spaceId,
+          deleted: true,
+          message:
+            'The draft was saved, then the owner deleted the page. Do not link it.',
         });
         return;
       }
@@ -101,28 +120,35 @@ export function PageReviewCard({
       <header>
         <FileText size={17} />
         <strong>
-          {saved
-            ? 'Saved to your Space'
-            : !receiptReady
-              ? 'Checking saved review…'
-              : finished
-                ? 'Review ended'
-                : 'Ready for your review'}
+          {conflict
+            ? 'Review changed'
+            : removed
+              ? 'Saved, then deleted'
+              : saved
+                ? 'Saved to your Space'
+                : !receiptReady
+                  ? 'Checking saved review…'
+                  : finished
+                    ? 'Review ended'
+                    : 'Ready for your review'}
         </strong>
         <span>
-          {saved
-            ? 'Approved'
-            : !receiptReady
-              ? 'Checking'
-              : finished
-                ? 'Not saved'
-                : 'You decide'}
+          {conflict
+            ? 'Needs new review'
+            : saved
+              ? 'Approved'
+              : !receiptReady
+                ? 'Checking'
+                : finished
+                  ? 'Not saved'
+                  : 'You decide'}
         </span>
       </header>
       <div className="page-review-body">
         <h3>{draft.success ? draft.data.title : 'Preparing your draft…'}</h3>
         {draft.success && (
           <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
             components={{
               img: ({ alt }) => <span>{alt}</span>,
               a: ({ href, children }) => (
@@ -136,6 +162,12 @@ export function PageReviewCard({
           </ReactMarkdown>
         )}
       </div>
+      {conflict && (
+        <p role="alert">
+          This review was saved with a different draft. Start a new review for
+          the changed draft.
+        </p>
+      )}
       {error && <p role="alert">{error}</p>}
       {!receiptReady && error && (
         <button
@@ -146,7 +178,7 @@ export function PageReviewCard({
         </button>
       )}
       <footer>
-        {saved && pageId && spaceId && (
+        {(saved || conflict) && pageId && spaceId && (
           <button
             type="button"
             className="review-primary"
@@ -156,10 +188,11 @@ export function PageReviewCard({
               )
             }
           >
-            Open page <ArrowUpRight size={15} />
+            {conflict ? 'Open saved page' : 'Open page'}{' '}
+            <ArrowUpRight size={15} />
           </button>
         )}
-        {!finished && respond && receiptReady && (
+        {!finished && respond && receiptReady && !conflict && (
           <>
             <button
               type="button"
@@ -185,7 +218,7 @@ export function PageReviewCard({
             )}
           </>
         )}
-        {!saved && (
+        {!saved && !conflict && (
           <small>
             {!receiptReady
               ? 'Checking whether this draft was already saved.'

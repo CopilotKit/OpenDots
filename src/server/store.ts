@@ -14,11 +14,13 @@ import type {
 } from '../shared/types.js';
 
 export type Claim = Task & { lease: string };
+export const DEFAULT_WORKER_LEASE_MS = 180_000;
 const defaults: Settings = {
   name: 'Dot',
   paused: false,
   researchAllowed: true,
   memoryAllowed: true,
+  appsAllowed: false,
 };
 export class Store {
   private db: DatabaseSync;
@@ -26,6 +28,7 @@ export class Store {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+      CREATE TABLE IF NOT EXISTS setup_telemetry (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, prompt TEXT NOT NULL, status TEXT NOT NULL, intervalSeconds INTEGER, nextRunAt INTEGER, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, error TEXT, lease TEXT, leaseUntil INTEGER);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, taskId TEXT NOT NULL, status TEXT NOT NULL, startedAt INTEGER NOT NULL, finishedAt INTEGER, result TEXT, error TEXT);
@@ -37,6 +40,20 @@ export class Store {
     this.db
       .prepare('INSERT OR IGNORE INTO settings VALUES (1, ?)')
       .run(JSON.stringify(defaults));
+  }
+  setupTelemetryState(): string | undefined {
+    return (
+      this.db.prepare('SELECT value FROM setup_telemetry WHERE id=1').get() as
+        { value: string } | undefined
+    )?.value;
+  }
+  saveSetupTelemetryState(value: string) {
+    this.db
+      .prepare('INSERT OR REPLACE INTO setup_telemetry VALUES (1, ?)')
+      .run(value);
+  }
+  clearSetupTelemetry() {
+    this.db.prepare('DELETE FROM setup_telemetry').run();
   }
   close() {
     this.db.close();
@@ -56,7 +73,7 @@ export class Store {
     const row = this.db
       .prepare('SELECT value FROM settings WHERE id=1')
       .get() as { value: string };
-    return JSON.parse(row.value) as Settings;
+    return { ...defaults, ...(JSON.parse(row.value) as Partial<Settings>) };
   }
   updateSettings(patch: Partial<Settings>): Settings {
     return this.transaction(() => {
@@ -68,14 +85,15 @@ export class Store {
       if (
         (!previous.paused && settings.paused) ||
         (previous.researchAllowed && !settings.researchAllowed) ||
-        (previous.memoryAllowed && !settings.memoryAllowed)
+        (previous.memoryAllowed && !settings.memoryAllowed) ||
+        (previous.appsAllowed && !settings.appsAllowed)
       ) {
         const running = this.tasks().filter((t) => t.status === 'running');
         for (const task of running) {
           this.invalidate(
             task,
-            'queued',
-            'Run stopped because settings changed.',
+            'interrupted',
+            'Run interrupted because settings changed. Review completed effects before retrying.',
           );
         }
       }
@@ -100,7 +118,7 @@ export class Store {
         "INSERT INTO tasks VALUES (?, ?, 'queued', ?, NULL, ?, ?, NULL, NULL, NULL)",
       )
       .run(id, prompt, intervalSeconds, now, now);
-    this.event(id, null, 'Task added to the research queue.');
+    this.event(id, null, 'Task added to the queue.');
     return this.task(id)!;
   }
   detail(id: string): Detail | undefined {
@@ -141,9 +159,9 @@ export class Store {
         .run(now, reason, task.lease);
     this.db
       .prepare(
-        'UPDATE tasks SET status=?, lease=NULL, leaseUntil=NULL, updatedAt=? WHERE id=?',
+        'UPDATE tasks SET status=?, lease=NULL, leaseUntil=NULL, updatedAt=?, error=? WHERE id=?',
       )
-      .run(status, now, task.id);
+      .run(status, now, status === 'interrupted' ? reason : null, task.id);
     this.event(task.id, task.lease, reason);
   }
   action(id: string, action: Action): Task | undefined {
@@ -189,7 +207,10 @@ export class Store {
     );
     return this.task(id);
   }
-  claim(now = Date.now()): Claim | null {
+  claim(
+    now = Date.now(),
+    leaseDurationMs = DEFAULT_WORKER_LEASE_MS,
+  ): Claim | null {
     return this.transaction(() => {
       const settings = this.settings();
       if (settings.paused || !settings.researchAllowed) return null;
@@ -199,8 +220,8 @@ export class Store {
       for (const task of expired)
         this.invalidate(
           task,
-          'queued',
-          'Previous worker lease expired; safely retrying.',
+          'interrupted',
+          'Worker lease expired. Review completed effects before retrying.',
         );
       const task = this.db
         .prepare(
@@ -213,13 +234,13 @@ export class Store {
         .prepare(
           "UPDATE tasks SET status='running', lease=?, leaseUntil=?, nextRunAt=NULL, error=NULL, updatedAt=? WHERE id=?",
         )
-        .run(lease, now + 180_000, now, task.id);
+        .run(lease, now + leaseDurationMs, now, task.id);
       this.db
         .prepare(
           "INSERT INTO runs VALUES (?, ?, 'running', ?, NULL, NULL, NULL)",
         )
         .run(lease, task.id, now);
-      this.event(task.id, lease, 'Research worker started.');
+      this.event(task.id, lease, 'Run started.');
       return { ...this.task(task.id)!, lease };
     });
   }
@@ -248,16 +269,14 @@ export class Store {
       this.event(
         claim.id,
         claim.lease,
-        result.sample
-          ? 'Fictional sample brief ready.'
-          : 'Research brief ready.',
+        result.sample ? 'Fictional sample brief ready.' : 'Run completed.',
       );
       return true;
     });
   }
-  release(claim: Claim, reason: string) {
+  interrupt(claim: Claim, reason: string) {
     this.transaction(() => {
-      if (this.owns(claim)) this.invalidate(claim, 'queued', reason);
+      if (this.owns(claim)) this.invalidate(claim, 'interrupted', reason);
     });
   }
   fail(claim: Claim, error: string) {

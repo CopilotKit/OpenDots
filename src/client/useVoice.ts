@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, authHeaders } from './api';
+// A single failed control poll is usually a network flap, not a dead call.
+// Only treat the control connection as lost after this many consecutive
+// poll failures, mirroring the grace period #26 gives the peer connection.
+const CONTROL_POLL_FAILURE_LIMIT = 3;
 export function useVoice(
   threadId: string,
   onSaved: () => void,
@@ -29,6 +33,8 @@ export function useVoice(
         channel: RTCDataChannel;
         transcript: string[];
         timer?: ReturnType<typeof setTimeout>;
+        controlPollFailures: number;
+        disconnectTimer?: ReturnType<typeof setTimeout>;
         cancelled: boolean;
       }
     | undefined
@@ -45,6 +51,7 @@ export function useVoice(
     current.audio.pause();
     current.audio.srcObject = null;
     clearTimeout(current.timer);
+    clearTimeout(current.disconnectTimer);
   }, []);
   const end = useCallback(async () => {
     if (ending.current) return;
@@ -63,6 +70,7 @@ export function useVoice(
     });
     current.audio.pause();
     clearTimeout(current.timer);
+    clearTimeout(current.disconnectTimer);
     ending.current = true;
     setStatus('ending');
     try {
@@ -111,10 +119,18 @@ export function useVoice(
       if (id)
         void api<{ endedAt: number | null }>(`/voice/calls/${id}`)
           .then((call) => {
-            if (session.current === current && call.endedAt) void end();
+            if (session.current !== current) return;
+            if (call.endedAt) {
+              void end();
+              return;
+            }
+            current.controlPollFailures = 0;
           })
           .catch(() => {
             if (session.current !== current) return;
+            current.controlPollFailures += 1;
+            if (current.controlPollFailures < CONTROL_POLL_FAILURE_LIMIT)
+              return;
             setError('Call control connection was lost.');
             void end();
           });
@@ -153,6 +169,8 @@ export function useVoice(
         cancelled: false,
         id: undefined as string | undefined,
         timer: undefined as ReturnType<typeof setTimeout> | undefined,
+        controlPollFailures: 0,
+        disconnectTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       };
       session.current = current;
       stream.getTracks().forEach((track) => pc.addTrack(track, stream!));
@@ -169,6 +187,8 @@ export function useVoice(
       pc.onconnectionstatechange = () => {
         if (current.cancelled) return;
         if (pc.connectionState === 'connected') {
+          clearTimeout(current.disconnectTimer);
+          current.disconnectTimer = undefined;
           setStatus('active');
           setStartedAt((value) => value ?? Date.now());
           if (current.id)
@@ -178,7 +198,16 @@ export function useVoice(
               },
             );
         }
-        if (['failed', 'disconnected'].includes(pc.connectionState)) {
+        if (pc.connectionState === 'disconnected' && !current.disconnectTimer) {
+          current.disconnectTimer = setTimeout(() => {
+            current.disconnectTimer = undefined;
+            if (current.cancelled || pc.connectionState !== 'disconnected')
+              return;
+            setError('The voice connection dropped.');
+            void end();
+          }, 5000);
+        }
+        if (pc.connectionState === 'failed') {
           setError('The voice connection dropped.');
           void end();
         }

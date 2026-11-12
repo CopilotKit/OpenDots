@@ -73,6 +73,76 @@ it('renders tool-only assistant messages inline between chat turns without print
   expect(html).not.toContain('computer_navigate');
 });
 
+it('visually labels scheduled prompts while keeping ordinary user messages unchanged', () => {
+  const html = renderToStaticMarkup(
+    <ChatTranscript
+      messages={[
+        { id: 'manual', role: 'user', content: 'Manual request' },
+        {
+          id: 'opendots:scheduled_task:run-1',
+          role: 'user',
+          content: 'Scheduled request body',
+        },
+        {
+          id: 'opendots:scheduled_task:assistant',
+          role: 'assistant',
+          content: 'Scheduled request body',
+          metadata: { opendotsSource: 'scheduled_task' },
+        },
+      ]}
+      calls={[]}
+    />,
+  );
+
+  expect(html).toContain('Manual request');
+  expect(html).toContain('Scheduled request body');
+  expect(html).toContain('Scheduled');
+  expect(html).toContain('chat-bubble user scheduled');
+  expect(html).toContain(
+    '<div class="chat-bubble user"><p>Manual request</p></div>',
+  );
+  expect(html).toContain('chat-bubble assistant');
+  expect(html.match(/Scheduled request body/g)).toHaveLength(2);
+  expect(html.match(/scheduled-message-label/g)).toHaveLength(1);
+});
+
+it('labels a scheduled prompt from metadata without requiring a prefixed ID', () => {
+  const html = renderToStaticMarkup(
+    <ChatTranscript
+      messages={[
+        {
+          id: 'scheduled',
+          role: 'user',
+          content: 'Metadata-marked scheduled prompt',
+          metadata: { opendotsSource: 'scheduled_task' },
+        },
+      ]}
+      calls={[]}
+    />,
+  );
+  expect(html).toContain('scheduled-message-label');
+  expect(html).toContain('Metadata-marked scheduled prompt');
+});
+
+it('retains the scheduled label when history replay provides only the durable message ID', () => {
+  const html = renderToStaticMarkup(
+    <ChatTranscript
+      messages={[
+        {
+          id: 'opendots:scheduled_task:replayed',
+          role: 'user',
+          content: 'Replayed scheduled prompt',
+        },
+      ]}
+      calls={[]}
+    />,
+  );
+
+  expect(html).toContain('Scheduled');
+  expect(html).toContain('Replayed scheduled prompt');
+  expect(html).toContain('chat-bubble user scheduled');
+});
+
 it('hides only marked receipt prompts while retaining summaries and prior unmarked messages', () => {
   const messages: Message[] = [
     { id: 'legacy', role: 'user', content: 'Earlier unmarked receipt prompt' },

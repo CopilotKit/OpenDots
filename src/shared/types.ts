@@ -1,10 +1,17 @@
 export type Status =
-  'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+  | 'queued'
+  | 'running'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'interrupted'
+  | 'cancelled';
 export interface Settings {
   name: string;
   paused: boolean;
   researchAllowed: boolean;
   memoryAllowed: boolean;
+  appsAllowed: boolean;
 }
 export interface Task {
   id: string;
@@ -78,6 +85,10 @@ export interface Dot {
   instructions: string;
   researchAllowed: boolean;
   memoryAllowed: boolean;
+  appsAllowed: boolean;
+  composioToolkits: string[];
+  composioSessionId?: string | null;
+  composioPolicyHash?: string | null;
   createdAt: number;
   learningContainerId?: string | null;
   skillDeliveryEnabled?: boolean;
@@ -106,6 +117,7 @@ export interface SetupStatus {
   model: boolean;
   browser: boolean;
   voice: boolean;
+  composio: boolean;
   slack: string;
   missing: string[];
 }
