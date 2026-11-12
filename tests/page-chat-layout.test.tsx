@@ -49,10 +49,77 @@ vi.mock('../src/client/useVoice', () => ({
 }));
 vi.mock('../src/client/CallView', () => ({ CallView: () => null }));
 
+async function launchChatBrowser() {
+  try {
+    return await chromium.launch({
+      executablePath: process.env.CHROMIUM_EXECUTABLE_PATH,
+    });
+  } catch (error) {
+    if (
+      process.env.CHROMIUM_EXECUTABLE_PATH ||
+      !(error instanceof Error) ||
+      !error.message.includes("Executable doesn't exist at")
+    ) {
+      throw error;
+    }
+    // Hosted CI images include Chrome even when Playwright's cache is empty.
+    return chromium.launch({ channel: 'chrome' });
+  }
+}
+
+it('falls back to Chrome only when bundled Chromium is missing', async () => {
+  vi.stubEnv('CHROMIUM_EXECUTABLE_PATH', undefined);
+  const browser = {} as Awaited<ReturnType<typeof chromium.launch>>;
+  const launch = vi
+    .spyOn(chromium, 'launch')
+    .mockRejectedValueOnce(
+      new Error("Executable doesn't exist at /cache/chromium"),
+    )
+    .mockResolvedValueOnce(browser);
+  try {
+    expect(await launchChatBrowser()).toBe(browser);
+    expect(launch.mock.calls).toEqual([
+      [{ executablePath: undefined }],
+      [{ channel: 'chrome' }],
+    ]);
+  } finally {
+    launch.mockRestore();
+    vi.unstubAllEnvs();
+  }
+});
+
+it('does not hide other browser launch failures', async () => {
+  vi.stubEnv('CHROMIUM_EXECUTABLE_PATH', undefined);
+  const launch = vi
+    .spyOn(chromium, 'launch')
+    .mockRejectedValue(new Error('browser sandbox failed'));
+  try {
+    await expect(launchChatBrowser()).rejects.toThrow('browser sandbox failed');
+    expect(launch).toHaveBeenCalledTimes(1);
+  } finally {
+    launch.mockRestore();
+    vi.unstubAllEnvs();
+  }
+});
+
+it('does not replace an explicitly configured executable', async () => {
+  vi.stubEnv('CHROMIUM_EXECUTABLE_PATH', '/custom/chrome');
+  const launch = vi
+    .spyOn(chromium, 'launch')
+    .mockRejectedValue(new Error("Executable doesn't exist at /custom/chrome"));
+  try {
+    await expect(launchChatBrowser()).rejects.toThrow(
+      "Executable doesn't exist at /custom/chrome",
+    );
+    expect(launch.mock.calls).toEqual([[{ executablePath: '/custom/chrome' }]]);
+  } finally {
+    launch.mockRestore();
+    vi.unstubAllEnvs();
+  }
+});
+
 it('keeps page chat inside its sidebar across desktop and stacked widths', async () => {
-  const browser = await chromium.launch({
-    executablePath: process.env.CHROMIUM_EXECUTABLE_PATH,
-  });
+  const browser = await launchChatBrowser();
   try {
     const page = await browser.newPage();
     const css = ['style.css', 'editor.css']
@@ -88,6 +155,8 @@ it('keeps page chat inside its sidebar across desktop and stacked widths', async
                 instructions: 'Review notes',
                 researchAllowed: false,
                 memoryAllowed: false,
+                appsAllowed: false,
+                composioToolkits: [],
                 createdAt: 0,
               }}
               onConsumed={() => {}}
