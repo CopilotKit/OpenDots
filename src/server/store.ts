@@ -5,6 +5,8 @@ import { dirname } from 'node:path';
 import type {
   Action,
   Detail,
+  Goal,
+  GoalStatus,
   Memory,
   Result,
   Run,
@@ -33,10 +35,12 @@ export class Store {
       CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, prompt TEXT NOT NULL, status TEXT NOT NULL, intervalSeconds INTEGER, nextRunAt INTEGER, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, error TEXT, lease TEXT, leaseUntil INTEGER);
       CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, taskId TEXT NOT NULL, status TEXT NOT NULL, startedAt INTEGER NOT NULL, finishedAt INTEGER, result TEXT, error TEXT);
       CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, taskId TEXT NOT NULL, runId TEXT, text TEXT NOT NULL, createdAt INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS goals (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL, status TEXT NOT NULL, progress INTEGER NOT NULL, reminderAt INTEGER, reminderDismissedAt INTEGER, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, text TEXT NOT NULL, createdAt INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS tasks_due ON tasks(status, nextRunAt);
       CREATE INDEX IF NOT EXISTS runs_task ON runs(taskId, startedAt);
-      CREATE INDEX IF NOT EXISTS events_task ON events(taskId, id);`);
+      CREATE INDEX IF NOT EXISTS events_task ON events(taskId, id);
+      CREATE INDEX IF NOT EXISTS goals_updated ON goals(updatedAt DESC);`);
     this.db
       .prepare('INSERT OR IGNORE INTO settings VALUES (1, ?)')
       .run(JSON.stringify(defaults));
@@ -315,5 +319,86 @@ export class Store {
     return (
       this.db.prepare('DELETE FROM memories WHERE id=?').run(id).changes > 0
     );
+  }
+  goals(): Goal[] {
+    return this.db
+      .prepare('SELECT * FROM goals ORDER BY updatedAt DESC, createdAt DESC')
+      .all() as unknown as Goal[];
+  }
+  goal(id: string): Goal | undefined {
+    return this.db
+      .prepare('SELECT * FROM goals WHERE id=?')
+      .get(id) as unknown as Goal | undefined;
+  }
+  createGoal(input: {
+    title: string;
+    description: string;
+    status?: GoalStatus;
+    progress?: number;
+    reminderAt?: number | null;
+  }): Goal {
+    const now = Date.now();
+    const id = randomUUID();
+    this.db
+      .prepare('INSERT INTO goals VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)')
+      .run(
+        id,
+        input.title,
+        input.description,
+        input.status ?? 'active',
+        input.progress ?? 0,
+        input.reminderAt ?? null,
+        now,
+        now,
+      );
+    return this.goal(id)!;
+  }
+  updateGoal(
+    id: string,
+    input: {
+      title: string;
+      description: string;
+      status: GoalStatus;
+      progress: number;
+      reminderAt: number | null;
+    },
+  ): Goal | undefined {
+    const existing = this.goal(id);
+    if (!existing) return undefined;
+    const reminderDismissedAt =
+      existing.reminderAt === input.reminderAt
+        ? existing.reminderDismissedAt
+        : null;
+    this.db
+      .prepare(
+        'UPDATE goals SET title=?, description=?, status=?, progress=?, reminderAt=?, reminderDismissedAt=?, updatedAt=? WHERE id=?',
+      )
+      .run(
+        input.title,
+        input.description,
+        input.status,
+        input.progress,
+        input.reminderAt,
+        reminderDismissedAt,
+        Date.now(),
+        id,
+      );
+    return this.goal(id);
+  }
+  dismissGoalReminder(id: string): Goal | undefined {
+    const goal = this.goal(id);
+    if (!goal) return undefined;
+    if (goal.reminderAt !== null && goal.reminderDismissedAt === null) {
+      const now = Date.now();
+      this.db
+        .prepare(
+          'UPDATE goals SET reminderDismissedAt=?, updatedAt=? WHERE id=?',
+        )
+        .run(now, now, id);
+    }
+    return this.goal(id);
+  }
+  deleteGoal(id: string): boolean {
+    return this.db.prepare('DELETE FROM goals WHERE id=?').run(id).changes > 0;
   }
 }
