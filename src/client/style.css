@@ -2087,6 +2087,53 @@ h3 {
   align-items: center;
   gap: 5px;
 }
+.model-check-button[aria-busy='true'] {
+  cursor: progress;
+}
+/* One status block under the check button: icon, headline, one next step. */
+.model-check {
+  display: grid;
+  grid-template-columns: 1.15em minmax(0, 1fr);
+  column-gap: 7px;
+  row-gap: 2px;
+  margin-top: 10px;
+}
+.model-check:empty {
+  margin-top: 0;
+}
+.model-check-icon {
+  width: 1.15em;
+  height: 1.15em;
+  margin-top: 0.22em;
+}
+/* Settings text is smaller than the setup card's; keep the button in scale. */
+.config-note .model-check-button {
+  font-size: 11px;
+  padding: 6px 11px;
+}
+.config-note .model-check {
+  font-size: 10px;
+}
+.template-app .setup-card .model-check {
+  font-size: 13px;
+}
+.model-check p {
+  grid-column: 2;
+  margin: 0;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.model-check-headline {
+  font-weight: 500;
+}
+.model-check > * {
+  transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@starting-style {
+  .model-check > * {
+    opacity: 0;
+  }
+}
 .new-conversation .composer {
   margin-top: 24px;
   min-height: 130px;
@@ -4117,7 +4164,7 @@ h3 {
 .template-app :is(.config-note a, .setup-card a) {
   color: var(--ink);
 }
-.template-app .config-note code {
+.template-app :is(.config-note, .setup-card) code {
   padding: 1px 4px;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -4128,6 +4175,19 @@ h3 {
 }
 .template-app .setup-card p {
   color: var(--text-secondary);
+}
+/* Model check status colours. Hex values get build-time dark rules
+   (var(--ink) does not); these follow the muted .config-note p rule above so
+   they win in both themes. */
+.template-app .model-setup .model-check.ok p.model-check-headline {
+  color: #333641;
+}
+.model-check.ok .model-check-icon {
+  color: #438c81;
+}
+.template-app .model-setup .model-check.problem p.model-check-headline,
+.template-app .model-setup .model-check.problem .model-check-icon {
+  color: #9b4a32;
 }
 .template-app .setup-icon {
   background: #f1f1f1;
@@ -4224,7 +4284,8 @@ h3 {
 .connection-add .field-label {
   margin: 0;
 }
-.connection-connect {
+.connection-connect,
+.model-check-button {
   justify-self: start;
   padding: 8px 14px;
   border: 1px solid var(--line);
