@@ -56,6 +56,15 @@ export function WorkspaceDialog({
       ? (dialog.dot?.composioToolkits ?? []).join(', ')
       : '',
   );
+  const [model, setModel] = useState(
+    dialog.type === 'dot' ? (dialog.dot?.model ?? '') : '',
+  );
+  const [reasoningEffort, setReasoningEffort] = useState(
+    dialog.type === 'dot' ? (dialog.dot?.reasoningEffort ?? '') : '',
+  );
+  const [autoRecall, setAutoRecall] = useState(
+    dialog.type === 'dot' ? (dialog.dot?.autoRecall ?? false) : false,
+  );
   const [spaceIds, setSpaceIds] = useState(
     dialog.type === 'dot' ? (dialog.dot?.spaceIds ?? [dialog.spaceId]) : [],
   );
@@ -164,6 +173,9 @@ export function WorkspaceDialog({
                   .filter(Boolean),
                 learningContainerId: learningContainer.trim() || null,
                 skillDeliveryEnabled: skillDelivery,
+                model,
+                reasoningEffort,
+                autoRecall,
               };
             }
             if (dialog.type === 'settings') {
@@ -397,6 +409,49 @@ export function WorkspaceDialog({
               >
                 Set up Learning and review skills ↗
               </a>
+            </fieldset>
+          )}
+          {dialog.type === 'dot' && (
+            <fieldset className="space-access-fields">
+              <legend>Model</legend>
+              <label className="field-label" htmlFor="dot-model">
+                Model override
+              </label>
+              <input
+                id="dot-model"
+                value={model}
+                placeholder="inherits OPENAI_MODEL"
+                onChange={(event) => setModel(event.target.value)}
+              />
+              <label className="field-label" htmlFor="dot-reasoning-effort">
+                Reasoning effort
+              </label>
+              <input
+                id="dot-reasoning-effort"
+                value={reasoningEffort}
+                placeholder="model default"
+                aria-describedby="dot-reasoning-effort-help"
+                onChange={(event) => setReasoningEffort(event.target.value)}
+              />
+              <p className="muted" id="dot-reasoning-effort-help">
+                Optional. Sent as reasoning_effort: none, low, medium, high or
+                max, as the model supports. Leave blank for the model default.
+              </p>
+              <label className="permission-row">
+                <input
+                  type="checkbox"
+                  checked={autoRecall}
+                  onChange={(event) => setAutoRecall(event.target.checked)}
+                />
+                <span>
+                  <strong>Recall before every answer</strong>
+                  <small>
+                    Calls the recall tool of a connected memory server with each
+                    message and gives the results to the Dot. Needs a connection
+                    with a read-only recall tool that does not ask first.
+                  </small>
+                </span>
+              </label>
             </fieldset>
           )}
           {dialog.type === 'dot' && dialog.dot && (
