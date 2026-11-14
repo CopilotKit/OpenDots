@@ -102,23 +102,30 @@ export class WorkspaceStore {
     return space;
   }
   dots(): Dot[] {
-    return this.db
+    const rows = this.db
       .prepare('SELECT * FROM dots ORDER BY createdAt')
-      .all()
-      .map((row) => ({
-        ...row,
-        spaceIds: this.db
-          .prepare(
-            'SELECT spaceId FROM dot_spaces WHERE dotId=? ORDER BY spaceId',
-          )
-          .all(String(row.id))
-          .map((grant) => String(grant.spaceId)),
-        researchAllowed: !!row.researchAllowed,
-        memoryAllowed: !!row.memoryAllowed,
-        appsAllowed: !!row.appsAllowed,
-        composioToolkits: JSON.parse(String(row.composioToolkits ?? '[]')),
-        skillDeliveryEnabled: !!row.skillDeliveryEnabled,
-      })) as unknown as Dot[];
+      .all() as unknown as Dot[];
+    // One batch fetch for every dot's space grants instead of one query per
+    // dot (N+1). Grants are grouped in memory by dot id.
+    const grants = this.db
+      .prepare('SELECT dotId, spaceId FROM dot_spaces')
+      .all() as { dotId: string; spaceId: string }[];
+    const spaceIdsByDot = new Map<string, string[]>();
+    for (const grant of grants) {
+      const dotId = String(grant.dotId);
+      const list = spaceIdsByDot.get(dotId);
+      if (list) list.push(String(grant.spaceId));
+      else spaceIdsByDot.set(dotId, [String(grant.spaceId)]);
+    }
+    return rows.map((row) => ({
+      ...row,
+      spaceIds: (spaceIdsByDot.get(String(row.id)) ?? []).sort(),
+      researchAllowed: !!row.researchAllowed,
+      memoryAllowed: !!row.memoryAllowed,
+      appsAllowed: !!row.appsAllowed,
+      composioToolkits: JSON.parse(String(row.composioToolkits ?? '[]')),
+      skillDeliveryEnabled: !!row.skillDeliveryEnabled,
+    })) as unknown as Dot[];
   }
   dot(id: string) {
     return this.dots().find((dot) => dot.id === id);
