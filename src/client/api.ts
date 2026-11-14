@@ -1,3 +1,4 @@
+import { t } from './i18n';
 let token = sessionStorage.getItem('opendots-token') ?? '';
 export function setToken(value: string) {
   token = value;
@@ -29,14 +30,15 @@ export async function api<T>(
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  const data = (await response
-    .json()
-    .catch(() => ({ error: 'Server returned an unreadable response.' }))) as {
+  const data = (await response.json().catch(() => ({
+    error: t('Server returned an unreadable response.'),
+  }))) as {
     error?: string;
   };
   if (!response.ok)
     throw new ApiError(
-      data.error ?? `Request failed (${response.status}).`,
+      data.error ??
+        t('Request failed ({status}).', { status: response.status }),
       response.status,
     );
   return data as T;

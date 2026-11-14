@@ -7,6 +7,7 @@ import {
 } from '../shared/connection-types';
 import { api } from './api';
 import { computerToolResult } from './ComputerToolCard';
+import { t } from './i18n';
 type Receipt = {
   approvalId: string | null;
   status: 'running' | 'interrupted' | 'done';
@@ -57,7 +58,7 @@ export function ConnectionActionCard({
           setApprovalError(
             cause instanceof Error
               ? cause.message
-              : 'Could not load this request.',
+              : t('Could not load this request.'),
           ),
       );
     return () => {
@@ -82,7 +83,7 @@ export function ConnectionActionCard({
             setError(
               cause instanceof Error
                 ? cause.message
-                : 'Could not check this action.',
+                : t('Could not check this action.'),
             );
         });
     setError('');
@@ -124,7 +125,9 @@ export function ConnectionActionCard({
       await respond({ approved: true, ...value });
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : 'Could not run this action.',
+        cause instanceof Error
+          ? cause.message
+          : t('Could not run this action.'),
       );
     } finally {
       pending.current = false;
@@ -135,36 +138,36 @@ export function ConnectionActionCard({
   return (
     <section
       className="page-review-card connection-action-card"
-      aria-label="Approve connected-service action"
+      aria-label={t('Approve connected-service action')}
     >
       <header>
         <PlugZap size={17} />
         <strong>
           {approval
             ? `${approval.connection} · ${approval.title}`
-            : 'Connected service'}
+            : t('Connected service')}
         </strong>
         <span>
           {approved
             ? outcome?.isError
-              ? 'Failed'
-              : 'Approved'
+              ? t('Failed')
+              : t('Approved')
             : declined
-              ? 'Declined'
+              ? t('Declined')
               : running
-                ? 'Running'
+                ? t('Running')
                 : interrupted
-                  ? 'Interrupted'
+                  ? t('Interrupted')
                   : finished
-                    ? 'Ended'
+                    ? t('Ended')
                     : !ready
-                      ? 'Checking'
-                      : 'Needs your approval'}
+                      ? t('Checking')
+                      : t('Needs your approval')}
         </span>
       </header>
       <div className="page-review-body">
         <h3>
-          {action.success ? action.data.summary : 'Preparing the action…'}
+          {action.success ? action.data.summary : t('Preparing the action…')}
         </h3>
         {entries.length > 0 && (
           <dl className="connection-action-args">
@@ -178,16 +181,17 @@ export function ConnectionActionCard({
         )}
         {mismatch && (
           <div className="connection-action-result failed">
-            <strong>Cannot run</strong>
+            <strong>{t('Cannot run')}</strong>
             <pre>
-              This card’s saved result belongs to a different approval request.
-              Nothing was run for this one.
+              {t(
+                'This card’s saved result belongs to a different approval request. Nothing was run for this one.',
+              )}
             </pre>
           </div>
         )}
         {approvalError && !outcome && (
           <div className="connection-action-result failed">
-            <strong>Cannot run</strong>
+            <strong>{t('Cannot run')}</strong>
             <pre>{approvalError}</pre>
           </div>
         )}
@@ -196,7 +200,7 @@ export function ConnectionActionCard({
             className={`connection-action-result ${outcome.isError ? 'failed' : ''}`}
           >
             <strong>
-              {outcome.isError ? 'Service error' : 'Service response'}
+              {outcome.isError ? t('Service error') : t('Service response')}
             </strong>
             <pre>{outcome.text}</pre>
           </div>
@@ -206,7 +210,7 @@ export function ConnectionActionCard({
       <footer>
         {!ready && error && (
           <button type="button" onClick={() => setAttempt((n) => n + 1)}>
-            Retry
+            {t('Retry')}
           </button>
         )}
         {!finished && respond && ready && !running && !mismatch && (
@@ -219,12 +223,12 @@ export function ConnectionActionCard({
             >
               <Check size={15} />
               {busy
-                ? 'Running…'
+                ? t('Running…')
                 : outcome
-                  ? 'Continue conversation'
+                  ? t('Continue conversation')
                   : interrupted
-                    ? 'Retry & run'
-                    : 'Approve & run'}
+                    ? t('Retry & run')
+                    : t('Approve & run')}
             </button>
             {!outcome && (
               <button
@@ -232,19 +236,23 @@ export function ConnectionActionCard({
                 disabled={busy}
                 onClick={() => void decide(false)}
               >
-                Decline
+                {t('Decline')}
               </button>
             )}
           </>
         )}
         <small>
           {running
-            ? 'This action is still running on the server.'
+            ? t('This action is still running on the server.')
             : interrupted
-              ? 'No result was saved for the previous run. Retrying can repeat the action if the service completed it before the interruption.'
+              ? t(
+                  'No result was saved for the previous run. Retrying can repeat the action if the service completed it before the interruption.',
+                )
               : approved || declined || finished
                 ? ''
-                : 'Nothing runs until you approve. These are the exact arguments.'}
+                : t(
+                    'Nothing runs until you approve. These are the exact arguments.',
+                  )}
         </small>
       </footer>
     </section>
