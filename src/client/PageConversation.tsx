@@ -47,8 +47,9 @@ export function PageConversation({
   }, [scope, onOpenChange]);
   useEffect(() => {
     const current = requests.current;
+    current.select(scope);
     return () => current.select('');
-  }, []);
+  }, [scope]);
   const open = async () => {
     if (!dot || busy) return;
     setBusy(true);
