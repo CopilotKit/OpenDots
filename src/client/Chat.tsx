@@ -25,6 +25,7 @@ import {
   Phone,
   PhoneOff,
   Square,
+  Trash2,
   X,
 } from 'lucide-react';
 import {
@@ -49,6 +50,7 @@ export function Chat({
   onSaved,
   onSchedule,
   onComputer,
+  onDeleteThread,
 }: {
   thread: Conversation;
   dot: Dot;
@@ -60,6 +62,8 @@ export function Chat({
   onSaved: () => void;
   onSchedule: () => void;
   onComputer?: () => void;
+  /** When provided, the thread header shows a delete button for this conversation. */
+  onDeleteThread?: () => void;
 }) {
   const { agent, isReady } = useAgent({
     agentId: `chat-${thread.id}`,
@@ -333,6 +337,16 @@ export function Chat({
               <PhoneOff size={18} />
             )}
           </button>
+          {onDeleteThread && (
+            <button
+              className="icon-button danger"
+              aria-label="Delete conversation"
+              title="Delete this conversation permanently"
+              onClick={onDeleteThread}
+            >
+              <Trash2 size={18} />
+            </button>
+          )}
         </div>
       </header>
       {pageContext && (

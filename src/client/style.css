@@ -1299,6 +1299,30 @@ h3 {
   right: 15px;
   top: 15px;
 }
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 26px;
+}
+.modal-actions .secondary {
+  border-color: #dedee6;
+  color: #70748a;
+  font-size: 12px;
+}
+.modal-actions .danger {
+  background: #c2403a;
+  border-color: #c2403a;
+  color: #fff;
+  font-size: 12px;
+}
+.modal-actions .danger:hover:not(:disabled) {
+  background: #a7312c;
+  border-color: #a7312c;
+}
+.confirm-delete-modal h2 {
+  font-size: 23px;
+}
 .field-label {
   display: block;
   font-size: 11px;
@@ -1975,6 +1999,14 @@ h3 {
 .thread-list .nav-item {
   padding: 9px 12px;
   font-size: 10px;
+  transition:
+    opacity 0.28s ease,
+    transform 0.28s ease;
+}
+.thread-list .nav-item.removing {
+  opacity: 0;
+  transform: translateX(10px);
+  pointer-events: none;
 }
 .thread-list .nav-item > span {
   overflow: hidden;
@@ -2163,6 +2195,10 @@ h3 {
   flex-direction: row;
   margin-left: auto;
   gap: 8px;
+}
+.chat-persona .chat-persona-actions .icon-button.danger:hover:not(:disabled) {
+  color: #b0504a;
+  background: #c2403a1a;
 }
 .chat-transcript {
   overflow: auto;

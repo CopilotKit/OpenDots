@@ -84,6 +84,17 @@ export class WorkspaceStore {
   close() {
     this.db.close();
   }
+  private transaction<T>(fn: () => T): T {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const value = fn();
+      this.db.exec('COMMIT');
+      return value;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
   spaces(): Space[] {
     return this.db
       .prepare('SELECT * FROM spaces ORDER BY createdAt')
@@ -396,5 +407,40 @@ export class WorkspaceStore {
       .prepare('SELECT value FROM captures WHERE threadId=?')
       .get(threadId);
     return typeof row?.value === 'string' ? JSON.parse(row.value) : null;
+  }
+  /**
+   * Permanently remove a conversation and everything tied to it.
+   *
+   * Runs in one transaction so concurrent deletes cannot leave partial state:
+   * the first caller removes the thread and its rows, later callers observe no
+   * binding and report that nothing was deleted. Saved pages are kept but
+   * detached from the thread so no orphaned source reference remains.
+   *
+   * @returns true when the thread existed and was removed, false otherwise.
+   */
+  deleteThread(threadId: string): boolean {
+    return this.transaction(() => {
+      const existed =
+        this.db.prepare('DELETE FROM thread_bindings WHERE id=?').run(threadId)
+          .changes > 0;
+      if (!existed) return false;
+      this.db
+        .prepare('DELETE FROM task_threads WHERE threadId=?')
+        .run(threadId);
+      this.db.prepare('DELETE FROM calls WHERE threadId=?').run(threadId);
+      this.db.prepare('DELETE FROM captures WHERE threadId=?').run(threadId);
+      this.db
+        .prepare('DELETE FROM page_threads WHERE threadId=?')
+        .run(threadId);
+      this.db
+        .prepare('DELETE FROM page_reviews WHERE threadId=?')
+        .run(threadId);
+      this.connections.deleteThreadData(threadId);
+      // Pages are durable artifacts: keep them, drop the now-stale source link.
+      this.db
+        .prepare('UPDATE pages SET sourceThreadId=NULL WHERE sourceThreadId=?')
+        .run(threadId);
+      return true;
+    });
   }
 }
