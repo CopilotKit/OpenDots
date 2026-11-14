@@ -1,0 +1,66 @@
+# Dokploy: select this file in a Docker Compose service (not Docker Stack).
+# Add a domain for service "app", container port 4310, in Dokploy's Domains tab.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app
+    expose:
+      - '4310'
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: '4310'
+      DATABASE_PATH: /data/opendots.sqlite
+      OWNER_TOKEN: ${OWNER_TOKEN:?Set a random OWNER_TOKEN of at least 24 characters in Dokploy}
+      APP_ORIGIN: ${APP_ORIGIN:?Set your exact HTTPS origin in Dokploy, without a trailing slash}
+      OWNER_ID: ${OWNER_ID:-opendots-owner}
+      CPK_INTELLIGENCE_API_KEY: ${CPK_INTELLIGENCE_API_KEY:-}
+      INTELLIGENCE_API_KEY: ${INTELLIGENCE_API_KEY:-}
+      CPK_TELEMETRY_ID: ${CPK_TELEMETRY_ID:-}
+      INTELLIGENCE_API_URL: ${INTELLIGENCE_API_URL:-}
+      INTELLIGENCE_GATEWAY_WS_URL: ${INTELLIGENCE_GATEWAY_WS_URL:-}
+      INTELLIGENCE_WS_URL: ${INTELLIGENCE_WS_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-parallel}
+      PARALLEL_API_KEY: ${PARALLEL_API_KEY:-}
+      VOICE_API_KEY: ${VOICE_API_KEY:-}
+      VOICE_MODEL: ${VOICE_MODEL:-}
+      VOICE_NAME: ${VOICE_NAME:-marin}
+      SLACK_CHANNEL_NAME: ${SLACK_CHANNEL_NAME:-}
+      SLACK_TEAM_ID: ${SLACK_TEAM_ID:-}
+      SLACK_USER_IDS: ${SLACK_USER_IDS:-}
+      SLACK_DOT_ID: ${SLACK_DOT_ID:-}
+      COMPUTER_SUPERVISOR_URL: ${COMPUTER_SUPERVISOR_URL:-}
+      COMPUTER_SUPERVISOR_TOKEN: ${COMPUTER_SUPERVISOR_TOKEN:-}
+      COMPUTER_TOKEN: ${COMPUTER_TOKEN:-}
+      COMPUTER_NAMESPACE: ${COMPUTER_NAMESPACE:-opendots}
+      DO_NOT_TRACK: ${DO_NOT_TRACK:-0}
+      COPILOTKIT_TELEMETRY_DISABLED: ${COPILOTKIT_TELEMETRY_DISABLED:-false}
+      COPILOTKIT_TELEMETRY_SAMPLE_RATE: ${COPILOTKIT_TELEMETRY_SAMPLE_RATE:-1}
+    volumes:
+      - opendots-data:/data
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4310/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+volumes:
+  opendots-data:
