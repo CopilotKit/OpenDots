@@ -63,6 +63,7 @@ export class DotAgent extends AbstractAgent {
   }
   run(input: RunAgentInput): Observable<BaseEvent> {
     return new Observable((subscriber) => {
+      const endDotRun = this.workspace.trackDotRun(this.dotId);
       const controller = new AbortController();
       this.controller = controller;
       let subscription: { unsubscribe(): void } | undefined;
@@ -460,6 +461,7 @@ export class DotAgent extends AbstractAgent {
         fail(error);
       }
       return () => {
+        endDotRun();
         clearTimeout(timeout);
         clearInterval(watcher);
         controller.abort();
