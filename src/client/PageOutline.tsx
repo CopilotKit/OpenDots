@@ -1,5 +1,6 @@
 import { FileText, Plus, X } from 'lucide-react';
 import type { Page } from '../server/pages';
+import { t } from './i18n';
 export function PageOutline({
   pages,
   selected,
@@ -32,19 +33,19 @@ export function PageOutline({
         </li>
       ));
   return (
-    <nav className="document-outline" aria-label="Pages in this Space">
+    <nav className="document-outline" aria-label={t('Pages in this Space')}>
       <div>
-        <strong>Pages</strong>
+        <strong>{t('Pages')}</strong>
         <button
           className="document-icon"
-          aria-label="New page in outline"
+          aria-label={t('New page in outline')}
           onClick={onNew}
         >
           <Plus size={16} />
         </button>
         <button
           className="document-icon"
-          aria-label="Close page outline"
+          aria-label={t('Close page outline')}
           onClick={onClose}
         >
           <X size={16} />

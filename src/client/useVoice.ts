@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, authHeaders } from './api';
+import { t } from './i18n';
 // A single failed control poll is usually a network flap, not a dead call.
 // Only treat the control connection as lost after this many consecutive
 // poll failures, mirroring the grace period #26 gives the peer connection.
@@ -84,7 +85,7 @@ export function useVoice(
       setError(
         e instanceof Error
           ? e.message
-          : 'Call ended, but its receipt could not be saved.',
+          : t('Call ended, but its receipt could not be saved.'),
       );
     } finally {
       closeMedia();
@@ -131,7 +132,7 @@ export function useVoice(
             current.controlPollFailures += 1;
             if (current.controlPollFailures < CONTROL_POLL_FAILURE_LIMIT)
               return;
-            setError('Call control connection was lost.');
+            setError(t('Call control connection was lost.'));
             void end();
           });
     }, 2000);
@@ -180,7 +181,9 @@ export function useVoice(
         void audio.play().catch(() => {
           if (!current.cancelled)
             setError(
-              'Audio playback was blocked. Check your browser audio permissions.',
+              t(
+                'Audio playback was blocked. Check your browser audio permissions.',
+              ),
             );
         });
       };
@@ -203,12 +206,12 @@ export function useVoice(
             current.disconnectTimer = undefined;
             if (current.cancelled || pc.connectionState !== 'disconnected')
               return;
-            setError('The voice connection dropped.');
+            setError(t('The voice connection dropped.'));
             void end();
           }, 5000);
         }
         if (pc.connectionState === 'failed') {
-          setError('The voice connection dropped.');
+          setError(t('The voice connection dropped.'));
           void end();
         }
       };
@@ -251,7 +254,9 @@ export function useVoice(
         }
         if (data.type === 'error')
           setError(
-            'The voice provider reported a session error. End the call and retry.',
+            t(
+              'The voice provider reported a session error. End the call and retry.',
+            ),
           );
         if (
           data.type !== 'response.function_call_arguments.done' ||
@@ -331,7 +336,9 @@ export function useVoice(
       closeMedia();
       session.current = undefined;
       setStatus('idle');
-      setError(e instanceof Error ? e.message : 'Could not connect the call.');
+      setError(
+        e instanceof Error ? e.message : t('Could not connect the call.'),
+      );
     } finally {
       if (attempt === generation.current) connecting.current = false;
     }

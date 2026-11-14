@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 const characters = ['blue', 'mint', 'orange', 'purple'] as const;
 
 /** Stable identity keeps each specialist recognizable across views and reloads. */
@@ -27,7 +29,9 @@ export function Mascot({
       <img
         className="dot-body"
         src={`/dots/${characterFor(identity)}.png`}
-        alt={decorative ? '' : `${name} is ${state}`}
+        alt={
+          decorative ? '' : t('{name} is {state}', { name, state: t(state) })
+        }
         width={512}
         height={512}
         draggable={false}
