@@ -40,6 +40,11 @@ describe('Parallel research', () => {
     expect(webSearchProvider('disabled')).toBe('disabled');
     expect(() => webSearchProvider('other')).toThrow('WEB_SEARCH_PROVIDER');
   });
+  it('tolerates surrounding whitespace from .env values', () => {
+    expect(webSearchProvider('  browser  ')).toBe('browser');
+    expect(webSearchProvider('disabled\n')).toBe('disabled');
+    expect(webSearchProvider('   ')).toBe('parallel');
+  });
   it('searches, extracts and grounds a topic-only brief without a browser', async () => {
     mcp.callTool
       .mockResolvedValueOnce(result(page(), page('https://example.org')))
