@@ -839,6 +839,9 @@
   font-weight: 500;
   color: #5b6c4e;
 }
+.document-chat-panel .live-chat {
+  width: 100%;
+}
 .document-chat-panel .chat-persona {
   padding: 18px;
 }
