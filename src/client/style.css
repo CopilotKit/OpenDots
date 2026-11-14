@@ -4280,3 +4280,166 @@ h3 {
   overflow-wrap: anywhere;
   font-size: 11px;
 }
+
+/* Global command palette (Ctrl/Command K) */
+.palette-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border, #e2e2e2);
+  background: transparent;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  color: inherit;
+}
+.palette-button kbd {
+  font-size: 11px;
+  opacity: 0.7;
+  border: 1px solid var(--border, #e2e2e2);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  z-index: 80;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 16px 16px;
+}
+.palette {
+  width: min(640px, 100%);
+  background: var(--background, #fff);
+  color: inherit;
+  border-radius: 14px;
+  border: 1px solid var(--border, #e2e2e2);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+.palette-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border, #eee);
+}
+.palette-input-row input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 15px;
+  color: inherit;
+}
+.palette-input-row kbd {
+  font-size: 11px;
+  opacity: 0.6;
+  border: 1px solid var(--border, #e2e2e2);
+  border-radius: 4px;
+  padding: 0 5px;
+}
+.palette-results {
+  max-height: min(50vh, 420px);
+  overflow: auto;
+  padding: 8px;
+}
+.palette-group {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+  margin: 10px 8px 4px;
+}
+.palette-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 9px;
+  padding: 8px 10px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+.palette-item.active {
+  border-color: var(--border, #d5d5d5);
+  background: rgba(0, 0, 0, 0.04);
+}
+.palette-item-icon {
+  opacity: 0.7;
+  display: inline-flex;
+}
+.palette-item-text {
+  flex: 1;
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.palette-item-text strong {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-item-text small {
+  font-size: 12px;
+  opacity: 0.65;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-item-arrow {
+  opacity: 0.4;
+}
+.palette-hint,
+.palette-notice {
+  font-size: 13px;
+  opacity: 0.75;
+  padding: 10px 8px;
+  margin: 0;
+}
+.palette-empty {
+  text-align: center;
+  padding: 22px 12px;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  opacity: 0.85;
+}
+.palette-empty p {
+  margin: 0;
+  font-size: 14px;
+}
+.palette-empty span {
+  font-size: 12px;
+  opacity: 0.7;
+}
+.palette-footer {
+  display: flex;
+  gap: 14px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border, #eee);
+  font-size: 12px;
+  opacity: 0.7;
+}
+.palette-footer kbd {
+  border: 1px solid var(--border, #e2e2e2);
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-right: 4px;
+}
+@media (max-width: 700px) {
+  .palette-backdrop {
+    padding: 8vh 10px 10px;
+  }
+  .palette-button span,
+  .palette-button kbd {
+    display: none;
+  }
+}
