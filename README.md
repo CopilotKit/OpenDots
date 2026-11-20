@@ -6,9 +6,14 @@
 
 **An open-source template for persistent AI agents, each with its own computer. Available on Web and Mobile.**
 
+**OpenDots is now available as a UX skin in [OpenBot](https://open.bot)**, a more robust version with sign-in, per-Bot permissions and an audit trail, maintained by CopilotKit. This repo stays a community-maintained starter for building your own project.
+
+[![Try OpenBot at open.bot](https://img.shields.io/badge/Try_OpenBot-open.bot_%E2%86%92-6E6AE0?style=for-the-badge&labelColor=3A3466)](https://open.bot)
+[![OpenBot on GitHub](https://img.shields.io/github/stars/CopilotKit/OpenBot?style=for-the-badge&logo=github&label=OpenBot%20on%20GitHub&labelColor=3A3466&color=6E6AE0)](https://github.com/CopilotKit/OpenBot)
+
 Built with [CopilotKit](https://github.com/CopilotKit/CopilotKit) and [AG-UI](https://docs.ag-ui.com/introduction). · [Get started](#get-started) · [Overview](#overview) · [Architecture](#architecture) · [Features](#features) · [Contributing](CONTRIBUTING.md)
 
-[![Also a skin in OpenBot](https://img.shields.io/badge/also%20a%20skin%20in-OpenBot-6430AB)](https://github.com/CopilotKit/OpenBot)
+[![Also a skin in OpenBot](https://img.shields.io/badge/also%20a%20skin%20in-OpenBot-6430AB)](https://open.bot)
 [![CI](https://github.com/CopilotKit/OpenDots/actions/workflows/ci.yml/badge.svg)](https://github.com/CopilotKit/OpenDots/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![Alpha](https://img.shields.io/badge/status-alpha-orange.svg)
@@ -17,9 +22,7 @@ Built with [CopilotKit](https://github.com/CopilotKit/CopilotKit) and [AG-UI](ht
 
 Host OpenDots on your own infrastructure. Conversations require CopilotKit Intelligence: use the hosted service, the [local Docker evaluation](docs/SETUP.md#local-intelligence-evaluation), or a licensed [self-hosted deployment](https://docs.copilotkit.ai/intelligence/self-hosting). Clone this template and customize it however you want.
 
-**OpenDots is now available as a UX skin in [OpenBot](https://github.com/CopilotKit/OpenBot)**, a more robust version with sign-in, per-Bot permissions and an audit trail, maintained by CopilotKit. This repo stays a community-maintained starter for building your own project.
-
-<a href="https://github.com/CopilotKit/OpenBot"><img src="docs/images/openbot-opendots-skin.png" alt="OpenBot running the OpenDots skin" width="720"></a><br>
+<a href="https://open.bot"><img src="docs/images/openbot-opendots-skin.png" alt="OpenBot running the OpenDots skin" width="720"></a><br>
 <sub>OpenBot with the OpenDots skin, picked under Settings → Skin</sub>
 
 [**Bringing OpenDots to your company? Talk to us about OpenBot →**](https://www.copilotkit.ai/talk-to-an-engineer?ref=opendots_readme)
@@ -42,7 +45,7 @@ _Ask → browse → approve → save. A live computer view and a human review ca
 
 ## OpenDots and OpenBot
 
-OpenDots also ships as a skin in [OpenBot](https://github.com/CopilotKit/OpenBot), CopilotKit's open-source agent platform, alongside [OpenFuse](https://github.com/CopilotKit/openfuse) and [OpenDuet](https://github.com/CopilotKit/OpenDuet). Pick it there and you get OpenDots's look, with everything OpenBot does underneath.
+OpenDots also ships as a skin in [OpenBot](https://open.bot), CopilotKit's open-source agent platform, alongside [OpenFuse](https://github.com/CopilotKit/openfuse) and [OpenDuet](https://github.com/CopilotKit/OpenDuet). Pick it there and you get OpenDots's look, with everything OpenBot does underneath.
 
 | If you want to                                                             | Start here                                                                                        |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -178,7 +181,7 @@ flowchart TB
 
 You configure the Intelligence project, model provider, and channel connection for your deployment; calls also need a speech provider. Credentials stay on the server. Missing configuration should produce a clear setup state, and test fixtures should remain visibly separate from live integrations.
 
-[OpenFuse](https://github.com/CopilotKit/openfuse) and [OpenBot](https://github.com/CopilotKit/openbot) are code references for persistent work, agent computers, and execution controls. OpenDots can be adapted to your own workflows and deployment choices.
+[OpenFuse](https://github.com/CopilotKit/openfuse) and [OpenBot](https://github.com/CopilotKit/OpenBot) are code references for persistent work, agent computers, and execution controls. OpenDots can be adapted to your own workflows and deployment choices.
 
 ## Get started
 
@@ -259,7 +262,7 @@ See [Contributing](CONTRIBUTING.md) for development guidance and [Security](SECU
 - [CopilotKit documentation](https://docs.copilotkit.ai/intelligence/overview)
 - [Channels SDK](https://github.com/CopilotKit/channels-sdk)
 - [OpenFuse](https://github.com/CopilotKit/openfuse)
-- [OpenBot](https://github.com/CopilotKit/openbot)
+- [OpenBot](https://github.com/CopilotKit/OpenBot)
 - [OpenTag](https://github.com/CopilotKit/OpenTag) — Channels SDK integration reference
 
 ## License
