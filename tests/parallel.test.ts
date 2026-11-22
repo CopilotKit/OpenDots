@@ -108,6 +108,23 @@ describe('Parallel research', () => {
       ),
     ).toHaveLength(1);
   });
+  it('skips a source whose URL cannot be parsed and keeps the others', () => {
+    const warnings: string[] = [];
+    expect(
+      sourcesFromResult(result(page('not a url'), page()), (message) =>
+        warnings.push(message),
+      ),
+    ).toEqual([
+      {
+        title: 'Evidence',
+        url: 'https://example.com',
+        text: 'Verified evidence.',
+      },
+    ]);
+    expect(warnings).toEqual([
+      'Skipped 1 malformed or empty source result(s); coverage is incomplete.',
+    ]);
+  });
   it('surfaces provider errors and closes the client', async () => {
     mcp.callTool.mockResolvedValue({
       isError: true,

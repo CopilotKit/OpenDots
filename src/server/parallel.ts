@@ -24,6 +24,9 @@ const source = z.object({
     .string()
     .url()
     .refine((value) => {
+      // A refinement still runs after .url() has failed, and new URL() would
+      // then throw out of safeParse instead of marking the source invalid.
+      if (!URL.canParse(value)) return false;
       const url = new URL(value);
       return (
         ['http:', 'https:'].includes(url.protocol) &&
