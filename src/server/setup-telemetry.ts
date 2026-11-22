@@ -49,7 +49,7 @@ const stateSchema = z
   })
   .strict();
 type State = z.infer<typeof stateSchema>;
-export const setupMetadata = {
+const setupMetadata = {
   accessibility_title: 'OpenDots',
   opendots_distribution: 'web',
   opendots_version: '0.1.0',

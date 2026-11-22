@@ -25,7 +25,7 @@ export interface Task {
   lease: string | null;
   leaseUntil: number | null;
 }
-export interface Source {
+interface Source {
   title: string;
   url: string;
   excerpt: string;

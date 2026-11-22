@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { Task } from '../shared/types';
 import { Mascot } from './Mascot';
-export const relative = (value: number) => {
+const relative = (value: number) => {
   const minutes = Math.floor((Date.now() - value) / 60000);
   return minutes < 1
     ? 'Just now'
@@ -16,11 +16,11 @@ export const relative = (value: number) => {
         ? `${Math.floor(minutes / 60)}h ago`
         : new Date(value).toLocaleDateString();
 };
-export const statusLabel = (task: Task) =>
+const statusLabel = (task: Task) =>
   task.status === 'completed' && task.nextRunAt
     ? 'Scheduled'
     : task.status.charAt(0).toUpperCase() + task.status.slice(1);
-export function Status({ task }: { task: Task }) {
+function Status({ task }: { task: Task }) {
   return (
     <span className={`status ${task.status}`}>
       <span />

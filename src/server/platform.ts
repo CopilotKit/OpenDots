@@ -9,7 +9,6 @@ import {
   type CopilotHonoApp,
 } from '@copilotkit/runtime/v2';
 import { createSlackChannel } from './slack-channel.js';
-export { slackIdentity } from './slack-channel.js';
 import { Store } from './store.js';
 import { WorkspaceStore } from './workspace.js';
 import { DotAgent } from './dot-agent.js';
