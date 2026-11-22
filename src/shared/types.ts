@@ -89,7 +89,7 @@ export interface Dot {
   composioToolkits: string[];
   /** Overrides OPENAI_MODEL for this Dot; null inherits. */
   model?: string | null;
-  /** OpenAI `reasoning_effort` for this Dot (none, low, medium, high, max); null uses the model default. */
+  /** OpenAI `reasoning_effort` for this Dot; null uses the model default. */
   reasoningEffort?: string | null;
   composioSessionId?: string | null;
   composioPolicyHash?: string | null;
@@ -132,3 +132,12 @@ export interface WorkspaceState {
   setup: SetupStatus;
   calls: CallReceipt[];
 }
+
+export const reasoningEfforts = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+] as const;

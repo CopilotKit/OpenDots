@@ -38,6 +38,34 @@ const request = (body: unknown, method = 'POST') => ({
   body: JSON.stringify(body),
 });
 
+it('accepts only documented reasoning effort values for a Dot', async () => {
+  const { ws, app } = fixture();
+  const dot = ws.dots()[0];
+  const put = (reasoningEffort: string) =>
+    app.request(
+      `/api/dots/${dot.id}`,
+      request(
+        {
+          name: dot.name,
+          instructions: dot.instructions,
+          researchAllowed: true,
+          memoryAllowed: true,
+          reasoningEffort,
+        },
+        'PUT',
+      ),
+    );
+  const rejected = await put('max');
+  expect(rejected.status).toBe(400);
+  expect(await rejected.json()).toEqual({
+    error: 'Invalid specialist settings.',
+  });
+  expect((await put('none')).status).toBe(200);
+  expect(ws.dot(dot.id)?.reasoningEffort).toBe('none');
+  expect((await put('')).status).toBe(200);
+  expect(ws.dot(dot.id)?.reasoningEffort).toBeNull();
+});
+
 it('saves Learning settings through the owner API and rejects malformed container IDs', async () => {
   const { ws, app } = fixture();
   const dot = ws.dots()[0];

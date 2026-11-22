@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import type { Dot, Memory, State, WorkspaceState } from '../shared/types';
+import {
+  reasoningEfforts,
+  type Dot,
+  type Memory,
+  type State,
+  type WorkspaceState,
+} from '../shared/types';
 import { ConnectionsSection } from './ConnectionsSection';
 import {
   setThemePreference,
@@ -422,16 +428,23 @@ export function WorkspaceDialog({
               <label className="field-label" htmlFor="dot-reasoning-effort">
                 Reasoning effort
               </label>
-              <input
+              <select
                 id="dot-reasoning-effort"
                 value={reasoningEffort}
-                placeholder="model default"
                 aria-describedby="dot-reasoning-effort-help"
                 onChange={(event) => setReasoningEffort(event.target.value)}
-              />
+              >
+                <option value="">Model default</option>
+                {reasoningEfforts.map((effort) => (
+                  <option key={effort} value={effort}>
+                    {effort}
+                  </option>
+                ))}
+              </select>
               <p className="muted" id="dot-reasoning-effort-help">
-                Optional. Sent as reasoning_effort: none, low, medium, high or
-                max, as the model supports. Leave blank for the model default.
+                Sent as reasoning_effort. Dots always send tools, and OpenAI
+                reasoning models accept only none with tools on Chat
+                Completions.
               </p>
             </fieldset>
           )}

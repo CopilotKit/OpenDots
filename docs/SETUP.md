@@ -83,7 +83,7 @@ Edit `.env` on the server and restart after changes:
 
 A non-empty `INTELLIGENCE_GATEWAY_WS_URL` takes precedence over `INTELLIGENCE_WS_URL`. Without either WebSocket override, OpenDots uses the hosted gateway. Set both the API and gateway endpoints when connecting a self-hosted deployment.
 
-The model environment variable names follow the configured provider adapter. Provider credentials belong in `.env`, not client-side variables or source code. Conversation history lives in the configured Intelligence project; copying the SQLite file alone does not back up that history.
+The model environment variable names follow the configured provider adapter. Provider credentials belong in `.env`, not client-side variables or source code. A Dot's settings can override the model and set `reasoning_effort` for that Dot. Dots always send tools over Chat Completions, where OpenAI reasoning models accept only `none`; any other value fails the turn with the provider's error. Conversation history lives in the configured Intelligence project; copying the SQLite file alone does not back up that history.
 
 ## Pages and page conversations
 
