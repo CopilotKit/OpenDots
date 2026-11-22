@@ -5,7 +5,6 @@ import {
   MessageCircle,
 } from 'lucide-react';
 import type { Task } from '../shared/types';
-import { Mascot } from './Mascot';
 const relative = (value: number) => {
   const minutes = Math.floor((Date.now() - value) / 60000);
   return minutes < 1
@@ -59,14 +58,5 @@ export function TaskRow({
       <Status task={task} />
       <ChevronRight size={16} />
     </button>
-  );
-}
-export function Empty({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="large-empty">
-      <Mascot />
-      <h2>{title}</h2>
-      <p>{text}</p>
-    </div>
   );
 }
