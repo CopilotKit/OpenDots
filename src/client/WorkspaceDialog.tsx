@@ -197,8 +197,15 @@ export function WorkspaceDialog({
                 intervalSeconds: Number(interval),
               };
             }
-            if (await mutate(path, method, body)) onClose();
-            else
+            if (await mutate(path, method, body)) {
+              // Apply the language only on save; this reloads the page.
+              if (
+                dialog.type === 'settings' &&
+                languageChoice !== localePreference()
+              )
+                setLocalePreference(languageChoice);
+              onClose();
+            } else
               setError(
                 t('Could not save. Review the workspace error and retry.'),
               );
@@ -483,10 +490,7 @@ export function WorkspaceDialog({
                       name="language"
                       value={option}
                       checked={languageChoice === option}
-                      onChange={() => {
-                        setLanguageChoice(option);
-                        setLocalePreference(option);
-                      }}
+                      onChange={() => setLanguageChoice(option)}
                     />
                     <span>{label}</span>
                   </label>
