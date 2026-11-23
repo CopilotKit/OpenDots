@@ -5,7 +5,10 @@ import { research, type Config } from './research.js';
 import { DEFAULT_AGENT_RUN_TIMEOUT_MS } from './platform-config.js';
 export class Runner {
   private timer?: ReturnType<typeof setInterval>;
-  private active = new Map<string, AbortController>();
+  private active = new Map<
+    string,
+    { claim: Claim; controller: AbortController }
+  >();
   constructor(
     private store: Store,
     private config: Config,
@@ -26,20 +29,18 @@ export class Runner {
   stop() {
     clearInterval(this.timer);
     this.timer = undefined;
-    for (const task of this.store.tasks()) {
-      if (this.active.has(task.id) && task.lease)
-        this.store.interrupt(
-          { ...task, lease: task.lease },
-          'Server stopped during this run. Review completed effects before retrying.',
-        );
-    }
+    for (const { claim } of this.active.values())
+      this.store.interrupt(
+        claim,
+        'Server stopped during this run. Review completed effects before retrying.',
+      );
     this.abortAll();
   }
   abort(id: string) {
-    this.active.get(id)?.abort(new Error('Run stopped.'));
+    this.active.get(id)?.controller.abort(new Error('Run stopped.'));
   }
   abortAll() {
-    for (const controller of this.active.values())
+    for (const { controller } of this.active.values())
       controller.abort(new Error('Run stopped because settings changed.'));
   }
   async tick() {
@@ -62,7 +63,7 @@ export class Runner {
     );
     if (!claim) return;
     const controller = new AbortController();
-    this.active.set(claim.id, controller);
+    this.active.set(claim.id, { claim, controller });
     const ownershipCheck = setInterval(() => {
       try {
         if (!this.store.owns(claim))
