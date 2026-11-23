@@ -55,7 +55,7 @@ it('accepts only documented reasoning effort values for a Dot', async () => {
         'PUT',
       ),
     );
-  const rejected = await put('max');
+  const rejected = await put('extreme');
   expect(rejected.status).toBe(400);
   expect(await rejected.json()).toEqual({
     error: 'Invalid specialist settings.',

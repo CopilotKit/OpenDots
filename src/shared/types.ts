@@ -140,4 +140,5 @@ export const reasoningEfforts = [
   'medium',
   'high',
   'xhigh',
+  'max',
 ] as const;
