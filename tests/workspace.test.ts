@@ -54,3 +54,47 @@ it('migrates legacy Space ownership once and never restores revoked access on re
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it('lists dots with one batch query for space grants instead of N+1', () => {
+  const store = new WorkspaceStore(':memory:', 'owner');
+  const design = store.createSpace('Design', 'Design decisions');
+  const research = store.createSpace('Research', 'Research notes');
+  const multi = store.createDot(design.id, 'Scout', 'Be concise', true, true, [
+    design.id,
+    research.id,
+  ]);
+  const single = store.createDot(
+    research.id,
+    'Solo',
+    'Work alone',
+    false,
+    false,
+    [research.id],
+  );
+  // A dot with no space grants at all must read back with an empty list.
+  const db = (store as unknown as { db: import('node:sqlite').DatabaseSync })
+    .db;
+  db.prepare(
+    'INSERT INTO dots (id, spaceId, name, instructions, researchAllowed, memoryAllowed, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).run('lonely', research.id, 'Lonely', 'Hi', 0, 0, 1);
+
+  let prepares = 0;
+  const prepare = db.prepare.bind(db);
+  db.prepare = ((sql: string, ...rest: unknown[]) => {
+    prepares++;
+    return (prepare as (...args: unknown[]) => unknown)(sql, ...rest);
+  }) as typeof db.prepare;
+
+  const dots = store.dots();
+
+  // Two round-trips total (dots + all dot_spaces), regardless of dot count.
+  expect(prepares).toBe(2);
+  const byId = new Map(dots.map((dot) => [dot.id, dot]));
+  expect(byId.get(multi.id)?.spaceIds).toEqual([design.id, research.id].sort());
+  expect(byId.get(single.id)?.spaceIds).toEqual([research.id]);
+  expect(byId.get('lonely')?.spaceIds).toEqual([]);
+  // Unrelated columns keep their coercions.
+  expect(byId.get(multi.id)?.researchAllowed).toBe(true);
+  expect(byId.get('lonely')?.memoryAllowed).toBe(false);
+  store.close();
+});
