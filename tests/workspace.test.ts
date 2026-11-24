@@ -54,3 +54,15 @@ it('migrates legacy Space ownership once and never restores revoked access on re
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it('stores the auto-recall toggle and keeps it when a patch omits it', () => {
+  const ws = new WorkspaceStore(':memory:', 'owner');
+  const dot = ws.dots()[0];
+  expect(dot.autoRecall).toBe(false);
+  ws.updateDot(dot.id, { ...dot, autoRecall: true });
+  const { autoRecall, ...rest } = ws.dot(dot.id)!;
+  expect(autoRecall).toBe(true);
+  ws.updateDot(dot.id, { ...rest, name: 'Renamed' });
+  expect(ws.dot(dot.id)?.autoRecall).toBe(true);
+  ws.close();
+});

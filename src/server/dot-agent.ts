@@ -4,6 +4,7 @@ import { ComputerService } from './computer-service.js';
 import { computerTools } from './computer-tools.js';
 import { ConnectionService } from './connections.js';
 import { connectionTools } from './connection-tools.js';
+import { autoRecall, withRecall } from './auto-recall.js';
 import { connectionActionTool } from '../shared/connection-types.js';
 import { composioSession } from './composio.js';
 import { composioTools } from './composio-tools.js';
@@ -352,6 +353,14 @@ export class DotAgent extends AbstractAgent {
                   controller.signal,
                 )
               : [];
+          const recalled = dot.autoRecall
+            ? await autoRecall(
+                new ConnectionService(this.workspace.connections),
+                dot.id,
+                input.messages,
+                controller.signal,
+              )
+            : null;
           check();
           const serverTools = [
             ...tools,
@@ -377,7 +386,7 @@ export class DotAgent extends AbstractAgent {
               const converted = convertInputToTanStackAI({
                 ...ctx.input,
                 // Match BuiltInAgent's default trust boundary for client messages.
-                messages: ctx.input.messages.filter(
+                messages: withRecall(ctx.input.messages, recalled).filter(
                   (message) =>
                     message.role !== 'system' && message.role !== 'developer',
                 ),
