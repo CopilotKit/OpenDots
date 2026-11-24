@@ -1,11 +1,11 @@
 <div align="center">
 
-<a href="https://open.bot"><img src="docs/images/opendots-now-in-openbot.png" alt="OpenDots is now a skin in OpenBot. This repo is no longer maintained. Use it at open.bot. The screenshot shows OpenBot with the OpenDots skin, picked under Settings, Skin, OpenDots." width="880"></a>
+<a href="https://open.bot"><img src="docs/images/opendots-now-in-openbot.png" alt="This is no longer maintained. We've merged OpenDots into OpenBot as a skin. Get it at https://open.bot. The screenshot shows OpenBot with the OpenDots skin, picked under Settings, Skin, OpenDots." width="880"></a>
 
 </div>
 
 > [!IMPORTANT]
-> OpenDots is no longer maintained. It's now a skin in OpenBot. Use it at https://open.bot (code: https://github.com/CopilotKit/OpenBot)
+> OpenDots is no longer maintained. We've merged it into OpenBot as a skin. Get it at https://open.bot (code: https://github.com/CopilotKit/OpenBot)
 
 <div align="center">
 
