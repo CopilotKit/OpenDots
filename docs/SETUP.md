@@ -85,6 +85,46 @@ A non-empty `INTELLIGENCE_GATEWAY_WS_URL` takes precedence over `INTELLIGENCE_WS
 
 The model environment variable names follow the configured provider adapter. Provider credentials belong in `.env`, not client-side variables or source code. Conversation history lives in the configured Intelligence project; copying the SQLite file alone does not back up that history.
 
+### LLMTR
+
+[LLMTR](https://llmtr.com) serves chat through the same OpenAI-compatible endpoint. Set the model variables, then restart:
+
+```dotenv
+OPENAI_API_KEY=llmtr-your-key
+OPENAI_BASE_URL=https://llmtr.com/v1
+OPENAI_MODEL=qwen/qwen3.8-27b-free
+```
+
+`OPENAI_API_KEY` is sent as `Authorization: Bearer`. LLMTR keys start with `llmtr-`. `OPENAI_MODEL` is the catalog id and is passed through unchanged. Keep a leading `llmtr/` when the id has one, for example `llmtr/qwen3-8-27b`. `GET https://llmtr.com/v1/models` lists ids without a key. Choose an id whose `supported_endpoints` includes `/v1/chat/completions`. `qwen/qwen3.8-27b-free` is a free chat model. `llmtr/qwen3-8-27b` is the Turkey-hosted chat model.
+
+Dot chat and research use this endpoint. Voice still uses the Realtime API at `api.openai.com`. If a request includes `reasoning`, send a boolean. LLMTR rejects a reasoning object.
+
+To build, configure LLMTR, and send one chat request, use Node.js 24:
+
+```sh
+npm ci
+cp .env.example .env
+```
+
+In `.env`, uncomment the LLMTR lines from `.env.example` and set your key. Those lines come after the defaults. Node keeps the last assignment of each variable, so uncomment only one `OPENAI_MODEL` line. Intelligence still has to be configured for an in-app conversation. Then:
+
+```sh
+npm run dev
+```
+
+Open http://127.0.0.1:5173 and send one message to a Dot.
+
+To send one chat request with only the LLMTR key:
+
+```sh
+curl -sS https://llmtr.com/v1/chat/completions \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen/qwen3.8-27b-free","messages":[{"role":"user","content":"Reply with the word pong."}],"max_tokens":16}'
+```
+
+A response with `choices[0].message.content` means the key and model id were accepted. Keep the key out of git. Docker Compose reads the same three variables from `.env`.
+
 ## Pages and page conversations
 
 Select a Space to open its page library. Search for a document, switch between grid and list views, or create a new page. The visual editor supports formatting, headings, lists, checklists, tables, and slash commands. Use `/` to insert a block and Cmd/Ctrl+S to save immediately. Pages autosave after editing pauses; the save status tells you whether changes reached the server.
