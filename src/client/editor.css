@@ -397,6 +397,11 @@
   margin-bottom: 24px;
   outline: none;
   border-radius: 0;
+  display: block;
+  resize: none;
+  overflow: hidden;
+  font-family: inherit;
+  overflow-wrap: anywhere;
 }
 .document-title::placeholder {
   color: #747c70;
