@@ -34,10 +34,10 @@ OpenDots is now a skin in [OpenBot](https://open.bot), CopilotKit's open-source 
 1. Get OpenBot at [open.bot](https://open.bot).
 2. In OpenBot, open **Settings** and pick **OpenDots** under **Skin**.
 
-| If you want to | Go to |
-| --- | --- |
-| Use OpenDots | [open.bot](https://open.bot), then **Settings → Skin → OpenDots** |
-| Read or build on the code | [CopilotKit/OpenBot](https://github.com/CopilotKit/OpenBot) |
+| If you want to                          | Go to                                                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Use OpenDots                            | [open.bot](https://open.bot), then **Settings → Skin → OpenDots**                                |
+| Read or build on the code               | [CopilotKit/OpenBot](https://github.com/CopilotKit/OpenBot)                                      |
 | Have us stand it up inside your company | [Talk to an engineer](https://www.copilotkit.ai/talk-to-an-engineer?ref=opendots_readme_openbot) |
 
 This repository is no longer maintained, and new work happens in OpenBot. The original README, with this repo's demos and setup, is kept below for reference.
