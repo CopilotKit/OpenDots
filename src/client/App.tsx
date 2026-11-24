@@ -140,7 +140,16 @@ export function App() {
       setState(s);
       setWorkspace(w);
       setNeedsAuth(false);
-      setSelectedDot((previous) => previous || w.dots[0]?.id || '');
+      setSelectedDot((previous) =>
+        w.dots.some((item) => item.id === previous)
+          ? previous
+          : (w.dots[0]?.id ?? ''),
+      );
+      setSelectedThread((previous) =>
+        w.conversations.some((item) => item.id === previous)
+          ? previous
+          : undefined,
+      );
       setNotices((current) => applyRefreshResult(current, { ok: true }));
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setNeedsAuth(true);
@@ -184,17 +193,25 @@ export function App() {
       clearInterval(timer);
     };
   }, [selectedThread]);
-  const mutate = async (path: string, method: string, body?: unknown) => {
+  const mutate = async (
+    path: string,
+    method: string,
+    body?: unknown,
+  ): Promise<{ ok: true } | { ok: false; error: string }> => {
     setError('');
     try {
       await api(path, method, body);
       await refresh();
-      if (taskDetail)
+      if (method === 'DELETE' && path.startsWith('/dots/')) {
+        setTaskDetail(undefined);
+      }
+      if (taskDetail && !(method === 'DELETE' && path.startsWith('/dots/')))
         setTaskDetail(await api<Detail>(`/tasks/${taskDetail.task.id}`));
-      return true;
+      return { ok: true };
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save.');
-      return false;
+      const message = e instanceof Error ? e.message : 'Could not save.';
+      setError(message);
+      return { ok: false, error: message };
     }
   };
   const dot =

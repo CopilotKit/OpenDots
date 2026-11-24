@@ -24,6 +24,113 @@ it('rejects a dot in a nonexistent space and does not rebind an existing thread'
   store.close();
 });
 
+it('deletes one Dot and its private records while preserving shared workspace data', () => {
+  const store = new WorkspaceStore(':memory:', 'owner');
+  const remaining = store.dots()[0];
+  const target = store.createDot(
+    remaining.spaceId,
+    'Researcher',
+    'Research carefully',
+    true,
+    true,
+  );
+  const targetThread = store.bindThread('target-thread', target.id, 'Research');
+  const remainingThread = store.bindThread(
+    'remaining-thread',
+    remaining.id,
+    'Keep this',
+  );
+  const page = store.pages.create(
+    remaining.spaceId,
+    { title: 'Shared page', content: 'Keep this content' },
+    targetThread.id,
+  );
+  store.pages.reserveThread(page.id, target.id, targetThread.id);
+  store.pages.finishThread(page.id, target.id);
+  store.createCall(targetThread.id);
+  const endedCall = store.calls(targetThread.id)[0];
+  store.setCall(endedCall.id, 'ended', 'Call transcript');
+  store.bindTask('target-task', targetThread.id);
+  store.bindTask('remaining-task', remainingThread.id);
+  store.connections.create(
+    target.id,
+    { name: 'Private connection', url: 'https://example.com/mcp' },
+    [],
+  );
+  store.computers.patch(target.id, { enabled: true });
+
+  const deleted = store.deleteDot(target.id);
+
+  expect(deleted).toEqual({
+    threadIds: ['target-thread'],
+    taskIds: ['target-task'],
+  });
+  expect(store.dot(target.id)).toBeUndefined();
+  expect(store.dots()).toHaveLength(1);
+  expect(store.conversations().map((thread) => thread.id)).toEqual([
+    'remaining-thread',
+  ]);
+  expect(store.taskThread('target-task')).toBeUndefined();
+  expect(store.taskThread('remaining-task')).toBe('remaining-thread');
+  expect(store.calls()).toEqual([]);
+  expect(store.connections.list(target.id)).toEqual([]);
+  expect(store.computers.permissions(target.id)).toEqual({
+    enabled: false,
+    browser: false,
+    files: false,
+    shell: false,
+  });
+  expect(store.spaces()).toHaveLength(1);
+  expect(store.pages.list(remaining.spaceId)).toContainEqual(
+    expect.objectContaining({ id: page.id, content: 'Keep this content' }),
+  );
+  store.close();
+});
+
+it('reports active call, tool, and computer work as deletion blockers', () => {
+  const store = new WorkspaceStore(':memory:', 'owner');
+  const [remaining] = store.dots();
+  const dot = store.createDot(remaining.spaceId, 'Busy', 'Working', true, true);
+  const thread = store.bindThread('busy-thread', dot.id, 'Work');
+  const call = store.createCall(thread.id);
+  expect(store.dotDeletionBlocker(dot.id)).toMatch(/active call/);
+  store.setCall(call.id, 'ended', '');
+  const endDotRun = store.trackDotRun(dot.id);
+  expect(store.dotDeletionBlocker(dot.id)).toMatch(/active conversation turn/);
+  endDotRun();
+
+  const connection = store.connections.create(
+    dot.id,
+    { name: 'Tools', url: 'https://example.com/mcp' },
+    [],
+  );
+  const approvalId = store.connections.createApproval({
+    threadId: thread.id,
+    dotId: dot.id,
+    connectionId: connection.id,
+    tool: 'send_message',
+    arguments: {},
+  });
+  store.connections.claimAction(
+    thread.id,
+    'tool-call',
+    approvalId,
+    connection.id,
+    'send_message',
+  );
+  expect(store.dotDeletionBlocker(dot.id)).toMatch(/tool action/);
+
+  store.connections.finishAction('busy-thread', 'tool-call', {
+    isError: false,
+    text: 'Done',
+  });
+  const auditId = store.computers.begin(dot.id, 'click', 'agent');
+  expect(store.dotDeletionBlocker(dot.id)).toMatch(/computer action/);
+  store.computers.finish(auditId, 'succeeded');
+  expect(store.dotDeletionBlocker(dot.id)).toBeUndefined();
+  store.close();
+});
+
 it('migrates legacy Space ownership once and never restores revoked access on restart', () => {
   const dir = mkdtempSync(join(tmpdir(), 'opendots-access-'));
   const path = join(dir, 'workspace.sqlite');
