@@ -1,14 +1,5 @@
 <div align="center">
 
-<a href="https://open.bot"><img src="docs/images/opendots-now-in-openbot.png" alt="This is no longer maintained. We've merged OpenDots into OpenBot as a skin. Get it at https://open.bot. The screenshot shows OpenBot with the OpenDots skin, picked under Settings, Skin, OpenDots." width="880"></a>
-
-</div>
-
-> [!IMPORTANT]
-> OpenDots is no longer maintained. We've merged it into OpenBot as a skin. Get it at https://open.bot (code: https://github.com/CopilotKit/OpenBot)
-
-<div align="center">
-
 # OpenDots
 
 ### Always-on AI coworkers that move between text, calls, and Slack.
@@ -22,6 +13,15 @@
 ![Status: no longer maintained](https://img.shields.io/badge/status-no%20longer%20maintained-lightgrey.svg)
 
 <a href="https://trendshift.io/repositories/275323" target="_blank"><img src="https://trendshift.io/api/badge/trendshift/repositories/275323/daily?language=TypeScript" alt="CopilotKit/OpenDots | Trendshift #2 TypeScript Repository Of The Day" width="250" height="55"/></a>
+
+<a href="https://open.bot"><img src="docs/images/opendots-now-in-openbot.png" alt="This is no longer maintained. We've merged OpenDots into OpenBot as a skin. Get it at https://open.bot. The screenshot shows OpenBot with the OpenDots skin, picked under Settings, Skin, OpenDots." width="880"></a>
+
+</div>
+
+> [!IMPORTANT]
+> OpenDots is no longer maintained. We've merged it into OpenBot as a skin. Get it at https://open.bot (code: https://github.com/CopilotKit/OpenBot)
+
+<div align="center">
 
 [**Bringing OpenDots to your company? Talk to us about OpenBot →**](https://www.copilotkit.ai/talk-to-an-engineer?ref=opendots_readme)
 
