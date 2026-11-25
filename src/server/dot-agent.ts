@@ -329,7 +329,7 @@ export class DotAgent extends AbstractAgent {
           initialSettings.memoryAllowed && dot.memoryAllowed
             ? this.store.memories().map((memory) => memory.text)
             : [];
-        const adapter = openaiCompatibleText(this.config.model, {
+        const adapter = openaiCompatibleText(dot.model || this.config.model, {
           apiKey: this.config.apiKey,
           baseURL: this.config.baseUrl ?? 'https://api.openai.com/v1',
           api: 'chat-completions',
@@ -395,7 +395,12 @@ export class DotAgent extends AbstractAgent {
                 abortController: ctx.abortController,
                 threadId: ctx.input.threadId,
                 runId: ctx.input.runId,
-                modelOptions: { max_completion_tokens: 2200 },
+                modelOptions: {
+                  max_completion_tokens: 2200,
+                  ...(dot.reasoningEffort
+                    ? { reasoning_effort: dot.reasoningEffort }
+                    : {}),
+                },
                 agentLoopStrategy: maxIterations(
                   appTools.length ||
                     (dot.skillDeliveryEnabled &&

@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import type { Dot, Memory, State, WorkspaceState } from '../shared/types';
+import {
+  reasoningEfforts,
+  type Dot,
+  type Memory,
+  type State,
+  type WorkspaceState,
+} from '../shared/types';
 import { ConnectionsSection } from './ConnectionsSection';
 import {
   setThemePreference,
@@ -55,6 +61,12 @@ export function WorkspaceDialog({
     dialog.type === 'dot'
       ? (dialog.dot?.composioToolkits ?? []).join(', ')
       : '',
+  );
+  const [model, setModel] = useState(
+    dialog.type === 'dot' ? (dialog.dot?.model ?? '') : '',
+  );
+  const [reasoningEffort, setReasoningEffort] = useState(
+    dialog.type === 'dot' ? (dialog.dot?.reasoningEffort ?? '') : '',
   );
   const [spaceIds, setSpaceIds] = useState(
     dialog.type === 'dot' ? (dialog.dot?.spaceIds ?? [dialog.spaceId]) : [],
@@ -164,6 +176,8 @@ export function WorkspaceDialog({
                   .filter(Boolean),
                 learningContainerId: learningContainer.trim() || null,
                 skillDeliveryEnabled: skillDelivery,
+                model,
+                reasoningEffort,
               };
             }
             if (dialog.type === 'settings') {
@@ -397,6 +411,41 @@ export function WorkspaceDialog({
               >
                 Set up Learning and review skills ↗
               </a>
+            </fieldset>
+          )}
+          {dialog.type === 'dot' && (
+            <fieldset className="space-access-fields">
+              <legend>Model</legend>
+              <label className="field-label" htmlFor="dot-model">
+                Model override
+              </label>
+              <input
+                id="dot-model"
+                value={model}
+                placeholder="inherits OPENAI_MODEL"
+                onChange={(event) => setModel(event.target.value)}
+              />
+              <label className="field-label" htmlFor="dot-reasoning-effort">
+                Reasoning effort
+              </label>
+              <select
+                id="dot-reasoning-effort"
+                value={reasoningEffort}
+                aria-describedby="dot-reasoning-effort-help"
+                onChange={(event) => setReasoningEffort(event.target.value)}
+              >
+                <option value="">Model default</option>
+                {reasoningEfforts.map((effort) => (
+                  <option key={effort} value={effort}>
+                    {effort}
+                  </option>
+                ))}
+              </select>
+              <p className="muted" id="dot-reasoning-effort-help">
+                Sent as reasoning_effort. Dots always send tools, and OpenAI
+                reasoning models accept only none with tools on Chat
+                Completions.
+              </p>
             </fieldset>
           )}
           {dialog.type === 'dot' && dialog.dot && (

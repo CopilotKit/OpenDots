@@ -304,6 +304,31 @@ it('offers connected tools to the model and the approval tool only when the web 
   expect(headless).not.toContain(connectionActionTool.name);
 });
 
+it('sends the configured model and no reasoning_effort unless the Dot overrides them', async () => {
+  const f = fixture();
+  const network = vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(async () =>
+      completion({ role: 'assistant', content: 'Done.' }),
+    );
+  const body = async () => {
+    await lastValueFrom(f.agent.run(f.input).pipe(toArray()));
+    return JSON.parse(String(network.mock.lastCall?.[1]?.body));
+  };
+  const inherited = await body();
+  expect(inherited.model).toBe('custom-model');
+  expect(inherited).not.toHaveProperty('reasoning_effort');
+  f.workspace.updateDot(f.dot.id, {
+    ...f.dot,
+    model: 'dot-model',
+    reasoningEffort: 'none',
+  });
+  expect(await body()).toMatchObject({
+    model: 'dot-model',
+    reasoning_effort: 'none',
+  });
+});
+
 it('tells the model the current time so scheduled runs do not invent one', async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-04T07:33:12.000Z'));
