@@ -18,3 +18,6 @@ data/
 
 # Local hosted-project selection
 .copilotkit/
+
+# Added by CopilotKit CLI: browser snapshots a coding agent writes.
+.playwright-mcp/

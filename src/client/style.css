@@ -61,8 +61,6 @@ button:hover:not(:disabled) {
 }
 button:focus-visible,
 a:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
 select:focus-visible {
   outline: 3px solid #b8c4fa;
   outline-offset: 3px;
@@ -478,9 +476,7 @@ h3 {
   font-size: 12px;
   line-height: 1.6;
   box-shadow: none;
-}
-.composer textarea:focus-visible {
-  outline: none;
+  background: transparent;
 }
 .composer textarea::placeholder {
   color: #a3a4af;
@@ -489,7 +485,11 @@ h3 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 9px;
   margin-top: 8px;
+}
+.composer-bottom .icon-button {
+  margin: 0;
 }
 .composer-bottom > span {
   display: flex;
@@ -1994,11 +1994,17 @@ h3 {
 .chat-workspace {
   height: calc(100dvh - 83px);
   display: flex;
-  min-height: 600px;
+  min-height: 0;
+  overflow: hidden;
 }
 .chat-column {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .chat-workspace.split .chat-column {
   flex: 1;
@@ -2009,9 +2015,22 @@ h3 {
   flex-shrink: 0;
 }
 .new-conversation {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   max-width: 780px;
   margin: 0 auto;
-  padding: 35px 46px;
+  padding: 35px 46px 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.new-conversation-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 .empty-chat-persona {
   text-align: center;
@@ -2027,15 +2046,14 @@ h3 {
   letter-spacing: -0.2px;
   margin: 0 0 5px;
 }
-.empty-chat-persona p {
+.empty-chat-persona .specialist-preview {
+  max-width: 420px;
+  margin: 0 auto;
+}
+.empty-chat-persona .specialist-prompt {
   font-size: 10px;
-  max-width: 370px;
-  margin: 0 auto 8px;
   color: #a0a3ae;
   line-height: 1.7;
-}
-.empty-chat-persona .text-button {
-  font-size: 9px;
 }
 .starter-copy h1 {
   font-size: 37px;
@@ -2088,17 +2106,63 @@ h3 {
   gap: 5px;
 }
 .new-conversation .composer {
-  margin-top: 24px;
+  flex-shrink: 0;
+  margin-top: 16px;
   min-height: 130px;
 }
 .new-conversation .composer textarea {
   min-height: 47px;
 }
+.new-conversation .connection-note {
+  flex-shrink: 0;
+}
 .starter-suggestions {
   display: flex;
   gap: 8px;
   justify-content: center;
-  margin-top: 15px;
+  margin-top: auto;
+  padding-top: 15px;
+  padding-bottom: 8px;
+}
+.specialist-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.specialist-prompt {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.edit-specialist {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #d8dbe3;
+  background: #f7f8fb;
+  color: #5f6a84;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+.edit-specialist:hover {
+  background: #eef1f8;
+  border-color: #c4cad8;
+  color: #45516d;
+}
+.edit-specialist:focus-visible {
+  outline: 2px solid #8ea0d4;
+  outline-offset: 2px;
 }
 .starter-suggestions button {
   border: 1px solid #e7e7ed;
@@ -2127,18 +2191,23 @@ h3 {
   margin-left: 7px;
 }
 .live-chat {
+  flex: 1;
+  min-height: 0;
   height: 100%;
+  width: 100%;
   max-width: 850px;
   display: flex;
   flex-direction: column;
   margin: 0 auto;
   padding: 20px 40px 17px;
+  overflow: hidden;
 }
 .chat-persona {
   display: flex;
   align-items: center;
   gap: 6px;
   position: relative;
+  flex-shrink: 0;
   padding-bottom: 17px;
   border-bottom: 1px solid #eeedea;
 }
@@ -2167,13 +2236,38 @@ h3 {
 .chat-transcript {
   overflow: auto;
   flex: 1;
+  min-height: 0;
   padding: 29px 0;
-  min-height: 100px;
   scrollbar-width: thin;
   scrollbar-color: #dedfe4 transparent;
   display: flex;
   flex-direction: column;
   gap: 22px;
+}
+.chat-loading {
+  margin: auto;
+  font-size: 12px;
+  color: #a8afbd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.chat-loading > span:not(:last-child) {
+  height: 6px;
+  width: 6px;
+  border-radius: 50%;
+  background: #aab7d7;
+  animation: bob 1s infinite;
+}
+.chat-loading > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.chat-loading > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.chat-loading > span:last-child {
+  margin-left: 8px;
 }
 .chat-bubble {
   font-size: 12px;
@@ -2242,10 +2336,16 @@ h3 {
   font-size: 30px;
   margin: 15px 0;
 }
-.chat-welcome > p {
+.chat-welcome .specialist-prompt {
   font-size: 12px;
   color: #969dab;
   line-height: 1.9;
+}
+.chat-welcome .muted {
+  font-size: 12px;
+  color: #969dab;
+  line-height: 1.9;
+  margin-top: 16px;
 }
 .call-receipt {
   align-self: flex-end;
@@ -2267,9 +2367,11 @@ h3 {
   color: #ab9189;
 }
 .chat-composer {
+  flex-shrink: 0;
   border-top: 1px solid #ebece9;
   padding-top: 13px;
   margin-top: auto;
+  background: inherit;
 }
 .chat-compose-row {
   display: flex;
@@ -2277,13 +2379,15 @@ h3 {
   gap: 9px;
 }
 .chat-compose-row textarea {
-  border: 0;
+  border: none;
   background: transparent;
   padding: 10px 3px;
   resize: none;
   font-size: 12px;
   min-height: 43px;
   max-height: 120px;
+  outline: none;
+  box-shadow: none;
 }
 .chat-compose-row textarea::placeholder {
   color: #b1b3be;
@@ -2471,8 +2575,10 @@ h3 {
     width: 90px;
     height: 90px;
   }
-  .empty-chat-persona p {
+  .empty-chat-persona .specialist-preview {
     max-width: 265px;
+  }
+  .empty-chat-persona .specialist-prompt {
     font-size: 9px;
   }
   .starter-copy h1 {
@@ -2549,7 +2655,8 @@ h3 {
   .chat-welcome h1 {
     font-size: 26px;
   }
-  .chat-welcome > p {
+  .chat-welcome .specialist-prompt,
+  .chat-welcome .muted {
     font-size: 11px;
   }
   .template-app .topbar {
@@ -2759,6 +2866,10 @@ h3 {
   border-left: 1px solid #e0e5de;
   background: white;
 }
+.page-chat-panel .live-chat {
+  max-width: none;
+  padding: 0;
+}
 .page-chat-panel .chat-persona {
   padding: 18px;
 }
@@ -2822,6 +2933,7 @@ h3 {
   }
 }
 .page-chat-context {
+  flex-shrink: 0;
   padding: 10px 20px;
   background: #f1f6f1;
   color: #53634f;
@@ -3213,14 +3325,20 @@ h3 {
   font-size: 17px;
   margin-bottom: 6px;
 }
-.template-app .empty-chat-persona p {
+.template-app .empty-chat-persona .specialist-prompt {
   font-size: 13px;
   color: #777;
-  max-width: 420px;
-  margin: 0 auto 8px;
 }
-.template-app .empty-chat-persona .text-button {
+.template-app .edit-specialist {
   font-size: 12px;
+  border-color: #ddd;
+  background: #f5f5f5;
+  color: #555;
+}
+.template-app .edit-specialist:hover {
+  background: #ececec;
+  border-color: #ccc;
+  color: #333;
 }
 .template-app .setup-card {
   background: #fafafa;
@@ -3306,7 +3424,8 @@ h3 {
 .template-app .chat-welcome .eyebrow {
   display: none;
 }
-.template-app .chat-welcome p {
+.template-app .chat-welcome .specialist-prompt,
+.template-app .chat-welcome .muted {
   font-size: 13px;
   color: #777;
 }
@@ -4084,6 +4203,24 @@ h3 {
   :is(button, a, input, textarea, select):not(.call-view *):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+/* Keep chat composers quiet: no focus ring or default field border. */
+.template-app .composer textarea,
+.template-app .composer textarea:focus,
+.template-app .composer textarea:focus-visible,
+.template-app .chat-composer textarea,
+.template-app .chat-composer textarea:focus,
+.template-app .chat-composer textarea:focus-visible,
+.template-app .chat-compose-row textarea,
+.template-app .chat-compose-row textarea:focus,
+.template-app .chat-compose-row textarea:focus-visible,
+.template-app .source-input input,
+.template-app .source-input input:focus,
+.template-app .source-input input:focus-visible {
+  border: none !important;
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
 }
 .template-app .primary {
   background: var(--accent);

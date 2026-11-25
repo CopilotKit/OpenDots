@@ -37,6 +37,7 @@ import { Mascot } from './Mascot';
 import { useVoice } from './useVoice';
 import { CallView } from './CallView';
 import { shouldSubmitComposerOnKeyDown } from './chat-composer';
+import { SpecialistPreview } from './SpecialistPreview';
 
 export function Chat({
   thread,
@@ -49,6 +50,7 @@ export function Chat({
   onSaved,
   onSchedule,
   onComputer,
+  onEditDot,
 }: {
   thread: Conversation;
   dot: Dot;
@@ -60,6 +62,7 @@ export function Chat({
   onSaved: () => void;
   onSchedule: () => void;
   onComputer?: () => void;
+  onEditDot?: () => void;
 }) {
   const { agent, isReady } = useAgent({
     agentId: `chat-${thread.id}`,
@@ -132,6 +135,7 @@ export function Chat({
   useEffect(() => {
     if (!isReady) return;
     let active = true;
+    setLoaded(false);
     void copilotkit
       .connectAgent({ agent })
       .then(() => {
@@ -147,6 +151,7 @@ export function Chat({
       active = false;
     };
   }, [agent, copilotkit, isReady]);
+  const historyReady = loaded && contextReady;
   const send = async (text: string) => {
     if (!text.trim() || running || !loaded || !contextReady || paused) return;
     setError('');
@@ -274,7 +279,7 @@ export function Chat({
               ? 'Paused'
               : running
                 ? 'Thinking…'
-                : loaded && contextReady
+                : historyReady
                   ? 'Here with you'
                   : 'Connecting to your conversation…'}
           </span>
@@ -344,33 +349,47 @@ export function Chat({
         </div>
       )}
       <div className="chat-transcript">
-        {!visible.length && (
-          <div className="chat-welcome">
-            <span className="eyebrow">A LITTLE SPACE TO THINK</span>
-            <h1>What’s on your mind?</h1>
-            <p>{dot.instructions}</p>
-            <p className="muted">
-              Your conversation stays with this Dot, across text and calls.
-            </p>
+        {!historyReady ? (
+          <div className="chat-loading" role="status" aria-live="polite">
+            <span />
+            <span />
+            <span />
+            <span>Loading conversation…</span>
           </div>
-        )}
-        <ChatTranscript
-          messages={visible}
-          calls={calls}
-          renderTools={(message) => (
-            <CopilotChatToolCallsView
-              message={message}
-              messages={agent.messages}
+        ) : (
+          <>
+            {!visible.length && (
+              <div className="chat-welcome">
+                <span className="eyebrow">A LITTLE SPACE TO THINK</span>
+                <h1>What’s on your mind?</h1>
+                <SpecialistPreview
+                  instructions={dot.instructions}
+                  onEdit={onEditDot}
+                />
+                <p className="muted">
+                  Your conversation stays with this Dot, across text and calls.
+                </p>
+              </div>
+            )}
+            <ChatTranscript
+              messages={visible}
+              calls={calls}
+              renderTools={(message) => (
+                <CopilotChatToolCallsView
+                  message={message}
+                  messages={agent.messages}
+                />
+              )}
             />
-          )}
-        />
-        {running && (
-          <div className="thinking">
-            <span />
-            <span />
-            <span />
-            <span>{dot.name} is thinking</span>
-          </div>
+            {running && (
+              <div className="thinking">
+                <span />
+                <span />
+                <span />
+                <span>{dot.name} is thinking</span>
+              </div>
+            )}
+          </>
         )}
         <div ref={bottom} />
       </div>
