@@ -78,6 +78,7 @@ Edit `.env` on the server and restart after changes:
 | `DATABASE_PATH`                                      | SQLite file containing pages, workspace and work metadata              |
 | `OWNER_TOKEN`                                        | Application access token; required for external bindings               |
 | `APP_ORIGIN`                                         | Comma-separated exact browser origins for a proxy or custom domain     |
+| `AGENT_RUN_TIMEOUT_MS`                               | Dot turn and background run timeout in ms (default `90000`)            |
 
 `npx copilotkit project select` deletes an `INTELLIGENCE_API_KEY` line and writes the same credential as `CPK_INTELLIGENCE_API_KEY`. The server reads either name. A non-empty `CPK_INTELLIGENCE_API_KEY` takes precedence over `INTELLIGENCE_API_KEY`.
 
