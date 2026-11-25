@@ -55,6 +55,9 @@ export const computerInputs = {
         .max(2048)
         .refine(
           (s) =>
+            // A refinement still runs after .url() has failed; without this
+            // new URL() throws instead of reporting a validation failure.
+            URL.canParse(s) &&
             ['http:', 'https:'].includes(new URL(s).protocol) &&
             !new URL(s).username &&
             !new URL(s).password,

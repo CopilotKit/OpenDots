@@ -77,6 +77,17 @@ it('answers an invalid action shape with 400 from the Zod schema', async () => {
   expect(await response.json()).toEqual({ error: 'Invalid computer request.' });
 });
 
+it('answers a navigate URL that cannot be parsed with 400, not 503', async () => {
+  const { app, id } = fixture();
+  const response = await app.request(`/dots/${id}/computer/actions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'navigate', input: { url: 'not a url' } }),
+  });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({ error: 'Invalid computer request.' });
+});
+
 it('answers an unconfigured computer service with 503, not 400', async () => {
   const { app, id } = fixture();
   const response = await app.request(`/dots/${id}/computer/start`, {
