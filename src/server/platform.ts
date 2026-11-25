@@ -22,6 +22,7 @@ import {
 import { validateRuntimeScope } from './runtime-scope.js';
 import { learningSelector } from './learning.js';
 import { SetupTelemetry } from './setup-telemetry.js';
+import { checkModelEndpoint } from './model-check.js';
 export class Platform {
   private channelStartupFailed = false;
   readonly setupTelemetry: SetupTelemetry;
@@ -118,6 +119,14 @@ export class Platform {
         (this.config.slackChannel ? 'setup_required' : 'not_configured'),
       this.channelStartupFailed,
     );
+  }
+  checkModel() {
+    return checkModelEndpoint({
+      modelProvider: this.config.modelProvider ?? 'openai',
+      apiKey: this.config.apiKey,
+      model: this.config.model,
+      baseUrl: this.config.baseUrl,
+    });
   }
   requireReady() {
     const missing = this.setup().missing;

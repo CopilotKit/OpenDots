@@ -8,6 +8,7 @@ import {
   type WorkspaceState,
 } from '../shared/types';
 import { ConnectionsSection } from './ConnectionsSection';
+import { ModelSetup } from './ModelSetup';
 import {
   setThemePreference,
   themePreference,
@@ -519,6 +520,7 @@ export function WorkspaceDialog({
                   'Text configuration is present. A successful conversation confirms connectivity.'
                 )}
               </p>
+              <ModelSetup setup={workspace.setup} />
               <p>
                 Slack: {workspace.setup.slack.replaceAll('_', ' ')}. Voice:{' '}
                 {workspace.setup.voice

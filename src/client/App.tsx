@@ -41,6 +41,7 @@ import {
   type Notices,
 } from './poll-notice';
 import { Mascot } from './Mascot';
+import { ModelSetup } from './ModelSetup';
 import { Chat } from './Chat';
 import { ThreadList } from './ThreadList';
 import { ResultPane } from './ResultPane';
@@ -666,6 +667,7 @@ export function App() {
                           Settings to start chatting. Your Spaces and Dot
                           preferences are ready to use.
                         </p>
+                        <ModelSetup setup={workspace.setup} />
                         <p>
                           Setup and usage metadata is collected by default.{' '}
                           <a

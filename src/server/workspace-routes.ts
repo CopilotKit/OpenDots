@@ -47,6 +47,7 @@ export function workspaceRoutes(platform: Platform, voice: VoiceService) {
     platform.setupTelemetry.capture(event);
     return c.json({ ok: true });
   });
+  app.get('/setup/model', async (c) => c.json(await platform.checkModel()));
   app.get('/workspace', (c) =>
     c.json({
       spaces: platform.workspace.spaces(),
