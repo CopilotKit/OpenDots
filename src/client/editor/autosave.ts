@@ -1,4 +1,5 @@
 import type { Page } from '../../server/pages';
+import { t } from '../i18n';
 export type PageDraft = Pick<Page, 'title' | 'content' | 'parentId'>;
 export type SaveState = {
   page?: Page;
@@ -77,8 +78,9 @@ export class PageAutosave {
       this.publish({
         remote: page,
         status: 'conflict',
-        error:
+        error: t(
           'This page changed elsewhere. Your draft is safe. Copy it before loading the latest version.',
+        ),
       });
     } else
       this.publish({
@@ -134,8 +136,9 @@ export class PageAutosave {
     ) {
       this.publish({
         status: 'error',
-        error:
+        error: t(
           'Use a title up to 160 characters and a document up to 100,000 characters. Your draft is still here.',
+        ),
       });
       return false;
     }
@@ -156,7 +159,9 @@ export class PageAutosave {
               controller.abort();
               reject(
                 new Error(
-                  'Saving timed out. Your draft is safe; retry when connected.',
+                  t(
+                    'Saving timed out. Your draft is safe; retry when connected.',
+                  ),
                 ),
               );
             }, 10000);
@@ -182,7 +187,7 @@ export class PageAutosave {
                 : 'saved',
           error:
             remote.revision > result.revision
-              ? 'A newer revision exists. Your draft is preserved.'
+              ? t('A newer revision exists. Your draft is preserved.')
               : undefined,
         });
         return this.state.status !== 'conflict';
@@ -196,10 +201,12 @@ export class PageAutosave {
         this.publish({
           status: conflict ? 'conflict' : 'error',
           error: conflict
-            ? 'This page changed elsewhere. Your draft is safe. Copy it before loading the latest version.'
+            ? t(
+                'This page changed elsewhere. Your draft is safe. Copy it before loading the latest version.',
+              )
             : error instanceof Error
               ? error.message
-              : 'Could not save. Your draft is safe.',
+              : t('Could not save. Your draft is safe.'),
         });
         return false;
       } finally {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dot } from '../shared/types';
 import type { ComputerAction, ComputerStatus } from '../shared/computer-types';
 import { api } from './api';
+import { dateLocale, t } from './i18n';
 
 type Screen = {
   base64: string;
@@ -76,7 +77,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
             setScreenError(
               cause instanceof Error
                 ? cause.message
-                : 'Could not refresh the screen.',
+                : t('Could not refresh the screen.'),
             );
           }
         }
@@ -89,7 +90,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
         setError(
           cause instanceof Error
             ? cause.message
-            : 'Could not load the computer.',
+            : t('Could not load the computer.'),
         );
         setScreen(undefined);
       }
@@ -148,7 +149,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
     } catch (cause) {
       if (!lifecycle.current.active) return;
       const message =
-        cause instanceof Error ? cause.message : 'Computer action failed.';
+        cause instanceof Error ? cause.message : t('Computer action failed.');
       // Status polling clears the panel error, so keep output action failures
       // next to the output they replace.
       if (showOutput) {
@@ -169,7 +170,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
   return (
     <section
       className="computer-panel"
-      aria-label={`${dot.name}'s computer`}
+      aria-label={t("{name}'s computer", { name: dot.name })}
       aria-busy={busy}
     >
       {error && (
@@ -179,35 +180,39 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
       )}
       {!status ? (
         <p role="status">
-          {error ? 'Computer status unavailable.' : 'Loading computer…'}
+          {error ? t('Computer status unavailable.') : t('Loading computer…')}
         </p>
       ) : (
         <>
           <div className="computer-status">
-            <strong>{status.state.replaceAll('_', ' ')}</strong>
+            <strong>{t(status.state.replaceAll('_', ' '))}</strong>
             {status.state !== 'running' && (
               <button disabled={busy} onClick={() => void refresh()}>
-                Refresh
+                {t('Refresh')}
               </button>
             )}
             <span>
-              {busy ? 'Working…' : human ? 'You have control' : 'Dot control'}
+              {busy
+                ? t('Working…')
+                : human
+                  ? t('You have control')
+                  : t('Dot control')}
             </span>
           </div>
           {!status.configured && (
             <div className="computer-setup">
-              <h3>Connect a computer service</h3>
+              <h3>{t('Connect a computer service')}</h3>
               <p>
-                This Dot does not have a computer service configured. Configure
-                the server’s computer service URL and token, then restart. Each
-                Dot gets its own browser and workspace.
+                {t(
+                  'This Dot does not have a computer service configured. Configure the server’s computer service URL and token, then restart. Each Dot gets its own browser and workspace.',
+                )}
               </p>
               <a
                 href="https://github.com/CopilotKit/OpenDots/blob/main/docs/COMPUTERS.md"
                 target="_blank"
                 rel="noreferrer"
               >
-                Computer setup guide ↗
+                {t('Computer setup guide')} ↗
               </a>
             </div>
           )}
@@ -219,7 +224,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
           <div
             className="computer-tool-tabs"
             role="tablist"
-            aria-label="Computer tools"
+            aria-label={t('Computer tools')}
           >
             {(['Browser', 'Files', 'Terminal', 'Activity'] as const).map(
               (name) => (
@@ -229,7 +234,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                   key={name}
                   onClick={() => setTab(name)}
                 >
-                  {name}
+                  {t(name)}
                 </button>
               ),
             )}
@@ -241,7 +246,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                 hidden={tab !== 'Browser'}
               >
                 {!status.permissions.browser && (
-                  <p>Enable Browser permission to use the screen.</p>
+                  <p>{t('Enable Browser permission to use the screen.')}</p>
                 )}
                 <form
                   className="computer-row"
@@ -252,7 +257,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                 >
                   <input
                     type="url"
-                    aria-label="Browser URL"
+                    aria-label={t('Browser URL')}
                     placeholder="https://example.com"
                     value={url}
                     onChange={(event) => setUrl(event.target.value)}
@@ -260,7 +265,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                     disabled={!browser || busy || human}
                   />
                   <button disabled={!browser || busy || human || !url.trim()}>
-                    Go
+                    {t('Go')}
                   </button>
                 </form>
                 {screenError && (
@@ -271,14 +276,14 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                 {screen ? (
                   <>
                     <div className="computer-current-url" title={screen.url}>
-                      {screen.url || 'Browser screen'}
+                      {screen.url || t('Browser screen')}
                     </div>
                     <button
                       className="computer-screen"
                       aria-label={
                         human
-                          ? 'Click a point on the computer screen'
-                          : 'Computer screen; take control to interact'
+                          ? t('Click a point on the computer screen')
+                          : t('Computer screen; take control to interact')
                       }
                       disabled={!browser || !human || busy}
                       onClick={(event) => {
@@ -310,25 +315,36 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                     >
                       <img
                         src={`data:image/png;base64,${screen.base64}`}
-                        alt={`Live browser screen for ${dot.name}`}
+                        alt={t('Live browser screen for {name}', {
+                          name: dot.name,
+                        })}
                       />
                     </button>
                     <small>
-                      Refreshed{' '}
-                      {new Date(screen.capturedAt).toLocaleTimeString()}. Screen
-                      updates while this panel is open.
+                      {t(
+                        'Refreshed {time}. Screen updates while this panel is open.',
+                        {
+                          time: new Date(screen.capturedAt).toLocaleTimeString(
+                            dateLocale,
+                          ),
+                        },
+                      )}
                     </small>
                   </>
                 ) : (
                   <p className="computer-screen-empty">
                     {running && status.permissions.browser
-                      ? 'Waiting for the browser screen…'
-                      : 'Start the computer with Browser permission to see its screen.'}
+                      ? t('Waiting for the browser screen…')
+                      : t(
+                          'Start the computer with Browser permission to see its screen.',
+                        )}
                   </p>
                 )}
                 <div className="computer-control-pill">
                   <span>
-                    {human ? 'You have control' : `${dot.name} has control`}
+                    {human
+                      ? t('You have control')
+                      : t('{name} has control', { name: dot.name })}
                   </span>
                   <button
                     disabled={
@@ -338,19 +354,19 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                     }
                     onClick={() => void run(human ? '/release' : '/take')}
                   >
-                    {human ? 'Return control' : 'Take over'}
+                    {human ? t('Return control') : t('Take over')}
                   </button>
                 </div>
                 {status.control?.transitioning && (
-                  <p role="status">Transferring control…</p>
+                  <p role="status">{t('Transferring control…')}</p>
                 )}
                 {human && (
                   <details className="computer-human">
-                    <summary>Keyboard & precise controls</summary>
+                    <summary>{t('Keyboard & precise controls')}</summary>
                     <p>
-                      Click the screen or enter coordinates below. Text goes
-                      directly to this browser, outside chat. Return control
-                      when finished.
+                      {t(
+                        'Click the screen or enter coordinates below. Text goes directly to this browser, outside chat. Return control when finished.',
+                      )}
                     </p>
                     <form
                       className="computer-row"
@@ -390,7 +406,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                         />
                       </label>
                       <button disabled={busy || !browser || !screen}>
-                        Click
+                        {t('Click')}
                       </button>
                     </form>
                     <form
@@ -404,14 +420,16 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                     >
                       <input
                         type="password"
-                        aria-label="Text to type into computer"
-                        placeholder="Type into focused field"
+                        aria-label={t('Text to type into computer')}
+                        placeholder={t('Type into focused field')}
                         autoComplete="off"
                         value={text}
                         maxLength={20000}
                         onChange={(event) => setText(event.target.value)}
                       />
-                      <button disabled={busy || !browser || !text}>Type</button>
+                      <button disabled={busy || !browser || !text}>
+                        {t('Type')}
+                      </button>
                     </form>
                     <form
                       className="computer-row"
@@ -421,7 +439,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                       }}
                     >
                       <select
-                        aria-label="Key to press"
+                        aria-label={t('Key to press')}
                         value={key}
                         onChange={(event) => setKey(event.target.value)}
                       >
@@ -438,7 +456,9 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                           <option key={name}>{name}</option>
                         ))}
                       </select>
-                      <button disabled={busy || !browser}>Press key</button>
+                      <button disabled={busy || !browser}>
+                        {t('Press key')}
+                      </button>
                     </form>
                     <div className="computer-actions">
                       <button
@@ -447,7 +467,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                           void action('human_scroll', { deltaY: -500 })
                         }
                       >
-                        Scroll up
+                        {t('Scroll up')}
                       </button>
                       <button
                         disabled={busy || !browser}
@@ -455,7 +475,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                           void action('human_scroll', { deltaY: 500 })
                         }
                       >
-                        Scroll down
+                        {t('Scroll down')}
                       </button>
                     </div>
                   </details>
@@ -466,14 +486,16 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                 open
                 hidden={tab !== 'Files'}
               >
-                <summary>Workspace files</summary>
-                <p>Paths are relative to this Dot’s persistent workspace.</p>
+                <summary>{t('Workspace files')}</summary>
+                <p>
+                  {t('Paths are relative to this Dot’s persistent workspace.')}
+                </p>
                 <label>
-                  Path
+                  {t('Path')}
                   <input
                     value={path}
                     onChange={(event) => setPath(event.target.value)}
-                    placeholder="notes.txt"
+                    placeholder={t('notes.txt')}
                     disabled={!running || !status.permissions.files || busy}
                   />
                 </label>
@@ -482,7 +504,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                     disabled={!running || !status.permissions.files || busy}
                     onClick={() => void action('files_list', { path }, true)}
                   >
-                    List files
+                    {t('List files')}
                   </button>
                   <button
                     disabled={
@@ -506,13 +528,13 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                       )
                     }
                   >
-                    Read file
+                    {t('Read file')}
                   </button>
                 </div>
                 <label>
-                  File contents
+                  {t('File contents')}
                   <textarea
-                    aria-label="File contents to save"
+                    aria-label={t('File contents to save')}
                     value={contents}
                     onChange={(event) => setContents(event.target.value)}
                     disabled={!running || !status.permissions.files || busy}
@@ -531,11 +553,13 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                     void action('files_write', { path, contents }, true)
                   }
                 >
-                  Save file (replace contents)
+                  {t('Save file (replace contents)')}
                 </button>
                 {!status.permissions.files && (
                   <p>
-                    Enable Workspace files permission to use these controls.
+                    {t(
+                      'Enable Workspace files permission to use these controls.',
+                    )}
                   </p>
                 )}
               </details>
@@ -544,10 +568,11 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                 open
                 hidden={tab !== 'Terminal'}
               >
-                <summary>Terminal</summary>
+                <summary>{t('Terminal')}</summary>
                 <p>
-                  Runs inside this Dot’s computer. Commands stop after 30
-                  seconds.
+                  {t(
+                    'Runs inside this Dot’s computer. Commands stop after 30 seconds.',
+                  )}
                 </p>
                 <form
                   onSubmit={(event) => {
@@ -556,7 +581,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                   }}
                 >
                   <textarea
-                    aria-label="Terminal command"
+                    aria-label={t('Terminal command')}
                     value={command}
                     onChange={(event) => setCommand(event.target.value)}
                     maxLength={8000}
@@ -572,17 +597,19 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                       !command.trim()
                     }
                   >
-                    Run command
+                    {t('Run command')}
                   </button>
                 </form>
                 {!status.permissions.shell && (
-                  <p>Enable Terminal commands permission to run commands.</p>
+                  <p>
+                    {t('Enable Terminal commands permission to run commands.')}
+                  </p>
                 )}
               </details>
               {(output || outputError) &&
                 (tab === 'Files' || tab === 'Terminal') && (
                   <section className="computer-section">
-                    <h3>Output</h3>
+                    <h3>{t('Output')}</h3>
                     {outputError && (
                       <p className="computer-error" role="alert">
                         {outputError}
@@ -595,7 +622,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                         setOutputError('');
                       }}
                     >
-                      Clear output
+                      {t('Clear output')}
                     </button>
                   </section>
                 )}
@@ -606,7 +633,7 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
             open
             hidden={tab !== 'Activity'}
           >
-            <summary>Recent activity</summary>
+            <summary>{t('Recent activity')}</summary>
             {status.audit.length ? (
               <ol className="computer-audit">
                 {status.audit
@@ -614,27 +641,31 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                   .reverse()
                   .map((entry) => (
                     <li key={entry.id}>
-                      <strong>{entry.action.replaceAll('_', ' ')}</strong>
+                      <strong>{t(entry.action.replaceAll('_', ' '))}</strong>
                       <span>
                         {entry.actor} · {entry.outcome} ·{' '}
-                        {new Date(entry.createdAt).toLocaleTimeString()}
+                        {new Date(entry.createdAt).toLocaleTimeString(
+                          dateLocale,
+                        )}
                       </span>
                     </li>
                   ))}
               </ol>
             ) : (
-              <p>No computer actions yet.</p>
+              <p>{t('No computer actions yet.')}</p>
             )}
           </details>
           <details className="computer-settings">
-            <summary>Computer settings</summary>{' '}
+            <summary>{t('Computer settings')}</summary>{' '}
             <details
               className="computer-permissions"
               open={!status.permissions.enabled}
             >
-              <summary>Computer permissions</summary>
+              <summary>{t('Computer permissions')}</summary>
               <p>
-                Choose what {dot.name} and the computer controls can access.
+                {t('Choose what {name} and the computer controls can access.', {
+                  name: dot.name,
+                })}
               </p>
               {(['enabled', 'browser', 'files', 'shell'] as const).map(
                 (permission) => (
@@ -653,10 +684,10 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                     />
                     {
                       {
-                        enabled: 'Enable this computer',
-                        browser: 'Browser',
-                        files: 'Workspace files',
-                        shell: 'Terminal commands',
+                        enabled: t('Enable this computer'),
+                        browser: t('Browser'),
+                        files: t('Workspace files'),
+                        shell: t('Terminal commands'),
                       }[permission]
                     }
                   </label>
@@ -673,18 +704,19 @@ export function ComputerPanel({ dot }: { dot: Dot }) {
                 }
                 onClick={() => void run('/start')}
               >
-                Start computer
+                {t('Start computer')}
               </button>
               <button
                 disabled={busy || status.state !== 'running'}
                 onClick={() => void run('/stop')}
               >
-                Stop computer
+                {t('Stop computer')}
               </button>
             </div>
             <p className="computer-hint">
-              Stopping retains this Dot’s workspace files. Browser sessions may
-              require signing in again.
+              {t(
+                'Stopping retains this Dot’s workspace files. Browser sessions may require signing in again.',
+              )}
             </p>
           </details>
         </>

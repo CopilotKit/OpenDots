@@ -3,6 +3,7 @@ import Suggestion, {
   exitSuggestion,
   type SuggestionProps,
 } from '@tiptap/suggestion';
+import { t } from '../i18n';
 interface Block {
   title: string;
   description: string;
@@ -15,53 +16,53 @@ const command =
   };
 export const blocks: Block[] = [
   {
-    title: 'Text',
-    description: 'Start with a plain paragraph',
+    title: t('Text'),
+    description: t('Start with a plain paragraph'),
     run: command((e) => e.chain().setParagraph().run()),
   },
   ...([1, 2, 3] as const).map((level) => ({
-    title: `Heading ${level}`,
+    title: t('Heading {level}', { level }),
     description:
       level === 1
-        ? 'A large section heading'
+        ? t('A large section heading')
         : level === 2
-          ? 'A medium section heading'
-          : 'A small section heading',
+          ? t('A medium section heading')
+          : t('A small section heading'),
     run: command((e) => e.chain().setHeading({ level }).run()),
   })),
   {
-    title: 'Bullet list',
-    description: 'A simple unordered list',
+    title: t('Bullet list'),
+    description: t('A simple unordered list'),
     run: command((e) => e.chain().toggleBulletList().run()),
   },
   {
-    title: 'Numbered list',
-    description: 'An ordered sequence',
+    title: t('Numbered list'),
+    description: t('An ordered sequence'),
     run: command((e) => e.chain().toggleOrderedList().run()),
   },
   {
-    title: 'Checklist',
-    description: 'Track things to do',
+    title: t('Checklist'),
+    description: t('Track things to do'),
     run: command((e) => e.chain().toggleTaskList().run()),
   },
   {
-    title: 'Quote',
-    description: 'Highlight a passage',
+    title: t('Quote'),
+    description: t('Highlight a passage'),
     run: command((e) => e.chain().toggleBlockquote().run()),
   },
   {
-    title: 'Code',
-    description: 'A code block',
+    title: t('Code'),
+    description: t('A code block'),
     run: command((e) => e.chain().toggleCodeBlock().run()),
   },
   {
-    title: 'Divider',
-    description: 'Separate sections',
+    title: t('Divider'),
+    description: t('Separate sections'),
     run: command((e) => e.chain().setHorizontalRule().run()),
   },
   {
-    title: 'Table',
-    description: 'Three columns with a header',
+    title: t('Table'),
+    description: t('Three columns with a header'),
     run: command((e) =>
       e.chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
     ),
@@ -108,11 +109,11 @@ export const SlashCommands = Extension.create({
             menu.replaceChildren();
             const label = document.createElement('div');
             label.className = 'slash-menu-label';
-            label.textContent = 'INSERT BLOCK';
+            label.textContent = t('INSERT BLOCK');
             menu.append(label);
             if (!props.items.length) {
               const empty = document.createElement('p');
-              empty.textContent = 'No matching blocks';
+              empty.textContent = t('No matching blocks');
               menu.append(empty);
             }
             props.items.forEach((item, i) => {
@@ -154,7 +155,7 @@ export const SlashCommands = Extension.create({
               menu.id = 'document-block-menu';
               menu.className = 'slash-menu';
               menu.setAttribute('role', 'listbox');
-              menu.setAttribute('aria-label', 'Insert block');
+              menu.setAttribute('aria-label', t('Insert block'));
               document.body.append(menu);
               props.editor.view.dom.setAttribute('aria-controls', menu.id);
               props.editor.view.dom.setAttribute('aria-autocomplete', 'list');
