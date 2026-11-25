@@ -3,7 +3,7 @@ import { isIP } from 'node:net';
 export function isPublicAddress(address: string): boolean {
   const ip = address.toLowerCase().replace(/^\[|\]$/g, '');
   if (isIP(ip) === 4) {
-    const [a, b] = ip.split('.').map(Number);
+    const [a, b, c] = ip.split('.').map(Number);
     return !(
       a === 0 ||
       a === 10 ||
@@ -12,9 +12,11 @@ export function isPublicAddress(address: string): boolean {
       (a === 100 && b >= 64 && b <= 127) ||
       (a === 169 && b === 254) ||
       (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && (b === 168 || b === 0 || b === 2)) ||
-      (a === 198 && (b === 18 || b === 19 || b === 51)) ||
-      (a === 203 && b === 0)
+      (a === 192 && b === 168) ||
+      (a === 192 && b === 0 && (c === 0 || c === 2)) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      (a === 198 && b === 51 && c === 100) ||
+      (a === 203 && b === 0 && c === 113)
     );
   }
   if (isIP(ip) === 6) {
