@@ -36,7 +36,7 @@ export type McpTransportFactory = (target: {
   token?: string;
   signal: AbortSignal;
 }) => Transport;
-export const httpTransport: McpTransportFactory = ({ url, token, signal }) =>
+const httpTransport: McpTransportFactory = ({ url, token, signal }) =>
   new StreamableHTTPClientTransport(new URL(url), {
     requestInit: token
       ? { headers: { Authorization: `Bearer ${token}` } }

@@ -5,7 +5,7 @@ import type { AtRule, Declaration, Plugin, Rule } from 'postcss';
 // dark variant automatically, and cascade order is preserved because every
 // dark rule gains the same specificity and sits right after its original.
 // Wrap intentionally dark surfaces in /* theme: fixed */ ... /* theme: end */.
-export const DARK = ":root[data-theme='dark']";
+const DARK = ":root[data-theme='dark']";
 const toLinear = (c: number) =>
   c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 const toSrgb = (c: number) =>
@@ -77,14 +77,14 @@ const withLightness = (value: string, next: (L: number) => number) => {
 // Dark text sits on surfaces from #1b1b1b to about #2a2a2a; this floor
 // keeps any text color at 4.5:1 or better there.
 const TEXT_FLOOR = 0.72;
-export const readableText = (value: string) =>
+const readableText = (value: string) =>
   withLightness(value, (L) => Math.max(L, TEXT_FLOOR));
 const LIGHT_TEXT = '#f2f2f2';
 const DARK_TEXT = '#141414';
 // A rule that sets both its text and background must stay readable after
 // mapping: pick the better text extreme, then darken a mid-tone background
 // until the pair reaches AA.
-export function readablePair(text: string, background: string) {
+function readablePair(text: string, background: string) {
   if (contrast(text, background) >= 4.5) return { text, background };
   const best = [LIGHT_TEXT, DARK_TEXT].reduce((a, b) =>
     contrast(a, background) >= contrast(b, background) ? a : b,
@@ -170,7 +170,7 @@ function darkDeclarations(colors: Declaration[], variables: Variables) {
 }
 // Generated rules skip fixed surfaces and everything inside them, so global
 // rules (like a focus ring) keep their light values there.
-export function excludeFixed(selector: string, containers: string[]) {
+function excludeFixed(selector: string, containers: string[]) {
   if (!containers.length) return selector;
   const not = `:not(${containers.flatMap((item) => [item, `${item} *`]).join(', ')})`;
   return selector

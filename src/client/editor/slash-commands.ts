@@ -13,7 +13,7 @@ const command =
     editor.chain().focus().deleteRange(range).run();
     action(editor);
   };
-export const blocks: Block[] = [
+const blocks: Block[] = [
   {
     title: 'Text',
     description: 'Start with a plain paragraph',
