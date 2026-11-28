@@ -30,6 +30,44 @@ describe('durable task lifecycle', () => {
     expect(reopened.settings().name).toBe('Sam');
     reopened.close();
   });
+
+  describe('durable goals and reminders', () => {
+    it('persists goals and resets a dismissed reminder when its time changes', () => {
+      const { store, path } = fixture();
+      const reminderAt = Date.now() + 60_000;
+      const created = store.createGoal({
+        title: 'Prepare a launch brief',
+        description: 'Collect the final notes',
+        reminderAt,
+      });
+      expect(
+        store.dismissGoalReminder(created.id)?.reminderDismissedAt,
+      ).not.toBeNull();
+      const updated = store.updateGoal(created.id, {
+        title: created.title,
+        description: created.description,
+        status: 'active',
+        progress: 35,
+        reminderAt: reminderAt + 60_000,
+      });
+      expect(updated?.progress).toBe(35);
+      expect(updated?.reminderDismissedAt).toBeNull();
+
+      const reopened = new Store(path);
+      try {
+        expect(reopened.goal(created.id)).toMatchObject({
+          title: 'Prepare a launch brief',
+          progress: 35,
+          reminderAt: reminderAt + 60_000,
+          reminderDismissedAt: null,
+        });
+        expect(reopened.deleteGoal(created.id)).toBe(true);
+        expect(reopened.goal(created.id)).toBeUndefined();
+      } finally {
+        reopened.close();
+      }
+    });
+  });
   it('claims each due job once even through separate database connections', () => {
     const { store, path } = fixture();
     store.createTask('Research one');

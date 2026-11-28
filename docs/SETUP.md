@@ -1,6 +1,6 @@
 # Running the template
 
-OpenDots runs a React app and a Node server. The server stores pages, Space and Dot configuration, and thread bindings in SQLite and connects to your configured conversation, model, and messaging services.
+OpenDots runs a React app and a Node server. The server stores pages, Space and Dot configuration, thread bindings, goals, and reminder state in SQLite and connects to your configured conversation, model, and messaging services.
 
 ## Local development
 
@@ -96,6 +96,12 @@ Open a page's chat and choose a specialist with access to that Space. Grant acce
 Use the conversation's save-to-page action to create a document from its saved text history. This requires a working conversation service. Pages retain a link to the source conversation, and page links in chat open the document workspace.
 
 Back up both storage layers: SQLite contains page content and thread bindings; the Intelligence project contains conversation history. The template does not include multi-user page sharing, realtime collaboration, file uploads, or arbitrary interactive embeds.
+
+## Goals and reminders
+
+Open **Goals & reminders** in the workspace to create responsibilities, add notes, track progress from 0–100%, and set a one-time reminder. Edit a goal to change its status (active, paused, completed, or cancelled), progress, or reminder time. When an active or paused goal's reminder becomes due, it is highlighted in the workspace; dismissing it is persisted. Changing or clearing the reminder resets its dismissed state.
+
+Goals and reminder timestamps are stored in the configured SQLite database and survive server restarts. They are separate from recurring scheduled turns. Due reminders are only shown in the app while it is open; OpenDots does not send email, push, Slack, or other external notifications for them and does not start agent work when they become due.
 
 ## Browser tool
 
