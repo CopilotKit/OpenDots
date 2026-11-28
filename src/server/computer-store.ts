@@ -32,14 +32,24 @@ export class ComputerStore {
     return id;
   }
   finish(id: string, outcome: 'succeeded' | 'failed') {
-    this.db
-      .prepare('UPDATE computer_audit SET outcome=? WHERE id=?')
-      .run(outcome, id);
+    const row = this.db
+      .prepare('UPDATE computer_audit SET outcome=? WHERE id=? RETURNING dotId')
+      .get(outcome, id);
+    if (!row) return;
+    const dotId = String(row.dotId);
+    const completed = Number(
+      this.db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM computer_audit WHERE dotId=? AND outcome!='pending'",
+        )
+        .get(dotId)?.count ?? 0,
+    );
+    if (completed <= 1000) return;
     this.db
       .prepare(
-        `DELETE FROM computer_audit WHERE dotId=(SELECT dotId FROM computer_audit WHERE id=?) AND outcome!='pending' AND id NOT IN (SELECT id FROM computer_audit WHERE dotId=(SELECT dotId FROM computer_audit WHERE id=?) AND outcome!='pending' ORDER BY createdAt DESC,rowid DESC LIMIT 1000)`,
+        `DELETE FROM computer_audit WHERE id IN (SELECT id FROM computer_audit WHERE dotId=? AND outcome!='pending' ORDER BY createdAt ASC,rowid ASC LIMIT ?)`,
       )
-      .run(id, id);
+      .run(dotId, completed - 1000);
   }
   audit(id: string): ComputerAudit[] {
     return this.db

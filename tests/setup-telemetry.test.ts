@@ -56,7 +56,12 @@ it('persists bounded offline events with stable IDs and CLI identity across rest
       installation_id: installationId,
     },
   });
-  expect(JSON.parse(store.setupTelemetryState()!).queue).toEqual([]);
+  const remaining = JSON.parse(store.setupTelemetryState()!).queue as Array<{
+    id: string;
+  }>;
+  expect(requests.length).toBeGreaterThan(0);
+  expect(remaining.length).toBeLessThan(256);
+  expect(remaining.some((event) => event.id === id)).toBe(false);
   expect(JSON.stringify(requests)).not.toContain('secret transport error');
   store.close();
   rmSync(dir, { recursive: true });
@@ -80,6 +85,21 @@ it.each(['DO_NOT_TRACK', 'COPILOTKIT_TELEMETRY_DISABLED'])(
     }
   },
 );
+
+it('purges pending telemetry when the SDK sample rate is zero', async () => {
+  const store = new Store(':memory:');
+  const send = vi.fn(async () => {});
+  const telemetry = new SetupTelemetry(
+    store,
+    { COPILOTKIT_TELEMETRY_SAMPLE_RATE: '0' },
+    send,
+  );
+  telemetry.capture({ kind: 'activated' });
+  await telemetry.flush();
+  expect(store.setupTelemetryState()).toBeUndefined();
+  expect(send).not.toHaveBeenCalled();
+  store.close();
+});
 
 it('reuses fallback identity and recovers abandonment without treating ready as activated', () => {
   const store = new Store(':memory:');
